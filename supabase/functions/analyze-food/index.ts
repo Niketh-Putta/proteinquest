@@ -126,6 +126,12 @@ Deno.serve(async (req) => {
     if (!openaiRes.ok) {
       const errText = await openaiRes.text();
       console.error("OpenAI error:", openaiRes.status, errText);
+      // Invalid/revoked API key: fall back to clearly-labeled demo data so the
+      // rest of the product flow stays testable. Fix by setting a valid key:
+      //   supabase secrets set OPENAI_API_KEY=sk-...
+      if (openaiRes.status === 401 || openaiRes.status === 403) {
+        return json({ analysis: demoAnalysis(), demo: true });
+      }
       return json({ error: "AI analysis failed, please try again" }, 502);
     }
 
@@ -138,6 +144,46 @@ Deno.serve(async (req) => {
     return json({ error: "Unexpected error analyzing the photo" }, 500);
   }
 });
+
+function demoAnalysis() {
+  const meals = [
+    {
+      food_name: "Grilled chicken, rice & broccoli",
+      items: [
+        { name: "Grilled chicken breast", portion: "150g", protein_g: 46 },
+        { name: "White rice", portion: "1 cup", protein_g: 4 },
+        { name: "Steamed broccoli", portion: "1 cup", protein_g: 3 },
+      ],
+      calories: 520,
+    },
+    {
+      food_name: "Salmon with quinoa",
+      items: [
+        { name: "Baked salmon fillet", portion: "140g", protein_g: 35 },
+        { name: "Quinoa", portion: "3/4 cup", protein_g: 6 },
+      ],
+      calories: 480,
+    },
+    {
+      food_name: "Greek yogurt bowl",
+      items: [
+        { name: "Greek yogurt", portion: "200g", protein_g: 20 },
+        { name: "Granola", portion: "40g", protein_g: 4 },
+        { name: "Mixed berries", portion: "1/2 cup", protein_g: 1 },
+      ],
+      calories: 350,
+    },
+  ];
+  const meal = meals[Math.floor(Math.random() * meals.length)];
+  return {
+    is_food: true,
+    ...meal,
+    total_protein_g: meal.items.reduce((s, i) => s + i.protein_g, 0),
+    confidence: "low",
+    notes:
+      "DEMO ESTIMATE \u2014 the OpenAI API key is invalid. Set a real key with: supabase secrets set OPENAI_API_KEY=...",
+  };
+}
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {

@@ -18,7 +18,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/Button';
-import { analyzeFoodPhoto, insertLog, uploadFoodPhoto } from '@/lib/api';
+import { analyzeFoodPhoto, countTodayScans, insertLog, uploadFoodPhoto } from '@/lib/api';
+import { FREE_DAILY_SCANS } from '@/lib/payments';
 import { useSession } from '@/lib/session';
 import type { Analysis } from '@/lib/types';
 import { colors, fonts, radius, spacing } from '@/theme';
@@ -26,8 +27,16 @@ import { colors, fonts, radius, spacing } from '@/theme';
 type Phase = 'pick' | 'analyzing' | 'result';
 
 export default function SnapScreen() {
-  const { session } = useSession();
+  const { session, profile } = useSession();
   const [phase, setPhase] = useState<Phase>('pick');
+  const [scansLeft, setScansLeft] = useState<number | null>(null);
+
+  React.useEffect(() => {
+    if (profile?.is_premium) return;
+    countTodayScans()
+      .then((used) => setScansLeft(Math.max(FREE_DAILY_SCANS - used, 0)))
+      .catch(() => setScansLeft(null));
+  }, [profile?.is_premium]);
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [imageBase64, setImageBase64] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
@@ -35,6 +44,13 @@ export default function SnapScreen() {
   const [saving, setSaving] = useState(false);
 
   async function pickImage(fromCamera: boolean) {
+    if (!profile?.is_premium) {
+      const used = await countTodayScans().catch(() => 0);
+      if (used >= FREE_DAILY_SCANS) {
+        router.push('/paywall');
+        return;
+      }
+    }
     const permission = fromCamera
       ? await ImagePicker.requestCameraPermissionsAsync()
       : await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -148,6 +164,16 @@ export default function SnapScreen() {
             </Text>
           </View>
           <View style={{ gap: spacing.sm }}>
+            {!profile?.is_premium && scansLeft !== null ? (
+              <Pressable onPress={() => router.push('/paywall')} style={styles.scansPill}>
+                <Ionicons name="sparkles" size={14} color={colors.accent} />
+                <Text style={styles.scansPillText}>
+                  {scansLeft > 0
+                    ? `${scansLeft} free scan${scansLeft === 1 ? '' : 's'} left today`
+                    : 'Out of free scans \u2014 go Pro'}
+                </Text>
+              </Pressable>
+            ) : null}
             <Button title="Take a photo" onPress={() => pickImage(true)} />
             <Button
               title="Choose from library"
@@ -261,6 +287,21 @@ const styles = StyleSheet.create({
   },
   topTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
   pickWrap: { flex: 1, padding: spacing.lg, justifyContent: 'space-between' },
+  scansPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    alignSelf: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: 8,
+    borderRadius: radius.full,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginBottom: spacing.sm,
+  },
+  scansPillText: { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
   pickHero: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.md },
   pickTitle: {
     fontSize: 26,

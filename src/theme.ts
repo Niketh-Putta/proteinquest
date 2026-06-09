@@ -34,5 +34,10 @@ export const radius = {
 
 export const fonts = Platform.select({
   ios: { sans: 'system-ui', rounded: 'ui-rounded', mono: 'ui-monospace' },
-  default: { sans: 'normal', rounded: 'normal', mono: 'monospace' },
+  web: {
+    sans: 'system-ui, -apple-system, sans-serif',
+    rounded: 'ui-rounded, system-ui, -apple-system, sans-serif',
+    mono: 'ui-monospace, monospace',
+  },
+  default: { sans: 'sans-serif', rounded: 'sans-serif-medium', mono: 'monospace' },
 });

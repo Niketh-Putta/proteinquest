@@ -85,6 +85,16 @@ export async function deleteLog(id: string): Promise<void> {
   if (error) throw error;
 }
 
+export async function countTodayScans(): Promise<number> {
+  const { count, error } = await supabase
+    .from('protein_logs')
+    .select('id', { count: 'exact', head: true })
+    .eq('logged_date', todayISODate())
+    .eq('source', 'photo');
+  if (error) throw error;
+  return count ?? 0;
+}
+
 export async function fetchProfile(userId: string): Promise<Profile | null> {
   const { data, error } = await supabase
     .from('profiles')

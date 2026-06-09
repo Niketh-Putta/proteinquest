@@ -12,6 +12,7 @@ export interface Profile {
   goal_type: GoalType | null;
   protein_goal_g: number | null;
   onboarded: boolean;
+  is_premium: boolean;
 }
 
 export interface FoodItem {
