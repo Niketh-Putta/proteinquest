@@ -9,19 +9,21 @@
     "userInterfaceStyle": "dark",
     "backgroundColor": "#0A0A0B",
     "ios": {
-      "icon": "./assets/expo.icon",
+      "bundleIdentifier": "com.proteinlens.app",
+      "buildNumber": "1",
       "supportsTablet": false,
       "infoPlist": {
         "NSCameraUsageDescription": "ProteinLens uses the camera to photograph your meals and estimate their protein content.",
-        "NSPhotoLibraryUsageDescription": "ProteinLens uses your photo library so you can analyze meals you've already photographed."
+        "NSPhotoLibraryUsageDescription": "ProteinLens uses your photo library so you can analyze meals you've already photographed.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
+      "package": "com.proteinlens.app",
+      "versionCode": 1,
       "adaptiveIcon": {
         "backgroundColor": "#0A0A0B",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "foregroundImage": "./assets/images/android-icon-foreground.png"
       },
       "predictiveBackGestureEnabled": false,
       "permissions": ["android.permission.CAMERA"]
@@ -36,10 +38,8 @@
         "expo-splash-screen",
         {
           "backgroundColor": "#0A0A0B",
-          "android": {
-            "image": "./assets/images/splash-icon.png",
-            "imageWidth": 76
-          }
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 160
         }
       ],
       [
