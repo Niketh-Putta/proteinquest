@@ -13,6 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AccountCard } from '@/components/AccountCard';
+import { AiProviderCard } from '@/components/AiProviderCard';
 import { DragonRoster } from '@/components/DragonRoster';
 import { GoalEditor } from '@/components/GoalEditor';
 import { useLayout } from '@/lib/layout';
@@ -66,6 +67,7 @@ export default function SettingsScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}>
           <AccountCard />
+          <AiProviderCard />
           {profile ? <DragonRoster profile={profile} /> : null}
           <Text style={styles.subtitle}>
             Adjust your stats and the target recalculates with full reasoning.

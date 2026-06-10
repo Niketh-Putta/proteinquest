@@ -1,5 +1,6 @@
 import { decode } from 'base64-arraybuffer';
 
+import { resolveAnalysisProvider } from './ai-keys';
 import { supabase } from './supabase';
 import { todayISODate } from './protein';
 import type { Analysis, FoodItem, Confidence, Profile, ProteinLog } from './types';
@@ -29,19 +30,19 @@ async function extractFunctionError(
 }
 
 function friendlyAnalysisError(message: string): string {
+  if (/Invalid Gemini|aistudio\.google/i.test(message)) return message;
   if (/billing|not active|quota|insufficient/i.test(message)) {
     return 'AI service unavailable — add billing at platform.openai.com, then try again.';
   }
+  if (/No AI provider|Gemini API key in Settings/i.test(message)) return message;
   if (/OPENAI_API_KEY|not configured/i.test(message)) {
-    return 'AI analysis is not configured yet. Check back soon.';
+    return 'Add your Gemini API key in Settings, or use server AI when available.';
   }
   return message;
 }
 
-export async function analyzeFoodPhoto(imageBase64: string): Promise<Analysis> {
-  const { data, error } = await supabase.functions.invoke('analyze-food', {
-    body: { image_base64: imageBase64 },
-  });
+async function invokeAnalyze(body: Record<string, unknown>): Promise<Analysis> {
+  const { data, error } = await supabase.functions.invoke('analyze-food', { body });
   if (error) {
     const raw = await extractFunctionError(error, data);
     throw new Error(friendlyAnalysisError(raw));
@@ -49,6 +50,21 @@ export async function analyzeFoodPhoto(imageBase64: string): Promise<Analysis> {
   if (data?.error) throw new Error(friendlyAnalysisError(data.error));
   if (!data?.analysis) throw new Error('No analysis returned. Please try again.');
   return data.analysis as Analysis;
+}
+
+export async function analyzeFoodPhoto(
+  imageBase64: string,
+  mimeType = 'image/jpeg',
+): Promise<Analysis> {
+  const { provider, geminiKey } = await resolveAnalysisProvider();
+  if (provider === 'gemini' && geminiKey) {
+    return invokeAnalyze({
+      image_base64: imageBase64,
+      mime_type: mimeType,
+      gemini_api_key: geminiKey,
+    });
+  }
+  return invokeAnalyze({ image_base64: imageBase64, mime_type: mimeType });
 }
 
 export async function uploadFoodPhoto(userId: string, imageBase64: string): Promise<string | null> {
