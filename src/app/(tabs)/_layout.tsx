@@ -86,7 +86,7 @@ export default function TabsLayout() {
       tabBar={(props) => <ScanTabBar {...props} />}
       screenOptions={{
         headerShown: false,
-        sceneStyle: { backgroundColor: colors.bg },
+        sceneStyle: { flex: 1, backgroundColor: colors.bg },
       }}>
       <Tabs.Screen name="today" />
       <Tabs.Screen name="trends" />

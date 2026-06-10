@@ -20,7 +20,7 @@ import { ProgressRing } from '@/components/ProgressRing';
 import { deleteLog, fetchLogsForDate } from '@/lib/api';
 import { applyDeleteLogToCharacter, dragonById, isDailyDragonLockedForToday } from '@/lib/character';
 import { confirmDestructive } from '@/lib/confirm';
-import { useLayout } from '@/lib/layout';
+import { useLayout, useTabBarScrollInset } from '@/lib/layout';
 import { todayISODate } from '@/lib/protein';
 import { useSession } from '@/lib/session';
 import type { ProteinLog } from '@/lib/types';
@@ -35,7 +35,9 @@ export default function TodayScreen() {
     columnGap,
     asideWidth,
     titleSize,
+    isNarrow,
   } = useLayout();
+  const tabBarScrollInset = useTabBarScrollInset(isNarrow);
   const { profile, saveProfile } = useSession();
   const [logs, setLogs] = useState<ProteinLog[]>([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -250,7 +252,7 @@ export default function TodayScreen() {
 
   return (
     <PageCanvas>
-      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+      <SafeAreaView style={styles.safe} edges={['top']}>
         {heroLayout === 'sidebar' ? (
           <View
             style={[
@@ -266,7 +268,7 @@ export default function TodayScreen() {
               <FlatList
                 {...listProps}
                 style={styles.desktopMain}
-                contentContainerStyle={styles.list}
+                contentContainerStyle={[styles.list, { paddingBottom: tabBarScrollInset }]}
                 ListHeaderComponent={renderHeader()}
               />
               {profile ? (
@@ -279,6 +281,7 @@ export default function TodayScreen() {
         ) : (
           <FlatList
             {...listProps}
+            style={styles.listScroll}
             contentContainerStyle={[
               styles.list,
               {
@@ -286,6 +289,7 @@ export default function TodayScreen() {
                 maxWidth: contentMaxWidth,
                 width: '100%',
                 alignSelf: 'center',
+                paddingBottom: tabBarScrollInset,
               },
             ]}
             ListHeaderComponent={renderHeader()}
@@ -298,6 +302,7 @@ export default function TodayScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
+  listScroll: { flex: 1 },
   desktopShell: { flex: 1 },
   desktopRow: {
     flex: 1,
@@ -311,7 +316,7 @@ const styles = StyleSheet.create({
       ? ({ position: 'sticky', top: 24 } as object)
       : {}),
   },
-  list: { paddingTop: spacing.lg, paddingBottom: 100 },
+  list: { paddingTop: spacing.lg },
   header: {
     flexDirection: 'row',
     alignItems: 'flex-start',
