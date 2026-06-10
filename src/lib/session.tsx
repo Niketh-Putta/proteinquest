@@ -1,4 +1,5 @@
 import type { Session } from '@supabase/supabase-js';
+import { useGlobalSearchParams } from 'expo-router';
 import React, {
   createContext,
   useCallback,
@@ -7,8 +8,12 @@ import React, {
   useState,
 } from 'react';
 
-import { continueAsGuest, signInWithGoogle, signOut as authSignOut } from './auth';
-import { fetchProfile, upsertProfile } from './api';
+import {
+  continueAsGuest,
+  ensureAuthSession,
+  resetAnonymousSignupAttempt,
+} from './auth';
+import { fetchProfile, isStaleProfileSaveError, upsertProfile } from './api';
 import { supabase } from './supabase';
 import type { Profile } from './types';
 
@@ -16,21 +21,19 @@ interface SessionContextValue {
   session: Session | null;
   profile: Profile | null;
   loading: boolean;
+  authMessage: string | null;
   saveProfile: (updates: Partial<Profile>) => Promise<void>;
-  signInWithGoogle: () => Promise<void>;
-  signOut: () => Promise<void>;
-  continueAsGuest: () => Promise<void>;
 }
 
 const SessionContext = createContext<SessionContextValue>({
   session: null,
   profile: null,
   loading: true,
+  authMessage: null,
   saveProfile: async () => {},
-  signInWithGoogle: async () => {},
-  signOut: async () => {},
-  continueAsGuest: async () => {},
 });
+
+const AUTH_RETRY_MS = 2500;
 
 async function loadProfile(userId: string): Promise<Profile | null> {
   try {
@@ -42,9 +45,11 @@ async function loadProfile(userId: string): Promise<Profile | null> {
 }
 
 export function SessionProvider({ children }: { children: React.ReactNode }) {
+  const params = useGlobalSearchParams<{ checkout?: string }>();
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [authMessage, setAuthMessage] = useState<string | null>(null);
 
   const refreshProfile = useCallback(async (userId: string) => {
     const p = await loadProfile(userId);
@@ -55,21 +60,32 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     let mounted = true;
 
     async function init() {
-      const { data } = await supabase.auth.getSession();
-      let active = data.session;
-      if (!active) {
-        const { data: anon, error } = await supabase.auth.signInAnonymously();
-        if (error) {
-          console.error('Anonymous sign-in failed:', error.message);
-          if (mounted) setLoading(false);
-          return;
+      try {
+        let nextSession = await ensureAuthSession();
+        if (!nextSession && mounted) {
+          setAuthMessage('Connecting…');
+          await new Promise((resolve) => setTimeout(resolve, AUTH_RETRY_MS));
+          if (!mounted) return;
+          resetAnonymousSignupAttempt();
+          nextSession = await ensureAuthSession();
         }
-        active = anon.session;
+
+        if (!mounted) return;
+        setSession(nextSession);
+        if (nextSession) await refreshProfile(nextSession.user.id);
+      } catch (e) {
+        console.error('Auth init failed:', e);
+        if (mounted) {
+          const { data } = await supabase.auth.getSession();
+          setSession(data.session);
+          if (data.session) await refreshProfile(data.session.user.id);
+        }
+      } finally {
+        if (mounted) {
+          setLoading(false);
+          setAuthMessage(null);
+        }
       }
-      if (!mounted) return;
-      setSession(active);
-      if (active) await refreshProfile(active.user.id);
-      if (mounted) setLoading(false);
     }
 
     init();
@@ -89,43 +105,53 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     };
   }, [refreshProfile]);
 
-  const saveProfile = useCallback(
-    async (updates: Partial<Profile>) => {
-      if (!session) throw new Error('Not signed in yet');
-      const saved = await upsertProfile({ ...updates, id: session.user.id });
+  useEffect(() => {
+    if (loading || session) return;
+
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      resetAnonymousSignupAttempt();
+      const next = await ensureAuthSession();
+      if (cancelled || !next) return;
+      setSession(next);
+      await refreshProfile(next.user.id);
+    }, AUTH_RETRY_MS);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [loading, session, refreshProfile]);
+
+  useEffect(() => {
+    if (params.checkout !== 'success' || !session?.user.id) return;
+    refreshProfile(session.user.id).catch(() => {});
+  }, [params.checkout, session?.user.id, refreshProfile]);
+
+  const saveProfile = useCallback(async (updates: Partial<Profile>) => {
+    const nextSession = await ensureAuthSession();
+    if (!nextSession) {
+      throw new Error('Still connecting — please wait a moment and try again.');
+    }
+    setSession(nextSession);
+    const userId = nextSession.user.id;
+
+    try {
+      const saved = await upsertProfile({ ...updates, id: userId });
       setProfile(saved);
-    },
-    [session],
-  );
+      return;
+    } catch (e) {
+      if (!isStaleProfileSaveError(e)) throw e;
 
-  const handleGoogleSignIn = useCallback(async () => {
-    // Upgrade from anonymous: sign out guest session first so Google creates a real account.
-    if (session?.user?.is_anonymous) {
-      await authSignOut();
+      await supabase.auth.signOut({ scope: 'local' });
+      resetAnonymousSignupAttempt();
+      const recovered = await continueAsGuest();
+      if (!recovered) throw e;
+      setSession(recovered);
+      const saved = await upsertProfile({ ...updates, id: recovered.user.id });
+      setProfile(saved);
     }
-    await signInWithGoogle();
-    const { data } = await supabase.auth.getSession();
-    if (data.session) {
-      setSession(data.session);
-      await refreshProfile(data.session.user.id);
-    }
-  }, [session, refreshProfile]);
-
-  const handleSignOut = useCallback(async () => {
-    await authSignOut();
-    const { data: anon } = await supabase.auth.signInAnonymously();
-    setSession(anon.session);
-    if (anon.session) await refreshProfile(anon.session.user.id);
-  }, [refreshProfile]);
-
-  const handleGuest = useCallback(async () => {
-    await continueAsGuest();
-    const { data } = await supabase.auth.getSession();
-    if (data.session) {
-      setSession(data.session);
-      await refreshProfile(data.session.user.id);
-    }
-  }, [refreshProfile]);
+  }, []);
 
   return (
     <SessionContext.Provider
@@ -133,10 +159,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         session,
         profile,
         loading,
+        authMessage,
         saveProfile,
-        signInWithGoogle: handleGoogleSignIn,
-        signOut: handleSignOut,
-        continueAsGuest: handleGuest,
       }}>
       {children}
     </SessionContext.Provider>

@@ -4,6 +4,10 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { isDailyDragonLockedForToday } from '@/lib/character';
+import { useLayout } from '@/lib/layout';
+import { todayISODate } from '@/lib/protein';
+import { useSession } from '@/lib/session';
 import { colors, fonts, shadowAccent, spacing } from '@/theme';
 
 interface TabBarProps {
@@ -13,31 +17,46 @@ interface TabBarProps {
 
 function ScanTabBar({ state, navigation }: TabBarProps) {
   const insets = useSafeAreaInsets();
+  const { contentMaxWidth, isWide } = useLayout();
+  const { profile } = useSession();
+
+  function openScan() {
+    if (profile && !isDailyDragonLockedForToday(profile, todayISODate())) {
+      router.push('/(tabs)/today');
+      return;
+    }
+    router.push('/scan');
+  }
   const tabs = [
     { name: 'today', label: 'Today', icon: 'flash' as const },
     { name: 'trends', label: 'Trends', icon: 'stats-chart' as const },
   ];
 
   return (
-    <View style={[styles.bar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-      <TabButton
-        tab={tabs[0]}
-        active={state.index === 0}
-        onPress={() => navigation.navigate('today')}
-      />
+    <View style={[styles.barOuter, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+      <View
+        style={[styles.bar, isWide && { maxWidth: contentMaxWidth, alignSelf: 'center', width: '100%' }]}>
+        <TabButton
+          tab={tabs[0]}
+          active={state.index === 0}
+          onPress={() => navigation.navigate('today')}
+        />
 
-      {/* center scan action — the core loop, front and center */}
-      <Pressable
-        onPress={() => router.push('/scan')}
-        style={({ pressed }) => [styles.scanBtn, pressed && { transform: [{ scale: 0.94 }] }]}>
-        <Ionicons name="scan" size={26} color={colors.onAccent} />
-      </Pressable>
+        <Pressable
+          onPress={openScan}
+          style={({ pressed }) => [styles.scanTab, pressed && { transform: [{ scale: 0.94 }] }]}>
+          <View style={styles.scanBtn}>
+            <Ionicons name="scan" size={24} color={colors.onAccent} />
+          </View>
+          <Text style={styles.scanLabel}>Scan</Text>
+        </Pressable>
 
-      <TabButton
-        tab={tabs[1]}
-        active={state.index === 1}
-        onPress={() => navigation.navigate('trends')}
-      />
+        <TabButton
+          tab={tabs[1]}
+          active={state.index === 1}
+          onPress={() => navigation.navigate('trends')}
+        />
+      </View>
     </View>
   );
 }
@@ -53,8 +72,9 @@ function TabButton({
 }) {
   return (
     <Pressable onPress={onPress} style={styles.tab}>
-      <Ionicons name={tab.icon} size={21} color={active ? colors.accent : colors.textTertiary} />
-      <Text style={[styles.tabLabel, active && { color: colors.accent }]}>{tab.label}</Text>
+      <Ionicons name={tab.icon} size={20} color={active ? colors.text : colors.textTertiary} />
+      <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>{tab.label}</Text>
+      {active ? <View style={styles.tabIndicator} /> : null}
     </Pressable>
   );
 }
@@ -75,35 +95,62 @@ export default function TabsLayout() {
 }
 
 const styles = StyleSheet.create({
-  bar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-around',
-    backgroundColor: colors.bgRaised,
-    borderTopWidth: 1,
-    borderTopColor: colors.hairline,
+  barOuter: {
+    backgroundColor: colors.bg,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.hairlineBright,
     paddingTop: 10,
     paddingHorizontal: spacing.lg,
+    width: '100%',
+    alignItems: 'center',
   },
-  tab: { alignItems: 'center', gap: 3, width: 84 },
+  bar: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-around',
+  },
+  tab: { alignItems: 'center', gap: 4, width: 72, minHeight: 44, paddingBottom: 2 },
   tabLabel: {
     fontFamily: fonts.mono,
-    fontSize: 10,
-    letterSpacing: 0.8,
+    fontSize: 9,
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
     color: colors.textTertiary,
+  },
+  tabLabelActive: { color: colors.text, fontFamily: fonts.monoBold },
+  tabIndicator: {
+    position: 'absolute',
+    bottom: 0,
+    width: 20,
+    height: 2,
+    backgroundColor: colors.accent,
+  },
+  scanTab: {
+    alignItems: 'center',
+    gap: 4,
+    width: 72,
+    minHeight: 44,
+    paddingBottom: 2,
   },
   scanBtn: {
     width: 64,
     height: 64,
     minWidth: 44,
     minHeight: 44,
-    borderRadius: 31,
+    borderRadius: 32,
     backgroundColor: colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: -26,
-    borderWidth: 4,
+    marginTop: -22,
+    borderWidth: 3,
     borderColor: colors.bg,
     ...shadowAccent,
+  },
+  scanLabel: {
+    fontFamily: fonts.monoBold,
+    fontSize: 9,
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    color: colors.accent,
   },
 });

@@ -4,6 +4,7 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 
 import { Button } from '@/components/Button';
 import { ChoiceRow, FieldLabel, NumberField, SegmentedRow } from '@/components/forms';
+import { useLayout } from '@/lib/layout';
 import {
   ACTIVITY_LABELS,
   GOAL_LABELS,
@@ -11,7 +12,7 @@ import {
   kgFromInput,
 } from '@/lib/protein';
 import type { ActivityLevel, GoalType, Profile, Sex } from '@/lib/types';
-import { colors, fonts, radius, spacing, type } from '@/theme';
+import { colors, fonts, spacing, type } from '@/theme';
 
 interface Props {
   profile: Profile | null;
@@ -21,6 +22,7 @@ interface Props {
 }
 
 export function GoalEditor({ profile, submitLabel, saving, onSubmit }: Props) {
+  const { isNarrow } = useLayout();
   const initialUnit = profile?.weight_unit ?? 'kg';
   const [age, setAge] = useState(profile?.age ? String(profile.age) : '');
   const [unit, setUnit] = useState<'kg' | 'lbs'>(initialUnit);
@@ -61,21 +63,18 @@ export function GoalEditor({ profile, submitLabel, saving, onSubmit }: Props) {
   }
 
   return (
-    <View>
+    <View style={styles.root}>
       <FieldLabel>Age</FieldLabel>
       <NumberField value={age} onChange={setAge} placeholder="25" suffix="YRS" />
 
       <FieldLabel>Weight</FieldLabel>
-      <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-        <View style={{ flex: 1 }}>
+      {isNarrow ? (
+        <View style={styles.weightStack}>
           <NumberField
             value={weight}
             onChange={setWeight}
             placeholder={unit === 'kg' ? '75' : '165'}
-            suffix={unit.toUpperCase()}
           />
-        </View>
-        <View style={{ width: 130 }}>
           <SegmentedRow
             value={unit}
             onChange={setUnit}
@@ -85,7 +84,27 @@ export function GoalEditor({ profile, submitLabel, saving, onSubmit }: Props) {
             ]}
           />
         </View>
-      </View>
+      ) : (
+        <View style={styles.weightRow}>
+          <View style={styles.weightInput}>
+            <NumberField
+              value={weight}
+              onChange={setWeight}
+              placeholder={unit === 'kg' ? '75' : '165'}
+            />
+          </View>
+          <View style={styles.unitPicker}>
+            <SegmentedRow
+              value={unit}
+              onChange={setUnit}
+              options={[
+                { value: 'kg', title: 'kg' },
+                { value: 'lbs', title: 'lbs' },
+              ]}
+            />
+          </View>
+        </View>
+      )}
 
       <FieldLabel>Sex</FieldLabel>
       <SegmentedRow
@@ -120,19 +139,20 @@ export function GoalEditor({ profile, submitLabel, saving, onSubmit }: Props) {
       />
 
       {calc ? (
-        <Animated.View entering={FadeInDown.springify().damping(16)} style={styles.goalCard}>
+        <Animated.View entering={FadeInDown.springify().damping(16)} style={styles.goalBlock}>
           <Text style={styles.goalLabel}>YOUR DAILY TARGET</Text>
-          <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
-            <Text style={styles.goalValue}>{calc.grams}</Text>
-            <Text style={styles.goalUnit}>g</Text>
+          <View style={styles.goalRow}>
+            <Text style={[styles.goalValue, isNarrow && styles.goalValueNarrow]}>
+              {calc.grams}
+            </Text>
+            <Text style={[styles.goalUnit, isNarrow && styles.goalUnitNarrow]}>g</Text>
           </View>
-          <View style={styles.gPerKgPill}>
-            <Text style={styles.gPerKgText}>{calc.gPerKg} g per kg bodyweight</Text>
-          </View>
+          <Text style={styles.gPerKg}>{calc.gPerKg} g per kg bodyweight</Text>
+          <View style={styles.rule} />
           <View style={styles.reasoning}>
             {calc.reasoning.map((line, i) => (
               <View key={i} style={styles.reasonRow}>
-                <View style={styles.reasonDot} />
+                <Text style={styles.reasonDash}>-</Text>
                 <Text style={styles.reasonText}>{line}</Text>
               </View>
             ))}
@@ -145,47 +165,68 @@ export function GoalEditor({ profile, submitLabel, saving, onSubmit }: Props) {
         onPress={handleSubmit}
         disabled={!calc}
         loading={saving}
-        style={{ marginTop: spacing.lg }}
+        style={{ marginTop: spacing.xl }}
       />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  goalCard: {
-    marginTop: spacing.xl,
-    backgroundColor: colors.accentSurface,
-    borderWidth: 1,
-    borderColor: colors.accentDeep,
-    borderRadius: radius.lg,
-    padding: spacing.lg,
-    alignItems: 'center',
+  root: { width: '100%', maxWidth: '100%' },
+  weightStack: { gap: spacing.sm, marginBottom: spacing.xs },
+  weightRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: spacing.sm,
+    width: '100%',
+    maxWidth: '100%',
   },
-  goalLabel: { ...type.label, color: colors.textSecondary },
+  weightInput: { flex: 1, minWidth: 0 },
+  unitPicker: { flexShrink: 0, width: '36%', maxWidth: 120, minWidth: 96 },
+  goalBlock: { marginTop: spacing.xl, paddingVertical: spacing.lg },
+  goalLabel: { ...type.label, color: colors.textTertiary },
+  goalRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 4, marginTop: 4 },
   goalValue: {
     fontSize: 64,
-    lineHeight: 70,
+    lineHeight: 64,
     fontFamily: fonts.displayHeavy,
-    color: colors.accent,
+    color: colors.text,
     fontVariant: ['tabular-nums'],
+    letterSpacing: -2,
   },
-  goalUnit: { fontSize: 28, fontFamily: fonts.display, color: colors.accentDeep },
-  gPerKgPill: {
-    backgroundColor: colors.surface2,
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: radius.full,
+  goalValueNarrow: {
+    fontSize: 52,
+    lineHeight: 52,
+    letterSpacing: -1.5,
+  },
+  goalUnit: {
+    fontSize: 24,
+    fontFamily: fonts.display,
+    color: colors.textTertiary,
+    marginBottom: 8,
+  },
+  goalUnitNarrow: { fontSize: 20, marginBottom: 6 },
+  gPerKg: {
+    fontFamily: fonts.mono,
+    fontSize: 11,
+    color: colors.accent,
+    letterSpacing: 0.4,
     marginTop: 6,
   },
-  gPerKgText: { fontFamily: fonts.monoBold, fontSize: 11, color: colors.text, letterSpacing: 0.4 },
-  reasoning: { alignSelf: 'stretch', marginTop: spacing.md, gap: 8 },
-  reasonRow: { flexDirection: 'row', gap: 8, alignItems: 'flex-start' },
-  reasonDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: colors.accent,
-    marginTop: 6,
+  rule: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.hairlineBright,
+    marginVertical: spacing.lg,
   },
-  reasonText: { flex: 1, fontFamily: fonts.body, fontSize: 12.5, lineHeight: 18, color: colors.textSecondary },
+  reasoning: { gap: 10 },
+  reasonRow: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' },
+  reasonDash: { fontFamily: fonts.mono, fontSize: 12, color: colors.textTertiary, flexShrink: 0 },
+  reasonText: {
+    flex: 1,
+    minWidth: 0,
+    fontFamily: fonts.body,
+    fontSize: 13,
+    lineHeight: 19,
+    color: colors.textSecondary,
+  },
 });

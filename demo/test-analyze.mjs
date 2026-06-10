@@ -13,7 +13,11 @@ if (authErr) {
 }
 console.log('signed in anonymously:', auth.user.id);
 
-const b64 = fs.readFileSync('demo/demo-meal.jpg').toString('base64');
+const imagePath = fs.existsSync('demo/demo-meal.jpg')
+  ? 'demo/demo-meal.jpg'
+  : 'assets/intro/chicken-curry.jpg';
+const b64 = fs.readFileSync(imagePath).toString('base64');
+console.log('image:', imagePath);
 console.log('image bytes (base64):', b64.length);
 
 const started = Date.now();

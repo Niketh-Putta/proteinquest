@@ -24,7 +24,7 @@ export function Button({ title, onPress, variant = 'primary', disabled, loading,
     <AnimatedPressable
       onPress={onPress}
       disabled={disabled || loading}
-      onPressIn={() => (scale.value = withSpring(0.97, { damping: 18, stiffness: 400 }))}
+      onPressIn={() => (scale.value = withSpring(0.98, { damping: 18, stiffness: 400 }))}
       onPressOut={() => (scale.value = withSpring(1, { damping: 14, stiffness: 300 }))}
       style={[
         styles.base,
@@ -52,18 +52,22 @@ export function Button({ title, onPress, variant = 'primary', disabled, loading,
 
 const styles = StyleSheet.create({
   base: {
-    height: 56,
-    borderRadius: radius.md,
+    height: 52,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: spacing.lg,
+    borderRadius: radius.button,
   },
   primary: { backgroundColor: colors.accent },
   secondary: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
+    backgroundColor: 'transparent',
+    borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.hairlineBright,
   },
   ghost: { backgroundColor: 'transparent' },
-  label: { fontSize: 16, fontFamily: fonts.display },
+  label: {
+    fontSize: 14,
+    fontFamily: fonts.displayMedium,
+    letterSpacing: 0.3,
+  },
 });

@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const APP_URL = process.env.APP_URL ?? 'https://proteinlens.vercel.app';
+const APP_URL = process.env.APP_URL ?? 'https://proteinquest.vercel.app';
 
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 390, height: 844 } });

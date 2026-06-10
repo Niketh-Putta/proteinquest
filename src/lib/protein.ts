@@ -43,39 +43,39 @@ export function calculateProteinGoal(params: {
 
   let gPerKg = ACTIVITY_G_PER_KG[activityLevel];
   reasoning.push(
-    `${gPerKg.toFixed(1)} g/kg baseline \u2014 ${ACTIVITY_LABELS[activityLevel].why}`,
+    `${gPerKg.toFixed(1)} g/kg baseline - ${ACTIVITY_LABELS[activityLevel].why}`,
   );
 
   const goalDelta = GOAL_DELTA_G_PER_KG[goalType];
   if (goalDelta !== 0) {
     gPerKg += goalDelta;
     reasoning.push(
-      `+${goalDelta.toFixed(1)} g/kg \u2014 ${GOAL_LABELS[goalType].why}`,
+      `+${goalDelta.toFixed(1)} g/kg - ${GOAL_LABELS[goalType].why}`,
     );
   }
 
   if (age >= 50) {
     gPerKg += SENIOR_BONUS_G_PER_KG;
     reasoning.push(
-      `+${SENIOR_BONUS_G_PER_KG.toFixed(1)} g/kg \u2014 at ${age}, muscle responds less to protein (anabolic resistance), so you need more`,
+      `+${SENIOR_BONUS_G_PER_KG.toFixed(1)} g/kg - at ${age}, muscle responds less to protein (anabolic resistance), so you need more`,
     );
     if (gPerKg < SENIOR_MIN_G_PER_KG) gPerKg = SENIOR_MIN_G_PER_KG;
   }
 
   if (sex === 'female') {
     gPerKg += FEMALE_ADJUST;
-    reasoning.push(`\u22120.05 g/kg \u2014 adjusted for average body composition`);
+    reasoning.push(`\u22120.05 g/kg - adjusted for average body composition`);
   }
 
   if (gPerKg > MAX_G_PER_KG) {
     gPerKg = MAX_G_PER_KG;
-    reasoning.push(`capped at ${MAX_G_PER_KG.toFixed(1)} g/kg \u2014 no benefit shown beyond this`);
+    reasoning.push(`capped at ${MAX_G_PER_KG.toFixed(1)} g/kg - no benefit shown beyond this`);
   }
 
   let grams = Math.round(weightKg * gPerKg);
   if (grams > MAX_GRAMS) {
     grams = MAX_GRAMS;
-    reasoning.push(`capped at ${MAX_GRAMS}g/day \u2014 practical upper limit`);
+    reasoning.push(`capped at ${MAX_GRAMS}g/day - practical upper limit`);
   }
   if (grams < MIN_GRAMS) grams = MIN_GRAMS;
 

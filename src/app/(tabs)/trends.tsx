@@ -1,175 +1,331 @@
 import { useFocusEffect } from 'expo-router';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import Animated, { FadeInDown } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { PageCanvas } from '@/components/PageCanvas';
 import { fetchDailyTotals } from '@/lib/api';
-import { activeProgress, effectiveStreak } from '@/lib/character';
+import { displayProgress, effectiveStreak } from '@/lib/character';
 import { useLayout } from '@/lib/layout';
 import { todayISODate } from '@/lib/protein';
 import { useSession } from '@/lib/session';
-import { colors, fonts, radius, spacing, type } from '@/theme';
+import { colors, fonts, spacing } from '@/theme';
 
-const DAYS = 7;
+const WINDOW = 7;
 
 export default function TrendsScreen() {
   const { profile } = useSession();
-  const { contentWidth, horizontalPad } = useLayout();
+  const { contentMaxWidth, horizontalPad, titleSize, typeScale, isDesktop } = useLayout();
+  const heroNumSize = Math.round(72 * typeScale);
+  const plotHeight = isDesktop ? 200 : 168;
   const [totals, setTotals] = useState<Record<string, number>>({});
 
   useFocusEffect(
     useCallback(() => {
-      fetchDailyTotals(DAYS).then(setTotals).catch(console.error);
+      fetchDailyTotals(WINDOW).then(setTotals).catch(console.error);
     }, []),
   );
 
   const goal = profile?.protein_goal_g ?? 0;
-  const days = Array.from({ length: DAYS }, (_, i) => {
-    const iso = todayISODate(-(DAYS - 1 - i));
-    const d = new Date(iso + 'T12:00:00');
-    return {
-      iso,
-      label: d.toLocaleDateString(undefined, { weekday: 'narrow' }),
-      total: totals[iso] ?? 0,
-    };
-  });
+  const todayISO = todayISODate();
 
-  const maxValue = Math.max(goal, ...days.map((d) => d.total), 1);
+  const days = useMemo(
+    () =>
+      Array.from({ length: WINDOW }, (_, i) => {
+        const iso = todayISODate(-(WINDOW - 1 - i));
+        const d = new Date(iso + 'T12:00:00');
+        return {
+          iso,
+          label: d.toLocaleDateString(undefined, { weekday: 'narrow' }),
+          total: totals[iso] ?? 0,
+        };
+      }),
+    [totals],
+  );
+
+  const activeDays = days.filter((d) => d.total > 0);
+  const activeDayCount = activeDays.length;
+  const weekTotal = days.reduce((s, d) => s + d.total, 0);
+  const avg =
+    activeDayCount > 0 ? Math.round(weekTotal / activeDayCount) : 0;
   const hitDays = days.filter((d) => goal > 0 && d.total >= goal).length;
-  const avg = Math.round(days.reduce((s, d) => s + d.total, 0) / DAYS);
+  const maxValue = Math.max(goal, ...days.map((d) => d.total), 1);
   const streak = profile
-    ? effectiveStreak(activeProgress(profile), todayISODate(), todayISODate(-1))
+    ? effectiveStreak(displayProgress(profile, todayISO), todayISO, todayISODate(-1))
     : 0;
 
-  const stats = [
-    { label: 'DAILY AVG', value: `${avg}g` },
-    { label: 'GOALS HIT', value: `${hitDays}/${DAYS}` },
-    { label: 'STREAK', value: `${streak}d` },
-  ];
+  const avgLabel =
+    activeDayCount === 0
+      ? 'log a meal to start'
+      : activeDayCount === 1
+        ? 'average on your one logged day'
+        : `average across ${activeDayCount} logged days`;
 
   return (
+    <PageCanvas>
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <ScrollView
         contentContainerStyle={[
           styles.scroll,
-          { paddingHorizontal: horizontalPad, width: contentWidth, maxWidth: 428, alignSelf: 'center' },
+          {
+            paddingHorizontal: horizontalPad,
+            maxWidth: contentMaxWidth,
+            width: '100%',
+            alignSelf: 'center',
+          },
         ]}
         showsVerticalScrollIndicator={false}>
-        <Text style={styles.kicker}>LAST 7 DAYS</Text>
-        <Text style={styles.title}>Trends</Text>
-
-        <View style={styles.statsRow}>
-          {stats.map((s, i) => (
-            <Animated.View
-              key={s.label}
-              entering={FadeInDown.delay(i * 90).springify().damping(16)}
-              style={styles.statCard}>
-              <Text style={styles.statValue}>{s.value}</Text>
-              <Text style={styles.statLabel}>{s.label}</Text>
-            </Animated.View>
-          ))}
+        <View style={styles.header}>
+          <Text style={styles.eyebrow}>LAST {WINDOW} DAYS</Text>
+          <Text style={[styles.title, { fontSize: titleSize }]}>Rhythm</Text>
         </View>
 
-        <Animated.View
-          entering={FadeInDown.delay(280).springify().damping(16)}
-          style={styles.chartCard}>
-          <View style={styles.chart}>
+        <View style={styles.heroBlock}>
+          <View style={styles.heroRow}>
+            <Text style={[styles.heroNumber, { fontSize: heroNumSize, lineHeight: heroNumSize }]}>
+              {avg}
+            </Text>
+            <Text style={styles.heroUnit}>g</Text>
+          </View>
+          <Text style={styles.heroCaption}>{avgLabel}</Text>
+          {goal > 0 && activeDayCount > 0 ? (
+            <Text style={styles.heroMeta}>
+              {weekTotal}g total · goal {goal}g · {hitDays} hit
+            </Text>
+          ) : goal > 0 ? (
+            <Text style={styles.heroMeta}>goal {goal}g per day</Text>
+          ) : null}
+        </View>
+
+        <View style={styles.rule} />
+
+        <View style={styles.chartSection}>
+          <View style={styles.chartHeader}>
+            <Text style={styles.chartTitle}>Daily intake</Text>
             {goal > 0 ? (
-              <View style={[styles.goalLine, { bottom: `${(goal / maxValue) * 78}%` }]} />
+              <Text style={styles.chartGoal}>{goal}g target</Text>
             ) : null}
+          </View>
+
+          <View style={[styles.plot, { height: plotHeight }]}>
+            {goal > 0 ? (
+              <View
+                style={[
+                  styles.targetLine,
+                  { bottom: `${Math.min(100, (goal / maxValue) * 100)}%` },
+                ]}
+              />
+            ) : null}
+
             {days.map((d, i) => {
               const hit = goal > 0 && d.total >= goal;
-              const isToday = i === DAYS - 1;
+              const isToday = i === WINDOW - 1;
+              const hasData = d.total > 0;
+              const barH = hasData
+                ? Math.max(4, (d.total / maxValue) * 100)
+                : 0;
+
               return (
-                <View key={d.iso} style={styles.barCol}>
-                  <Text style={styles.barValue}>{d.total > 0 ? Math.round(d.total) : ''}</Text>
-                  <View style={styles.barTrack}>
-                    <View
-                      style={[
-                        styles.bar,
-                        {
-                          height: `${Math.min((d.total / maxValue) * 100, 100)}%`,
-                          backgroundColor: hit ? colors.accent : colors.surface2,
-                          borderWidth: hit ? 0 : 1,
-                          borderColor: colors.hairlineBright,
-                        },
-                      ]}
-                    />
+                <View key={d.iso} style={styles.plotCol}>
+                  <Text style={styles.plotGrams}>
+                    {hasData ? Math.round(d.total) : '·'}
+                  </Text>
+                  <View style={styles.plotTrack}>
+                    {hasData ? (
+                      <View
+                        style={[
+                          styles.plotBar,
+                          {
+                            height: `${barH}%`,
+                            backgroundColor: hit ? colors.accent : colors.text,
+                            opacity: hit ? 1 : 0.55,
+                          },
+                        ]}
+                      />
+                    ) : (
+                      <View style={styles.plotDot} />
+                    )}
                   </View>
-                  <Text style={[styles.barLabel, isToday && { color: colors.accent }]}>
+                  <Text style={[styles.plotDay, isToday && styles.plotDayToday]}>
                     {d.label}
                   </Text>
                 </View>
               );
             })}
           </View>
-          {goal > 0 ? (
-            <Text style={styles.goalNote}>
-              daily goal {'\u00B7'} <Text style={{ color: colors.accent }}>{goal}g</Text>
+        </View>
+
+        <View style={styles.rule} />
+
+        <View style={styles.metricsRow}>
+          <View style={styles.metric}>
+            <Text style={styles.metricValue}>{streak}</Text>
+            <Text style={styles.metricLabel}>day streak</Text>
+          </View>
+          <View style={styles.metricDivider} />
+          <View style={styles.metric}>
+            <Text style={styles.metricValue}>
+              {activeDayCount}/{WINDOW}
             </Text>
-          ) : null}
-        </Animated.View>
+            <Text style={styles.metricLabel}>days logged</Text>
+          </View>
+          <View style={styles.metricDivider} />
+          <View style={styles.metric}>
+            <Text style={styles.metricValue}>{weekTotal}g</Text>
+            <Text style={styles.metricLabel}>this week</Text>
+          </View>
+        </View>
       </ScrollView>
     </SafeAreaView>
+    </PageCanvas>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
-  scroll: { padding: spacing.lg },
-  kicker: { ...type.label, color: colors.accent },
-  title: { fontFamily: fonts.displayHeavy, fontSize: 30, color: colors.text, marginTop: 2, marginBottom: spacing.lg },
-  statsRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.sm },
-  statCard: {
-    flex: 1,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-    borderRadius: radius.md,
-    paddingVertical: spacing.md,
-    alignItems: 'center',
+  scroll: { paddingTop: spacing.lg, paddingBottom: 120 },
+  header: { marginBottom: spacing.xl },
+  eyebrow: {
+    fontFamily: fonts.mono,
+    fontSize: 10,
+    letterSpacing: 3,
+    color: colors.textTertiary,
+    marginBottom: 6,
   },
-  statValue: {
-    fontFamily: fonts.display,
-    fontSize: 21,
-    color: colors.accent,
+  title: {
+    fontFamily: fonts.displayHeavy,
+    fontSize: 38,
+    color: colors.text,
+    letterSpacing: -1.2,
+  },
+  heroBlock: { marginBottom: spacing.lg },
+  heroRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 4 },
+  heroNumber: {
+    fontFamily: fonts.displayHeavy,
+    fontSize: 72,
+    lineHeight: 72,
+    color: colors.text,
+    letterSpacing: -3,
     fontVariant: ['tabular-nums'],
   },
-  statLabel: { fontFamily: fonts.mono, fontSize: 9, letterSpacing: 1.2, color: colors.textTertiary, marginTop: 4 },
-  chartCard: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-    borderRadius: radius.lg,
-    padding: spacing.md,
+  heroUnit: {
+    fontFamily: fonts.display,
+    fontSize: 28,
+    color: colors.textTertiary,
+    marginBottom: 10,
   },
-  chart: { flexDirection: 'row', height: 230, gap: spacing.sm, alignItems: 'flex-end' },
-  goalLine: {
+  heroCaption: {
+    fontFamily: fonts.body,
+    fontSize: 15,
+    color: colors.textSecondary,
+    marginTop: 4,
+  },
+  heroMeta: {
+    fontFamily: fonts.mono,
+    fontSize: 11,
+    color: colors.textTertiary,
+    marginTop: 10,
+    letterSpacing: 0.3,
+  },
+  rule: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.hairlineBright,
+    marginVertical: spacing.lg,
+  },
+  chartSection: { gap: spacing.md },
+  chartHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+  },
+  chartTitle: {
+    fontFamily: fonts.displayMedium,
+    fontSize: 15,
+    color: colors.text,
+  },
+  chartGoal: {
+    fontFamily: fonts.mono,
+    fontSize: 10,
+    letterSpacing: 1,
+    color: colors.accent,
+  },
+  plot: {
+    flexDirection: 'row',
+    height: 168,
+    alignItems: 'flex-end',
+    gap: 4,
+    position: 'relative',
+    paddingTop: 20,
+  },
+  targetLine: {
     position: 'absolute',
     left: 0,
     right: 0,
-    height: 1,
-    backgroundColor: colors.accentDeep,
-    opacity: 0.7,
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.accent,
+    opacity: 0.35,
   },
-  barCol: { flex: 1, alignItems: 'center', height: '100%' },
-  barValue: {
+  plotCol: {
+    flex: 1,
+    alignItems: 'center',
+    height: '100%',
+  },
+  plotGrams: {
     fontFamily: fonts.mono,
     fontSize: 10,
-    color: colors.textSecondary,
-    height: 16,
+    color: colors.textTertiary,
+    height: 14,
     fontVariant: ['tabular-nums'],
   },
-  barTrack: { flex: 1, width: '100%', justifyContent: 'flex-end' },
-  bar: { width: '100%', borderRadius: 9, minHeight: 4 },
-  barLabel: { fontFamily: fonts.mono, fontSize: 11, color: colors.textTertiary, marginTop: spacing.sm },
-  goalNote: {
+  plotTrack: {
+    flex: 1,
+    width: '100%',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+  },
+  plotBar: {
+    width: 3,
+    minHeight: 4,
+  },
+  plotDot: {
+    width: 2,
+    height: 2,
+    backgroundColor: colors.hairlineBright,
+    marginBottom: 2,
+  },
+  plotDay: {
     fontFamily: fonts.mono,
-    fontSize: 11,
-    color: colors.textSecondary,
-    marginTop: spacing.md,
-    textAlign: 'center',
-    letterSpacing: 0.6,
+    fontSize: 10,
+    color: colors.textTertiary,
+    marginTop: 10,
+    letterSpacing: 0.5,
+  },
+  plotDayToday: {
+    color: colors.accent,
+    fontFamily: fonts.monoBold,
+  },
+  metricsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+  },
+  metric: { flex: 1, alignItems: 'center', gap: 4 },
+  metricValue: {
+    fontFamily: fonts.display,
+    fontSize: 20,
+    color: colors.text,
+    fontVariant: ['tabular-nums'],
+  },
+  metricLabel: {
+    fontFamily: fonts.mono,
+    fontSize: 9,
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    color: colors.textTertiary,
+  },
+  metricDivider: {
+    width: StyleSheet.hairlineWidth,
+    height: 32,
+    backgroundColor: colors.hairline,
   },
 });

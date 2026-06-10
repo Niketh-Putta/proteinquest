@@ -1,27 +1,30 @@
 import { Platform } from 'react-native';
 
-// "Obsidian instrument" — warm near-black, one lime signal color,
-// hairline borders, oversized numerals. The gram count is the hero.
+// "Ember dusk" - deep charcoal, warm coral signal, violet undertones.
+// Premium Locked-meets-CalAI; no lime green.
 export const colors = {
-  bg: '#0B0B0D',
-  bgRaised: '#101013',
-  surface: '#141417',
-  surface2: '#1B1B20',
-  hairline: '#232329',
-  hairlineBright: '#2E2E36',
-  text: '#F4F4F0',
-  textSecondary: '#A0A0AA',
-  textTertiary: '#5E5E68',
-  accent: '#C8F052',
-  accentPressed: '#A8D62E',
-  accentDeep: '#5E7522',
-  accentGlow: 'rgba(200, 240, 82, 0.16)',
-  accentSurface: '#15170D',
-  onAccent: '#0C0E05',
-  danger: '#FF7A6B',
+  bg: '#0C0B10',
+  bgRaised: '#12111A',
+  surface: '#18171F',
+  surface2: '#201F28',
+  surfaceElevated: '#24232D',
+  hairline: '#2A2835',
+  hairlineBright: '#36344A',
+  text: '#F6F4F8',
+  textSecondary: '#A8A3B8',
+  textTertiary: '#6B6578',
+  accent: '#FF7A59',
+  accentLight: '#FF9B82',
+  accentPressed: '#E85F42',
+  accentDeep: '#C44E35',
+  accentGlow: 'rgba(255, 122, 89, 0.22)',
+  accentSurface: '#1F1512',
+  accentSecondary: '#9B8CFF',
+  onAccent: '#FFF9F7',
+  danger: '#FF6B7A',
   warning: '#FFB454',
-  flame: '#FF9F45',
-  ringTrack: '#1C1C21',
+  flame: '#FF9F5A',
+  ringTrack: '#22202C',
 } as const;
 
 export const spacing = {
@@ -33,15 +36,18 @@ export const spacing = {
   xxl: 48,
 } as const;
 
+/** Intentional variation - tighter chips, softer character frames, native buttons. */
 export const radius = {
+  chip: 8,
+  button: 14,
   sm: 12,
   md: 18,
+  character: 28,
   lg: 26,
   xl: 34,
   full: 999,
 } as const;
 
-// Sora: geometric, confident display face. JetBrains Mono: instrument labels.
 export const fonts = {
   display: 'Sora_700Bold',
   displayHeavy: 'Sora_800ExtraBold',
@@ -69,8 +75,16 @@ export const type = {
 
 export const shadowAccent = {
   shadowColor: colors.accent,
-  shadowOpacity: 0.35,
-  shadowRadius: 24,
+  shadowOpacity: 0.32,
+  shadowRadius: 22,
   shadowOffset: { width: 0, height: 6 },
   elevation: 12,
+} as const;
+
+export const shadowCard = {
+  shadowColor: '#000',
+  shadowOpacity: 0.35,
+  shadowRadius: 16,
+  shadowOffset: { width: 0, height: 4 },
+  elevation: 8,
 } as const;

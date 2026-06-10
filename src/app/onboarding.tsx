@@ -15,16 +15,18 @@ import { Button } from '@/components/Button';
 import { DragonPicker } from '@/components/DragonPicker';
 import { GoalEditor } from '@/components/GoalEditor';
 import { emptyDragonProgress } from '@/lib/character';
-import { useLayout } from '@/lib/layout';
+import { useLayout, usePinnedFooterGap } from '@/lib/layout';
 import { useSession } from '@/lib/session';
 import type { DragonId, Profile } from '@/lib/types';
-import { colors, fonts, spacing, type } from '@/theme';
+import { colors, fonts, spacing } from '@/theme';
 
 type Step = 'dragon' | 'goal';
 
 export default function Onboarding() {
   const { saveProfile } = useSession();
-  const { contentWidth, horizontalPad, isNarrow } = useLayout();
+  const { horizontalPad, contentMaxWidth, isNarrow, width, height } = useLayout();
+  const isCompact = height < 700 || width < 390;
+  const footerGap = usePinnedFooterGap(isCompact);
   const [step, setStep] = useState<Step>('dragon');
   const [dragonId, setDragonId] = useState<DragonId | null>(null);
   const [saving, setSaving] = useState(false);
@@ -61,57 +63,76 @@ export default function Onboarding() {
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <KeyboardAvoidingView
-        style={{ flex: 1, alignItems: 'center' }}
+        style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView
+          style={styles.flex}
           contentContainerStyle={[
             styles.scroll,
-            { paddingHorizontal: horizontalPad, width: contentWidth, maxWidth: 428, alignSelf: 'center' },
+            {
+              paddingHorizontal: horizontalPad,
+              maxWidth: contentMaxWidth,
+              width: '100%',
+              alignSelf: 'center',
+              paddingBottom: footerGap,
+            },
           ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}>
-          {step === 'dragon' ? (
-            <Animated.View entering={FadeInDown.springify().damping(16)}>
-              <DragonPicker value={dragonId} onChange={setDragonId} />
-              {error ? <Text style={styles.error}>{error}</Text> : null}
-              <Button
-                title="Continue"
-                onPress={() => {
-                  if (!dragonId) {
-                    setError('Choose a dragon to continue.');
-                    return;
-                  }
-                  setError(null);
-                  setStep('goal');
-                }}
-                disabled={!dragonId}
-                style={{ marginTop: spacing.lg }}
-              />
-            </Animated.View>
-          ) : (
-            <Animated.View entering={FadeInDown.springify().damping(16)}>
-              <Text style={styles.kicker}>STEP 2 OF 2</Text>
-              <Text style={[styles.title, isNarrow && { fontSize: 32, lineHeight: 38 }]}>
-                Your protein target.
-              </Text>
-              <Text style={styles.subtitle}>
-                Feed {dragonId} every day by hitting this number.
-              </Text>
-              {error ? <Text style={styles.error}>{error}</Text> : null}
-              <GoalEditor
-                profile={null}
-                submitLabel="Start tracking"
-                saving={saving}
-                onSubmit={handleSubmit}
-              />
-              <Button
-                title="Back"
-                variant="ghost"
-                onPress={() => setStep('dragon')}
-                style={{ marginTop: spacing.sm }}
-              />
-            </Animated.View>
-          )}
+          <View style={styles.content}>
+            {step === 'dragon' ? (
+              <Animated.View entering={FadeInDown.springify().damping(16)}>
+                <DragonPicker value={dragonId} onChange={setDragonId} />
+                {error ? <Text style={styles.error}>{error}</Text> : null}
+                <Button
+                  title="Continue"
+                  onPress={() => {
+                    if (!dragonId) {
+                      setError('Choose a dragon to continue.');
+                      return;
+                    }
+                    setError(null);
+                    setStep('goal');
+                  }}
+                  disabled={!dragonId}
+                  style={{ marginTop: spacing.xl }}
+                />
+              </Animated.View>
+            ) : (
+              <Animated.View entering={FadeInDown.springify().damping(16)}>
+                <Text style={[styles.kicker, isCompact && styles.kickerCompact]}>
+                  REACH YOUR POTENTIAL
+                </Text>
+                <Text style={[styles.step, isCompact && styles.stepCompact]}>
+                  STEP 2 · YOUR DAILY TARGET
+                </Text>
+                <Text
+                  style={[
+                    styles.title,
+                    isNarrow && styles.titleNarrow,
+                    isCompact && styles.titleCompact,
+                  ]}>
+                  Set your protein goal
+                </Text>
+                <Text style={[styles.subtitle, isCompact && styles.subtitleCompact]}>
+                  Hit it every day to feed your dragon and unlock evolutions. Small wins compound.
+                </Text>
+                {error ? <Text style={styles.error}>{error}</Text> : null}
+                <GoalEditor
+                  profile={null}
+                  submitLabel="Start tracking"
+                  saving={saving}
+                  onSubmit={handleSubmit}
+                />
+                <Button
+                  title="Back"
+                  variant="ghost"
+                  onPress={() => setStep('dragon')}
+                  style={{ marginTop: spacing.sm }}
+                />
+              </Animated.View>
+            )}
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -120,15 +141,42 @@ export default function Onboarding() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
-  scroll: { paddingBottom: spacing.xxl, paddingTop: spacing.md },
-  kicker: { ...type.label, color: colors.accent },
-  title: {
-    fontFamily: fonts.displayHeavy,
-    fontSize: 36,
-    lineHeight: 42,
-    color: colors.text,
+  flex: { flex: 1, width: '100%' },
+  scroll: { paddingTop: spacing.lg },
+  content: { width: '100%', maxWidth: '100%', minWidth: 0 },
+  kicker: {
+    fontFamily: fonts.mono,
+    fontSize: 9,
+    letterSpacing: 3.5,
+    color: colors.accentSecondary,
+  },
+  kickerCompact: { letterSpacing: 2.5, fontSize: 8 },
+  step: {
+    fontFamily: fonts.mono,
+    fontSize: 10,
+    letterSpacing: 2,
+    color: colors.accent,
     marginTop: spacing.sm,
   },
-  subtitle: { ...type.body, marginTop: spacing.sm, marginBottom: spacing.md },
+  stepCompact: { letterSpacing: 1.2, fontSize: 9 },
+  title: {
+    fontFamily: fonts.displayHeavy,
+    fontSize: 34,
+    lineHeight: 40,
+    color: colors.text,
+    letterSpacing: -1,
+    marginTop: spacing.sm,
+  },
+  titleNarrow: { fontSize: 28, lineHeight: 34, letterSpacing: -0.5 },
+  titleCompact: { fontSize: 26, lineHeight: 32 },
+  subtitle: {
+    fontFamily: fonts.body,
+    fontSize: 14,
+    lineHeight: 21,
+    color: colors.textSecondary,
+    marginTop: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  subtitleCompact: { fontSize: 13, lineHeight: 20 },
   error: { fontFamily: fonts.body, fontSize: 13, color: colors.danger, marginTop: spacing.md },
 });

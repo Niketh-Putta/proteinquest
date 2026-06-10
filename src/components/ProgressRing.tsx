@@ -7,7 +7,7 @@ import Animated, {
   withDelay,
   withTiming,
 } from 'react-native-reanimated';
-import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
+import Svg, { Circle } from 'react-native-svg';
 
 import { colors, fonts } from '@/theme';
 
@@ -20,8 +20,8 @@ interface Props {
 }
 
 export function ProgressRing({ consumed, goal, size = 264 }: Props) {
-  const strokeWidth = 14;
-  const r = (size - strokeWidth) / 2;
+  const strokeWidth = 2;
+  const r = (size - strokeWidth * 2) / 2;
   const circumference = 2 * Math.PI * r;
   const pct = goal > 0 ? Math.min(consumed / goal, 1) : 0;
   const progress = useSharedValue(0);
@@ -43,30 +43,12 @@ export function ProgressRing({ consumed, goal, size = 264 }: Props) {
 
   return (
     <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
-      {/* soft glow disc behind the ring */}
-      <View
-        style={[
-          styles.glow,
-          {
-            width: size * 0.92,
-            height: size * 0.92,
-            borderRadius: size,
-            opacity: hitGoal ? 0.5 : 0.22,
-          },
-        ]}
-      />
       <Svg width={size} height={size} style={StyleSheet.absoluteFill}>
-        <Defs>
-          <LinearGradient id="ringGrad" x1="0" y1="0" x2="1" y2="1">
-            <Stop offset="0" stopColor={colors.accent} />
-            <Stop offset="1" stopColor="#8FD13A" />
-          </LinearGradient>
-        </Defs>
         <Circle
           cx={size / 2}
           cy={size / 2}
           r={r}
-          stroke={colors.ringTrack}
+          stroke={colors.hairline}
           strokeWidth={strokeWidth}
           fill="none"
         />
@@ -74,9 +56,9 @@ export function ProgressRing({ consumed, goal, size = 264 }: Props) {
           cx={size / 2}
           cy={size / 2}
           r={r}
-          stroke="url(#ringGrad)"
+          stroke={hitGoal ? colors.accent : colors.text}
           strokeWidth={strokeWidth}
-          strokeLinecap="round"
+          strokeLinecap="butt"
           fill="none"
           strokeDasharray={circumference}
           animatedProps={animatedProps}
@@ -84,49 +66,47 @@ export function ProgressRing({ consumed, goal, size = 264 }: Props) {
         />
       </Svg>
       <Text style={[styles.label, { fontSize: 10 * scale }]}>PROTEIN TODAY</Text>
-      <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
-        <Text style={[styles.consumed, { fontSize: 76 * scale, lineHeight: 80 * scale }]}>
+      <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 2 }}>
+        <Text style={[styles.consumed, { fontSize: 72 * scale, lineHeight: 72 * scale }]}>
           {Math.round(consumed)}
         </Text>
-        <Text style={[styles.unit, { fontSize: 30 * scale }]}>g</Text>
+        <Text style={[styles.unit, { fontSize: 24 * scale, marginBottom: 10 * scale }]}>g</Text>
       </View>
-      <Text style={[styles.goalLine, { fontSize: 12 * scale }]}>
-        {hitGoal ? 'goal complete' : `${Math.round(remaining)}g to ${goal}g`}
+      <Text style={[styles.goalLine, { fontSize: 11 * scale }]}>
+        {hitGoal
+          ? 'goal complete'
+          : goal > 0
+            ? consumed === 0
+              ? `0 of ${goal}g`
+              : `${Math.round(remaining)}g remaining`
+            : 'set your goal'}
       </Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  glow: {
-    position: 'absolute',
-    backgroundColor: colors.accentGlow,
-  },
   label: {
     fontFamily: fonts.mono,
     fontSize: 10,
-    letterSpacing: 2,
+    letterSpacing: 3,
     color: colors.textTertiary,
-    marginBottom: 2,
+    marginBottom: 4,
   },
   consumed: {
-    fontSize: 76,
-    lineHeight: 80,
     fontFamily: fonts.displayHeavy,
     color: colors.text,
     fontVariant: ['tabular-nums'],
+    letterSpacing: -3,
   },
   unit: {
-    fontSize: 30,
     fontFamily: fonts.display,
-    color: colors.accent,
-    marginLeft: 2,
+    color: colors.textTertiary,
   },
   goalLine: {
     fontFamily: fonts.mono,
-    fontSize: 12,
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
     color: colors.textSecondary,
-    marginTop: 6,
+    marginTop: 8,
   },
 });

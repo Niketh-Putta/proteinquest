@@ -1,12 +1,12 @@
-# ProteinLens
+# ProteinQuest
 
 Snap a photo of your food. AI counts the protein. Hit your daily goal.
 
 CalAI-style food tracking, ruthlessly focused on one number: **grams of protein**.
 
-**Live web version: https://proteinlens.vercel.app**
+**Live web version: https://proteinquest.vercel.app**
 
-Demo video: `demo/proteinlens-demo.mp4`
+Demo video: `demo/proteinquest-demo.mp4`
 
 ## Test it on your phone (Expo Go)
 
@@ -30,7 +30,7 @@ That's it — full app with the real camera flow.
 npx expo start --web        # local
 ```
 
-or just open https://proteinlens.vercel.app (deployed). Web has a full in-app
+or just open https://proteinquest.vercel.app (deployed). Web has a full in-app
 camera viewfinder (getUserMedia) plus a library upload button.
 
 ## How it works
@@ -60,19 +60,16 @@ node demo/test-analyze.mjs       # verify real analysis
 node demo/test-accuracy.mjs      # 7 diverse food/non-food images
 ```
 
-## Google Sign-In
+## Auth
 
-Use **Continue with Google** on onboarding or settings. Requires one-time setup
-in Supabase Auth + Google Cloud Console — see `SHIP.md`.
-
-No redeploy needed — the function picks up the new secret immediately.
+Anonymous Supabase session only — no sign-in UI. Sessions are created automatically on first open; see `SHIP.md`.
 
 ## Stack
 
 | Layer | Tech |
 |---|---|
 | App | React Native + Expo (SDK 56), expo-router, TypeScript |
-| Web deploy | Vercel (static export), https://proteinlens.vercel.app |
+| Web deploy | Vercel (static export), https://proteinquest.vercel.app |
 | Backend | Supabase `csxdkvpvcasuknhnprxp` (Postgres + RLS, anonymous auth, Storage, Edge Functions) |
 | AI | OpenAI vision (`gpt-4o-mini`) via the `analyze-food` Edge Function — key stays server-side |
 
@@ -93,7 +90,7 @@ supabase/
     analyze-food/   OpenAI vision call + demo fallback
 demo/
   record-demo.mjs   Playwright walkthrough recorder
-  proteinlens-demo.mp4  the demo video
+  proteinquest-demo.mp4  the demo video
 ```
 
 ## Useful commands

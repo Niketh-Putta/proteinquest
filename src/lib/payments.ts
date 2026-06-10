@@ -21,16 +21,16 @@ export interface PaymentProvider {
 
 export const PLANS: PaymentPlan[] = [
   {
-    id: 'pro_monthly',
-    title: 'Monthly',
-    price: '\u00A33.99/mo',
-    caption: 'Cancel anytime',
+    id: 'pro_weekly',
+    title: 'Weekly',
+    price: '\u00A36.99/wk',
+    caption: 'Flexible - cancel anytime',
   },
   {
     id: 'pro_yearly',
     title: 'Yearly',
     price: '\u00A329.99/yr',
-    caption: '2 months free',
+    caption: 'Save 92% vs weekly',
   },
 ];
 
@@ -44,14 +44,14 @@ const stripeProvider: PaymentProvider = {
     const origin =
       Platform.OS === 'web' && typeof window !== 'undefined'
         ? window.location.origin
-        : 'https://proteinlens.vercel.app';
+        : 'https://proteinquest.vercel.app';
     const { data, error } = await supabase.functions.invoke('create-checkout', {
       body: {
         plan_id: planId,
         user_id: opts?.userId,
         customer_email: opts?.email,
         success_url: `${origin}/?checkout=success`,
-        cancel_url: `${origin}/paywall`,
+        cancel_url: `${origin}/`,
       },
     });
     if (error || data?.error) {
@@ -78,5 +78,3 @@ export function getPaymentProvider(): PaymentProvider {
   if (stripeEnabled) return stripeProvider;
   return stubProvider;
 }
-
-export const FREE_DAILY_SCANS = 3;

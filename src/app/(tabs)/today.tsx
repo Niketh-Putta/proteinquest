@@ -2,8 +2,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import React, { useCallback, useState } from 'react';
 import {
-  Alert,
   FlatList,
+  Platform,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -14,19 +14,32 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CharacterCard } from '@/components/CharacterCard';
+import { DailyDragonPicker } from '@/components/DailyDragonPicker';
+import { PageCanvas } from '@/components/PageCanvas';
 import { ProgressRing } from '@/components/ProgressRing';
 import { deleteLog, fetchLogsForDate } from '@/lib/api';
+import { applyDeleteLogToCharacter, dragonById, isDailyDragonLockedForToday } from '@/lib/character';
+import { confirmDestructive } from '@/lib/confirm';
 import { useLayout } from '@/lib/layout';
 import { todayISODate } from '@/lib/protein';
 import { useSession } from '@/lib/session';
 import type { ProteinLog } from '@/lib/types';
-import { colors, fonts, radius, spacing, type } from '@/theme';
+import { colors, fonts, spacing } from '@/theme';
 
 export default function TodayScreen() {
-  const { profile } = useSession();
-  const { ringSize, horizontalPad, contentWidth, isNarrow } = useLayout();
+  const {
+    ringSize,
+    horizontalPad,
+    contentMaxWidth,
+    heroLayout,
+    columnGap,
+    asideWidth,
+    titleSize,
+  } = useLayout();
+  const { profile, saveProfile } = useSession();
   const [logs, setLogs] = useState<ProteinLog[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -44,189 +57,374 @@ export default function TodayScreen() {
 
   const consumed = logs.reduce((sum, l) => sum + Number(l.protein_g), 0);
   const goal = profile?.protein_goal_g ?? 0;
+  const hitGoal = goal > 0 && consumed >= goal;
+  const showDragonInHero = heroLayout !== 'sidebar';
+  const todayISO = todayISODate();
+  const dragonLocked = profile ? isDailyDragonLockedForToday(profile, todayISO) : false;
+  const todayDragon = profile && dragonLocked ? dragonById(profile.daily_dragon_id!) : null;
 
-  function confirmDelete(log: ProteinLog) {
-    Alert.alert(
-      'Delete entry?',
-      `Remove "${log.food_name}" (${Math.round(Number(log.protein_g))}g)?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            await deleteLog(log.id);
-            load();
-          },
-        },
-      ],
+  if (profile && !dragonLocked) {
+    return (
+      <PageCanvas>
+        <SafeAreaView style={styles.safe} edges={['top']}>
+          <View
+            style={{
+              flex: 1,
+              paddingHorizontal: horizontalPad,
+              maxWidth: contentMaxWidth,
+              width: '100%',
+              alignSelf: 'center',
+            }}>
+            <DailyDragonPicker />
+          </View>
+        </SafeAreaView>
+      </PageCanvas>
     );
+  }
+
+  async function confirmDelete(log: ProteinLog) {
+    const ok = await confirmDestructive(
+      "Didn't eat this?",
+      `Remove "${log.food_name}" (${Math.round(Number(log.protein_g))}g protein) from today's log.`,
+    );
+    if (ok) await handleDelete(log);
+  }
+
+  async function handleDelete(log: ProteinLog) {
+    if (deletingId) return;
+    const previousLogs = logs;
+    const remainingLogs = logs.filter((l) => l.id !== log.id);
+    const todayTotalAfter = remainingLogs.reduce((s, l) => s + Number(l.protein_g), 0);
+
+    setDeletingId(log.id);
+    setLogs(remainingLogs);
+
+    try {
+      await deleteLog(log.id);
+      if (profile) {
+        const updates = applyDeleteLogToCharacter({
+          profile,
+          deletedProteinG: Number(log.protein_g),
+          todayTotalAfterDelete: todayTotalAfter,
+          todayISO: todayISODate(),
+        });
+        await saveProfile(updates);
+      }
+    } catch (e) {
+      console.error('Failed to delete log:', e);
+      setLogs(previousLogs);
+      if (Platform.OS === 'web') {
+        window.alert('Could not delete. Please try again.');
+      }
+    } finally {
+      setDeletingId(null);
+    }
   }
 
   const dateLabel = new Date()
     .toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })
     .toUpperCase();
 
-  return (
-    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-      <FlatList
-        data={logs}
-        keyExtractor={(l) => l.id}
-        contentContainerStyle={[
-          styles.list,
-          { paddingHorizontal: horizontalPad, width: contentWidth, maxWidth: 428, alignSelf: 'center' },
-        ]}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            tintColor={colors.accent}
-            onRefresh={async () => {
-              setRefreshing(true);
-              await load();
-              setRefreshing(false);
-            }}
-          />
-        }
-        ListHeaderComponent={
-          <View>
-            <View style={styles.header}>
-              <View>
-                <Text style={styles.date}>{dateLabel}</Text>
-                <Text style={[styles.wordmark, isNarrow && { fontSize: 22 }]}>
-                  Protein<Text style={{ color: colors.accent }}>Lens</Text>
-                </Text>
-              </View>
-              <Pressable
-                onPress={() => router.push('/settings')}
-                hitSlop={10}
-                style={styles.gearBtn}>
-                <Ionicons name="options-outline" size={20} color={colors.textSecondary} />
-              </Pressable>
-            </View>
-
-            <View style={styles.ringWrap}>
-              <ProgressRing consumed={consumed} goal={goal} size={ringSize} />
-            </View>
-
-            {profile ? (
-              <Animated.View entering={FadeInDown.delay(150).springify().damping(16)}>
-                <CharacterCard profile={profile} />
-              </Animated.View>
-            ) : null}
-
-            {logs.length > 0 ? <Text style={styles.sectionTitle}>LOGGED TODAY</Text> : null}
+  function renderHeader() {
+    return (
+      <View>
+        <View style={styles.header}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.eyebrow}>{dateLabel}</Text>
+            <Text style={[styles.title, { fontSize: titleSize }]}>Today</Text>
           </View>
-        }
-        ListEmptyComponent={
-          <Animated.View entering={FadeInDown.delay(280)} style={styles.empty}>
-            <View style={styles.emptyIcon}>
-              <Ionicons name="scan-outline" size={26} color={colors.accent} />
-            </View>
-            <Text style={styles.emptyTitle}>No meals logged yet</Text>
-            <Text style={styles.emptyText}>
-              Tap scan, photograph your meal, and feed your dragon every time you
-              hit your protein goal.
+          <Pressable
+            onPress={() => router.push('/settings')}
+            hitSlop={12}
+            style={styles.gearBtn}>
+            <Ionicons name="options-outline" size={20} color={colors.textSecondary} />
+          </Pressable>
+        </View>
+
+        {todayDragon ? (
+          <View style={[styles.dailyBanner, { borderColor: todayDragon.accent }]}>
+            <Ionicons name="lock-closed" size={12} color={todayDragon.accent} />
+            <Text style={[styles.dailyBannerText, { color: todayDragon.accent }]}>
+              Growing {todayDragon.name} today
             </Text>
-          </Animated.View>
-        }
-        renderItem={({ item, index }) => (
-          <Animated.View entering={FadeInDown.delay(80 * Math.min(index, 5)).springify().damping(16)}>
-            <Pressable onLongPress={() => confirmDelete(item)} style={styles.logRow}>
-              <View style={styles.logDot} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.logName} numberOfLines={1}>
-                  {item.food_name}
-                </Text>
-                <Text style={styles.logTime}>
-                  {new Date(item.created_at).toLocaleTimeString([], {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
-                </Text>
-              </View>
-              <Text style={styles.logProtein}>
-                {Math.round(Number(item.protein_g))}
-                <Text style={styles.logUnit}>g</Text>
-              </Text>
-            </Pressable>
-          </Animated.View>
+          </View>
+        ) : null}
+
+        <View
+          style={[
+            styles.hero,
+            heroLayout === 'split' && { flexDirection: 'row', gap: columnGap, alignItems: 'flex-start' },
+          ]}>
+          <View
+            style={[
+              styles.proteinBlock,
+              heroLayout === 'split' && { flex: 1 },
+            ]}>
+            <ProgressRing consumed={consumed} goal={goal} size={ringSize} />
+            {goal <= 0 ? (
+              <Text style={styles.proteinMeta}>set your goal in settings</Text>
+            ) : hitGoal ? (
+              <Text style={styles.proteinMeta}>goal complete - your dragon is fed</Text>
+            ) : null}
+          </View>
+
+          {profile && showDragonInHero ? (
+            <Animated.View
+              entering={FadeInDown.delay(100).springify().damping(16)}
+              style={heroLayout === 'split' ? { flex: 1 } : undefined}>
+              <CharacterCard profile={profile} dragonLocked />
+            </Animated.View>
+          ) : null}
+        </View>
+
+        <View style={styles.rule} />
+
+        {logs.length > 0 ? (
+          <Text style={styles.sectionTitle}>LOGGED TODAY</Text>
+        ) : (
+          <View style={styles.empty}>
+            <Text style={styles.emptyTitle}>Your dragon is waiting</Text>
+            <Text style={styles.emptyText}>
+              Scan your first meal - every gram of protein brings you closer.
+            </Text>
+          </View>
         )}
+      </View>
+    );
+  }
+
+  const listProps = {
+    data: logs,
+    keyExtractor: (l: ProteinLog) => l.id,
+    showsVerticalScrollIndicator: false as const,
+    refreshControl: (
+      <RefreshControl
+        refreshing={refreshing}
+        tintColor={colors.accent}
+        onRefresh={async () => {
+          setRefreshing(true);
+          await load();
+          setRefreshing(false);
+        }}
       />
-    </SafeAreaView>
+    ),
+    renderItem: ({ item, index }: { item: ProteinLog; index: number }) => (
+      <Animated.View entering={FadeInDown.delay(60 * Math.min(index, 5)).springify().damping(16)}>
+        <View style={[styles.logRow, index > 0 && styles.logRowBorder]}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.logName} numberOfLines={1}>
+              {item.food_name}
+            </Text>
+            <Text style={styles.logTime}>
+              {new Date(item.created_at).toLocaleTimeString([], {
+                hour: '2-digit',
+                minute: '2-digit',
+              })}
+            </Text>
+          </View>
+          <Text style={styles.logProtein}>
+            {Math.round(Number(item.protein_g))}
+            <Text style={styles.logUnit}>g</Text>
+          </Text>
+          <Pressable
+            onPress={() => confirmDelete(item)}
+            disabled={deletingId === item.id}
+            accessibilityLabel="Delete meal"
+            accessibilityRole="button"
+            hitSlop={8}
+            style={({ pressed }) => [
+              styles.deleteBtn,
+              pressed && { opacity: 0.5 },
+              deletingId === item.id && { opacity: 0.35 },
+            ]}>
+            <Ionicons
+              name={deletingId === item.id ? 'hourglass-outline' : 'trash-outline'}
+              size={16}
+              color={colors.textTertiary}
+            />
+          </Pressable>
+        </View>
+      </Animated.View>
+    ),
+  };
+
+  return (
+    <PageCanvas>
+      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+        {heroLayout === 'sidebar' ? (
+          <View
+            style={[
+              styles.desktopShell,
+              {
+                paddingHorizontal: horizontalPad,
+                maxWidth: contentMaxWidth,
+                alignSelf: 'center',
+                width: '100%',
+              },
+            ]}>
+            <View style={[styles.desktopRow, { gap: columnGap }]}>
+              <FlatList
+                {...listProps}
+                style={styles.desktopMain}
+                contentContainerStyle={styles.list}
+                ListHeaderComponent={renderHeader()}
+              />
+              {profile ? (
+                <View style={[styles.desktopAside, { width: asideWidth }]}>
+                  <CharacterCard profile={profile} dragonLocked />
+                </View>
+              ) : null}
+            </View>
+          </View>
+        ) : (
+          <FlatList
+            {...listProps}
+            contentContainerStyle={[
+              styles.list,
+              {
+                paddingHorizontal: horizontalPad,
+                maxWidth: contentMaxWidth,
+                width: '100%',
+                alignSelf: 'center',
+              },
+            ]}
+            ListHeaderComponent={renderHeader()}
+          />
+        )}
+      </SafeAreaView>
+    </PageCanvas>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bg },
-  list: { paddingTop: spacing.md, paddingBottom: 100 },
+  safe: { flex: 1 },
+  desktopShell: { flex: 1 },
+  desktopRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  desktopMain: { flex: 1, minWidth: 0 },
+  desktopAside: {
+    paddingTop: spacing.xl + 8,
+    ...(Platform.OS === 'web'
+      ? ({ position: 'sticky', top: 24 } as object)
+      : {}),
+  },
+  list: { paddingTop: spacing.lg, paddingBottom: 100 },
   header: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
+    marginBottom: spacing.lg,
   },
-  date: { ...type.label, color: colors.accent },
-  wordmark: { fontFamily: fonts.displayHeavy, fontSize: 24, color: colors.text, marginTop: 2 },
+  eyebrow: {
+    fontFamily: fonts.mono,
+    fontSize: 10,
+    letterSpacing: 3,
+    color: colors.accent,
+    marginBottom: 6,
+  },
+  title: {
+    fontFamily: fonts.displayHeavy,
+    color: colors.text,
+    letterSpacing: -1.2,
+  },
   gearBtn: {
     width: 44,
     height: 44,
-    borderRadius: 20,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.hairline,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  ringWrap: { alignItems: 'center', marginVertical: spacing.lg },
-  sectionTitle: { ...type.label, marginTop: spacing.lg, marginBottom: spacing.sm },
-  empty: {
+  dailyBanner: {
+    flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: spacing.xl,
-    gap: spacing.sm,
+    gap: 6,
+    alignSelf: 'flex-start',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    marginBottom: spacing.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 6,
   },
-  emptyIcon: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    backgroundColor: colors.accentSurface,
-    borderWidth: 1,
-    borderColor: colors.accentDeep,
+  dailyBannerText: {
+    fontFamily: fonts.mono,
+    fontSize: 10,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+  },
+  hero: {
     alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 4,
+    gap: spacing.md,
+    width: '100%',
+    marginBottom: spacing.xs,
   },
-  emptyTitle: { fontFamily: fonts.display, fontSize: 16, color: colors.text },
-  emptyText: {
-    ...type.body,
-    fontSize: 13.5,
+  proteinBlock: {
+    alignItems: 'center',
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xs,
+    width: '100%',
+  },
+  proteinMeta: {
+    fontFamily: fonts.mono,
+    fontSize: 11,
+    color: colors.textTertiary,
+    letterSpacing: 0.3,
+    marginTop: spacing.sm,
     textAlign: 'center',
-    maxWidth: 280,
+  },
+  rule: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.hairlineBright,
+    marginVertical: spacing.lg,
+  },
+  sectionTitle: {
+    fontFamily: fonts.mono,
+    fontSize: 9,
+    letterSpacing: 2,
+    color: colors.textTertiary,
+    marginBottom: spacing.sm,
+  },
+  empty: {
+    paddingVertical: spacing.lg,
+    gap: 4,
+  },
+  emptyTitle: { fontFamily: fonts.displayMedium, fontSize: 15, color: colors.text },
+  emptyText: {
+    fontFamily: fonts.body,
+    fontSize: 13,
+    color: colors.textSecondary,
+    lineHeight: 19,
   },
   logRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-    borderRadius: radius.md,
-    paddingVertical: 14,
-    paddingHorizontal: spacing.md,
-    marginBottom: spacing.sm,
+    paddingVertical: 16,
     gap: spacing.md,
   },
-  logDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: colors.accent,
+  logRowBorder: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.hairline,
   },
   logName: { fontFamily: fonts.displayMedium, fontSize: 15, color: colors.text },
-  logTime: { fontFamily: fonts.mono, fontSize: 11, color: colors.textTertiary, marginTop: 2 },
+  logTime: {
+    fontFamily: fonts.mono,
+    fontSize: 10,
+    color: colors.textTertiary,
+    marginTop: 3,
+    letterSpacing: 0.3,
+  },
   logProtein: {
     fontFamily: fonts.display,
-    fontSize: 22,
-    color: colors.accent,
+    fontSize: 20,
+    color: colors.text,
     fontVariant: ['tabular-nums'],
   },
-  logUnit: { fontSize: 14, color: colors.accentDeep },
+  logUnit: { fontSize: 13, color: colors.textTertiary },
+  deleteBtn: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });

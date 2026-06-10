@@ -12,14 +12,14 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { AccountCard } from '@/components/AccountCard';
-import { AiProviderCard } from '@/components/AiProviderCard';
-import { DragonRoster } from '@/components/DragonRoster';
+import { DragonEvolutionGallery } from '@/components/DragonEvolutionGallery';
 import { GoalEditor } from '@/components/GoalEditor';
+import { dragonById, displayDragonId, isDailyDragonLockedForToday } from '@/lib/character';
 import { useLayout } from '@/lib/layout';
+import { todayISODate } from '@/lib/protein';
 import { useSession } from '@/lib/session';
 import type { Profile } from '@/lib/types';
-import { colors, fonts, spacing, type } from '@/theme';
+import { colors, fonts, spacing } from '@/theme';
 
 function goHome() {
   if (router.canGoBack()) router.back();
@@ -28,7 +28,7 @@ function goHome() {
 
 export default function SettingsScreen() {
   const { profile, saveProfile } = useSession();
-  const { contentWidth, horizontalPad } = useLayout();
+  const { contentMaxWidth, horizontalPad, isNarrow } = useLayout();
   const [saving, setSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -50,11 +50,11 @@ export default function SettingsScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <View style={styles.topBar}>
-        <Pressable onPress={goHome} hitSlop={12} style={styles.roundBtn}>
+        <Pressable onPress={goHome} hitSlop={12} style={styles.iconBtn}>
           <Ionicons name="close" size={22} color={colors.text} />
         </Pressable>
-        <Text style={styles.topTitle}>YOUR GOAL</Text>
-        <View style={{ width: 40 }} />
+        <Text style={styles.topTitle}>SETTINGS</Text>
+        <View style={{ width: 44 }} />
       </View>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
@@ -62,16 +62,32 @@ export default function SettingsScreen() {
         <ScrollView
           contentContainerStyle={[
             styles.scroll,
-            { paddingHorizontal: horizontalPad, width: contentWidth, maxWidth: 428, alignSelf: 'center' },
+            {
+              paddingHorizontal: horizontalPad,
+              maxWidth: contentMaxWidth,
+              width: '100%',
+              alignSelf: 'center',
+            },
           ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}>
-          <AccountCard />
-          <AiProviderCard />
-          {profile ? <DragonRoster profile={profile} /> : null}
+          <Text style={[styles.title, isNarrow && styles.titleNarrow]}>Preferences</Text>
           <Text style={styles.subtitle}>
             Adjust your stats and the target recalculates with full reasoning.
           </Text>
+
+          {profile && isDailyDragonLockedForToday(profile, todayISODate()) ? (
+            <View style={styles.lockedDragon}>
+              <Text style={styles.lockedLabel}>TODAY&apos;S DRAGON</Text>
+              <Text style={styles.lockedName}>
+                {dragonById(displayDragonId(profile, todayISODate())).name}
+              </Text>
+              <Text style={styles.lockedHint}>Locked until tomorrow - pick again on Today.</Text>
+            </View>
+          ) : null}
+
+          <DragonEvolutionGallery />
+
           {error ? <Text style={styles.error}>{error}</Text> : null}
           <GoalEditor
             profile={profile}
@@ -94,18 +110,56 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },
-  roundBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.hairline,
+  iconBtn: {
+    width: 44,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  topTitle: { ...type.label, color: colors.textSecondary, fontSize: 12 },
-  scroll: { padding: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.xxl },
-  subtitle: { ...type.body, fontSize: 13.5 },
+  topTitle: {
+    fontFamily: fonts.mono,
+    fontSize: 10,
+    letterSpacing: 2.5,
+    color: colors.textSecondary,
+  },
+  scroll: { paddingTop: spacing.md, paddingBottom: spacing.xxl },
+  title: {
+    fontFamily: fonts.displayHeavy,
+    fontSize: 32,
+    color: colors.text,
+    letterSpacing: -0.8,
+    marginBottom: 6,
+  },
+  titleNarrow: { fontSize: 26, letterSpacing: -0.5 },
+  subtitle: {
+    fontFamily: fonts.body,
+    fontSize: 13,
+    lineHeight: 19,
+    color: colors.textSecondary,
+    marginBottom: spacing.lg,
+  },
   error: { fontFamily: fonts.body, fontSize: 13, color: colors.danger, marginTop: spacing.sm },
+  lockedDragon: {
+    paddingVertical: spacing.md,
+    marginBottom: spacing.lg,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.hairlineBright,
+    gap: 4,
+  },
+  lockedLabel: {
+    fontFamily: fonts.mono,
+    fontSize: 9,
+    letterSpacing: 2,
+    color: colors.accent,
+  },
+  lockedName: {
+    fontFamily: fonts.displayMedium,
+    fontSize: 15,
+    color: colors.text,
+  },
+  lockedHint: {
+    fontFamily: fonts.body,
+    fontSize: 12,
+    color: colors.textSecondary,
+  },
 });

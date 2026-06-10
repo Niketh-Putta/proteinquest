@@ -1,28 +1,28 @@
 {
   "expo": {
-    "name": "ProteinLens",
-    "slug": "proteinlens",
+    "name": "ProteinQuest",
+    "slug": "proteinquest",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "proteinlens",
+    "scheme": "proteinquest",
     "userInterfaceStyle": "dark",
-    "backgroundColor": "#0A0A0B",
+    "backgroundColor": "#0C0B10",
     "ios": {
-      "bundleIdentifier": "com.proteinlens.app",
+      "bundleIdentifier": "com.proteinquest.app",
       "buildNumber": "1",
-      "supportsTablet": false,
+      "supportsTablet": true,
       "infoPlist": {
-        "NSCameraUsageDescription": "ProteinLens uses the camera to photograph your meals and estimate their protein content.",
-        "NSPhotoLibraryUsageDescription": "ProteinLens uses your photo library so you can analyze meals you've already photographed.",
+        "NSCameraUsageDescription": "ProteinQuest uses the camera to photograph your meals and estimate their protein content.",
+        "NSPhotoLibraryUsageDescription": "ProteinQuest uses your photo library so you can analyze meals you've already photographed.",
         "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
-      "package": "com.proteinlens.app",
+      "package": "com.proteinquest.app",
       "versionCode": 1,
       "adaptiveIcon": {
-        "backgroundColor": "#0A0A0B",
+        "backgroundColor": "#0C0B10",
         "foregroundImage": "./assets/images/android-icon-foreground.png"
       },
       "predictiveBackGestureEnabled": false,
@@ -39,7 +39,7 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#0A0A0B",
+          "backgroundColor": "#0C0B10",
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 160
         }
@@ -47,8 +47,8 @@
       [
         "expo-image-picker",
         {
-          "cameraPermission": "ProteinLens uses the camera to photograph your meals and estimate their protein content.",
-          "photosPermission": "ProteinLens uses your photo library so you can analyze meals you've already photographed."
+          "cameraPermission": "ProteinQuest uses the camera to photograph your meals and estimate their protein content.",
+          "photosPermission": "ProteinQuest uses your photo library so you can analyze meals you've already photographed."
         }
       ],
       "expo-font",

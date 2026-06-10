@@ -1,8 +1,8 @@
-// Creates a Stripe Checkout Session for ProteinLens Pro.
-// Secrets: STRIPE_SECRET_KEY, STRIPE_PRICE_MONTHLY, STRIPE_PRICE_YEARLY (optional)
+// Creates a Stripe Checkout Session for ProteinQuest Pro.
+// Secrets: STRIPE_SECRET_KEY, STRIPE_PRICE_WEEKLY, STRIPE_PRICE_YEARLY (optional)
 
 const STRIPE_SECRET_KEY = Deno.env.get("STRIPE_SECRET_KEY");
-const PRICE_MONTHLY = Deno.env.get("STRIPE_PRICE_MONTHLY");
+const PRICE_WEEKLY = Deno.env.get("STRIPE_PRICE_WEEKLY") ?? Deno.env.get("STRIPE_PRICE_MONTHLY");
 const PRICE_YEARLY = Deno.env.get("STRIPE_PRICE_YEARLY");
 
 const corsHeaders = {
@@ -25,7 +25,7 @@ Deno.serve(async (req) => {
 
   try {
     const { plan_id, success_url, cancel_url, customer_email, user_id } = await req.json();
-    const priceId = plan_id === "pro_yearly" ? PRICE_YEARLY : PRICE_MONTHLY;
+    const priceId = plan_id === "pro_yearly" ? PRICE_YEARLY : PRICE_WEEKLY;
     if (!priceId) {
       return json({ error: "Stripe price ID not configured for this plan." }, 503);
     }
@@ -34,8 +34,8 @@ Deno.serve(async (req) => {
       mode: "subscription",
       "line_items[0][price]": priceId,
       "line_items[0][quantity]": "1",
-      success_url: success_url ?? "https://proteinlens.vercel.app/?checkout=success",
-      cancel_url: cancel_url ?? "https://proteinlens.vercel.app/paywall",
+      success_url: success_url ?? "https://proteinquest.vercel.app/?checkout=success",
+      cancel_url: cancel_url ?? "https://proteinquest.vercel.app/",
       ...(customer_email ? { customer_email } : {}),
       ...(user_id ? { client_reference_id: user_id, "metadata[user_id]": user_id } : {}),
     });

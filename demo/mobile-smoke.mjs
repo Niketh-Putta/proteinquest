@@ -3,7 +3,7 @@ import { chromium } from 'playwright';
 import path from 'node:path';
 import { mkdirSync } from 'node:fs';
 
-const BASE = process.argv[2] ?? 'https://proteinlens.vercel.app';
+const BASE = process.argv[2] ?? 'https://proteinquest.vercel.app';
 const OUT = path.resolve('demo/mobile');
 mkdirSync(OUT, { recursive: true });
 

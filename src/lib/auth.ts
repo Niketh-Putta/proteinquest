@@ -1,58 +1,82 @@
-import * as WebBrowser from 'expo-web-browser';
-import { makeRedirectUri } from 'expo-auth-session';
-import { Platform } from 'react-native';
+import type { Session } from '@supabase/supabase-js';
+import { AuthApiError } from '@supabase/supabase-js';
 
 import { supabase } from './supabase';
 
-WebBrowser.maybeCompleteAuthSession();
+let anonymousSignupAttempted = false;
 
-export function authRedirectUri(): string {
-  if (Platform.OS === 'web' && typeof window !== 'undefined') {
-    return `${window.location.origin}/auth/callback`;
-  }
-  return makeRedirectUri({ scheme: 'proteinlens', path: 'auth/callback' });
+function isStaleAuthError(message: string): boolean {
+  return (
+    /user from sub claim|user_not_found|session missing|invalid.*token|jwt expired/i.test(
+      message,
+    ) || message.includes('Auth session missing')
+  );
 }
 
-export async function signInWithGoogle(): Promise<void> {
-  const redirectTo = authRedirectUri();
-  const { data, error } = await supabase.auth.signInWithOAuth({
-    provider: 'google',
-    options: {
-      redirectTo,
-      skipBrowserRedirect: Platform.OS !== 'web',
-      queryParams: { prompt: 'select_account' },
-    },
-  });
-  if (error) throw error;
+function isRateLimitError(error: unknown): boolean {
+  if (error instanceof AuthApiError && error.status === 429) return true;
+  const msg = error instanceof Error ? error.message : String(error ?? '');
+  return /rate limit/i.test(msg);
+}
 
-  if (Platform.OS !== 'web' && data?.url) {
-    const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
-    if (result.type !== 'success' || !result.url) {
-      throw new Error('Google sign-in was cancelled.');
+/** Allow one retry after a rate-limit backoff. */
+export function resetAnonymousSignupAttempt(): void {
+  anonymousSignupAttempted = false;
+}
+
+export async function continueAsGuest(): Promise<Session | null> {
+  if (anonymousSignupAttempted) {
+    const { data } = await supabase.auth.getSession();
+    if (data.session) return data.session;
+    anonymousSignupAttempted = false;
+  }
+
+  anonymousSignupAttempted = true;
+  const { data, error } = await supabase.auth.signInAnonymously();
+  if (error) {
+    if (isRateLimitError(error)) {
+      anonymousSignupAttempted = false;
+      const { data: cached } = await supabase.auth.getSession();
+      return cached.session;
     }
-    const params = new URL(result.url);
-    const code = params.searchParams.get('code');
-    if (!code) throw new Error('No auth code returned from Google.');
-    const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
-    if (exchangeError) throw exchangeError;
+    throw error;
   }
+  return data.session;
 }
 
-export async function signOut(): Promise<void> {
-  const { error } = await supabase.auth.signOut();
-  if (error) throw error;
-}
+/** Validate JWT with Supabase; replace stale local sessions (e.g. after auth.users purge). */
+export async function ensureAuthSession(): Promise<Session | null> {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const existing = sessionData.session;
 
-export async function continueAsGuest(): Promise<void> {
-  const { error } = await supabase.auth.signInAnonymously();
-  if (error) throw error;
-}
+  if (existing?.access_token) {
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (!userError && userData.user?.id === existing.user.id) {
+      return existing;
+    }
 
-export function userEmail(session: { user: { email?: string; is_anonymous?: boolean } } | null) {
-  if (!session?.user.email) return null;
-  return session.user.email;
-}
+    const userMsg = userError?.message ?? '';
+    if (!isStaleAuthError(userMsg)) {
+      return existing;
+    }
 
-export function isAnonymous(session: { user: { is_anonymous?: boolean } } | null) {
-  return session?.user?.is_anonymous ?? true;
+    await supabase.auth.signOut({ scope: 'local' });
+  }
+
+  if (anonymousSignupAttempted) {
+    const { data } = await supabase.auth.getSession();
+    if (data.session) return data.session;
+    anonymousSignupAttempted = false;
+  }
+
+  try {
+    return await continueAsGuest();
+  } catch (error) {
+    if (isRateLimitError(error)) {
+      const { data } = await supabase.auth.getSession();
+      return data.session;
+    }
+    console.error('[ensureAuthSession]', error);
+    return null;
+  }
 }

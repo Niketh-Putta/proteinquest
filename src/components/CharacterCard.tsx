@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect } from 'react';
-import { Image, StyleSheet, Text, View } from 'react-native';
+import { Image, Platform, StyleSheet, Text, View } from 'react-native';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -11,154 +11,355 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import {
-  activeDragonId,
-  activeProgress,
+  DRAGONS,
+  displayDragonId,
+  displayProgress,
   dragonById,
+  effectiveLevel,
   effectiveStreak,
-  nextStage,
-  stageForGoalsHit,
+  getDragonProgress,
+  nextEvolutionStage,
+  stageForXpLevel,
+  xpProgressInLevel,
 } from '@/lib/character';
 import { todayISODate } from '@/lib/protein';
+import { useLayout } from '@/lib/layout';
 import type { Profile } from '@/lib/types';
-import { colors, fonts, radius, spacing, type } from '@/theme';
+import { colors, fonts, radius, spacing } from '@/theme';
 
-export function CharacterCard({ profile }: { profile: Profile }) {
-  const dragonId = activeDragonId(profile);
+interface Props {
+  profile: Profile;
+  bleed?: number;
+  showSwitcher?: boolean;
+  /** When true, dragon switcher is read-only (daily lock active). */
+  dragonLocked?: boolean;
+  /** Responsive scale - 1 phone, ~1.08 tablet, ~1.2 desktop sidebar */
+  scale?: number;
+}
+
+export function CharacterCard({
+  profile,
+  bleed,
+  showSwitcher = true,
+  dragonLocked = false,
+  scale: scaleProp,
+}: Props) {
+  const { characterScale: layoutScale } = useLayout();
+  const scale = scaleProp ?? layoutScale;
+  const artSize = Math.round(132 * scale);
+  const nameSize = Math.round(24 * scale);
+  const glowSize = Math.round(200 * scale);
+
+  const todayISO = todayISODate();
+  const dragonId = displayDragonId(profile, todayISO);
   const dragon = dragonById(dragonId);
-  const progress = activeProgress(profile);
-  const stage = stageForGoalsHit(progress.goals_hit, dragonId);
-  const next = nextStage(progress.goals_hit, dragonId);
-  const streak = effectiveStreak(progress, todayISODate(), todayISODate(-1));
+  const progress = displayProgress(profile, todayISO);
+  const level = effectiveLevel(progress);
+  const stage = stageForXpLevel(level, dragonId);
+  const next = nextEvolutionStage(level, dragonId);
+  const streak = effectiveStreak(progress, todayISO, todayISODate(-1));
 
+  const breath = useSharedValue(1);
   const float = useSharedValue(0);
-  const glow = useSharedValue(0.3);
+  const glow = useSharedValue(0.12);
+
   useEffect(() => {
+    breath.value = withRepeat(
+      withSequence(
+        withTiming(1.03, { duration: 3200, easing: Easing.inOut(Easing.sin) }),
+        withTiming(1, { duration: 3200, easing: Easing.inOut(Easing.sin) }),
+      ),
+      -1,
+    );
     float.value = withRepeat(
       withSequence(
-        withTiming(-6, { duration: 2000, easing: Easing.inOut(Easing.sin) }),
-        withTiming(0, { duration: 2000, easing: Easing.inOut(Easing.sin) }),
+        withTiming(-4, { duration: 3400, easing: Easing.inOut(Easing.sin) }),
+        withTiming(2, { duration: 3400, easing: Easing.inOut(Easing.sin) }),
       ),
       -1,
     );
     glow.value = withRepeat(
       withSequence(
-        withTiming(0.55, { duration: 2400, easing: Easing.inOut(Easing.sin) }),
-        withTiming(0.25, { duration: 2400, easing: Easing.inOut(Easing.sin) }),
+        withTiming(0.18, { duration: 3800, easing: Easing.inOut(Easing.sin) }),
+        withTiming(0.08, { duration: 3800, easing: Easing.inOut(Easing.sin) }),
       ),
       -1,
     );
-  }, [float, glow]);
+  }, [breath, float, glow]);
 
-  const floatStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: float.value }],
+  const characterStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: float.value }, { scale: breath.value }],
   }));
   const glowStyle = useAnimatedStyle(() => ({ opacity: glow.value }));
 
   const progressToNext = next
-    ? Math.min(
-        (progress.goals_hit - stage.goalsRequired) / (next.goalsRequired - stage.goalsRequired),
-        1,
-      )
+    ? Math.min((level - stage.levelRequired) / (next.levelRequired - stage.levelRequired), 1)
     : 1;
+  const levelsToEvo = next ? next.levelRequired - level : 0;
+  const xpPct = xpProgressInLevel(progress.xp, level) * 100;
+
+  const evoLabel = next ? `Lv ${next.levelRequired} to evolve` : 'max form';
 
   return (
-    <View style={styles.card}>
-      <Animated.View style={[styles.glowDisc, glowStyle, { backgroundColor: dragon.accent }]} />
-      <Animated.View style={floatStyle}>
-        <Image source={stage.art} style={styles.art} />
-      </Animated.View>
+    <View
+      style={[
+        styles.arena,
+        bleed != null && { marginHorizontal: -bleed, paddingHorizontal: bleed },
+      ]}>
+      <View style={styles.stage}>
+        <Animated.View
+          style={[
+            styles.glow,
+            glowStyle,
+            {
+              backgroundColor: dragon.accent,
+              width: glowSize,
+              height: glowSize,
+              borderRadius: glowSize / 2,
+            },
+            Platform.OS === 'web' && styles.glowBlur,
+          ]}
+        />
 
-      <View style={styles.info}>
-        <Text style={styles.potential}>REACH YOUR POTENTIAL</Text>
-        <View style={styles.nameRow}>
-          <Text style={styles.name}>{dragon.name}</Text>
-          <View style={[styles.stagePill, { borderColor: dragon.accent }]}>
-            <Text style={[styles.stagePillText, { color: dragon.accent }]}>
-              {stage.name.toUpperCase()}
-            </Text>
-          </View>
-        </View>
-        <Text style={styles.tagline}>{stage.tagline}</Text>
+        <Text style={styles.kicker}>Reach your potential</Text>
 
-        <View style={styles.xpTrack}>
-          <View style={[styles.xpFill, { width: `${Math.min((progress.xp % 500) / 5, 100)}%`, backgroundColor: dragon.accent }]} />
+        <Animated.View style={[styles.characterWrap, characterStyle]}>
+          <Image
+            source={stage.art}
+            style={[
+              styles.art,
+              {
+                width: artSize,
+                height: artSize,
+                borderRadius: radius.character,
+              },
+            ]}
+          />
+        </Animated.View>
+
+        <View style={styles.identity}>
+          <Text style={[styles.name, { fontSize: nameSize }]}>{dragon.name}</Text>
+          <Text style={[styles.stageLabel, { color: dragon.accent }]}>
+            Lv {level} · {stage.name} · {dragon.element}
+          </Text>
         </View>
+
         <View style={styles.statsRow}>
-          <View style={styles.streakChip}>
-            <Ionicons name="flame" size={14} color={streak > 0 ? colors.flame : colors.textTertiary} />
-            <Text style={[styles.streakText, streak > 0 && { color: colors.flame }]}>
-              {streak} day{streak === 1 ? '' : 's'}
-            </Text>
-          </View>
-          <Text style={styles.xp}>{progress.xp} XP</Text>
+          {streak > 0 ? (
+            <View style={styles.streakBit}>
+              <Ionicons name="flame" size={10} color={colors.flame} />
+              <Text style={[styles.statsLine, { color: colors.flame }]}>
+                {streak} day streak
+              </Text>
+            </View>
+          ) : (
+            <Text style={styles.statsLine}>0 day streak</Text>
+          )}
+          <Text style={styles.statsDot}>·</Text>
+          <Text style={styles.statsLine}>{progress.xp} XP</Text>
+          <Text style={styles.statsDot}>·</Text>
+          <Text style={styles.statsLine}>
+            {next ? `${levelsToEvo} lv to evolve` : evoLabel}
+          </Text>
         </View>
 
-        {next ? (
-          <View style={styles.evoWrap}>
-            <View style={styles.evoTrack}>
-              <View style={[styles.evoFill, { width: `${progressToNext * 100}%`, backgroundColor: dragon.accent }]} />
-            </View>
-            <Text style={styles.evoLabel}>
-              {next.goalsRequired - progress.goals_hit} goal
-              {next.goalsRequired - progress.goals_hit === 1 ? '' : 's'} to {next.name}
-            </Text>
+        <View style={styles.bars}>
+          <View style={styles.barTrack}>
+            <View
+              style={[
+                styles.barFill,
+                { width: `${xpPct}%`, backgroundColor: dragon.accent },
+              ]}
+            />
           </View>
-        ) : (
-          <Text style={styles.evoLabel}>Legendary — keep feeding</Text>
-        )}
+          {next ? (
+            <View style={[styles.barTrack, { marginTop: 6 }]}>
+              <View
+                style={[
+                  styles.barFill,
+                  { width: `${progressToNext * 100}%`, backgroundColor: dragon.accent },
+                ]}
+              />
+            </View>
+          ) : null}
+        </View>
+
+        {stage.tagline ? (
+          <Text style={styles.tagline}>{stage.tagline}</Text>
+        ) : null}
       </View>
+
+      {showSwitcher ? (
+        <View style={styles.switcher}>
+          <View style={styles.switcherRow}>
+            {DRAGONS.map((d) => {
+              const isActive = d.id === dragonId;
+              const prog = getDragonProgress(profile, d.id);
+              const st = stageForXpLevel(effectiveLevel(prog), d.id);
+              return (
+                <View key={d.id} style={styles.switcherItem}>
+                  <Image
+                    source={st.art}
+                    style={[
+                      styles.switcherArt,
+                      { borderRadius: radius.sm },
+                      isActive
+                        ? { borderColor: d.accent, opacity: 1 }
+                        : { opacity: dragonLocked ? 0.25 : 0.4 },
+                    ]}
+                  />
+                </View>
+              );
+            })}
+          </View>
+          {dragonLocked ? (
+            <Text style={styles.lockedHint}>Locked for today</Text>
+          ) : null}
+        </View>
+      ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
+  arena: {
+    position: 'relative',
+    overflow: 'visible',
+    paddingTop: spacing.xs,
+    paddingBottom: spacing.sm,
+    alignItems: 'center',
+    width: '100%',
+  },
+  stage: {
+    alignItems: 'center',
+    width: '100%',
+    position: 'relative',
+  },
+  glow: {
+    position: 'absolute',
+    top: 48,
+    alignSelf: 'center',
+  },
+  glowBlur: Platform.select({
+    web: { filter: 'blur(56px)' as unknown as undefined },
+    default: {},
+  }),
+  kicker: {
+    fontFamily: fonts.mono,
+    fontSize: 9,
+    letterSpacing: 2.4,
+    textTransform: 'uppercase',
+    color: colors.textTertiary,
+    marginBottom: spacing.sm,
+    zIndex: 1,
+  },
+  characterWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1,
+  },
+  art: {
+    backgroundColor: 'transparent',
+  },
+  identity: {
+    alignItems: 'center',
+    gap: 2,
+    marginTop: spacing.sm,
+    zIndex: 1,
+  },
+  name: {
+    fontFamily: fonts.displayHeavy,
+    color: colors.text,
+    letterSpacing: -0.6,
+  },
+  stageLabel: {
+    fontFamily: fonts.mono,
+    fontSize: 10,
+    letterSpacing: 0.8,
+    textTransform: 'capitalize',
+  },
+  statsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    zIndex: 1,
+  },
+  streakBit: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-    borderRadius: radius.lg,
-    padding: spacing.md,
-    gap: spacing.md,
+    gap: 3,
+  },
+  statsLine: {
+    fontFamily: fonts.mono,
+    fontSize: 11,
+    color: colors.textTertiary,
+    letterSpacing: 0.2,
+  },
+  statsDot: {
+    fontFamily: fonts.mono,
+    fontSize: 11,
+    color: colors.hairlineBright,
+  },
+  bars: {
+    width: '72%',
+    maxWidth: 220,
+    marginTop: spacing.sm,
+    zIndex: 1,
+  },
+  barTrack: {
+    height: 2,
+    backgroundColor: colors.ringTrack,
+    borderRadius: radius.full,
     overflow: 'hidden',
-    minHeight: 44,
   },
-  glowDisc: {
-    position: 'absolute',
-    left: spacing.md,
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-  },
-  art: { width: 100, height: 100, borderRadius: radius.md },
-  info: { flex: 1, gap: 4 },
-  potential: { ...type.label, fontSize: 9, color: colors.textTertiary },
-  nameRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flexWrap: 'wrap' },
-  name: { fontFamily: fonts.display, fontSize: 18, color: colors.text },
-  stagePill: {
-    backgroundColor: colors.accentSurface,
-    borderWidth: 1,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
+  barFill: {
+    height: '100%',
     borderRadius: radius.full,
   },
-  stagePillText: { fontFamily: fonts.monoBold, fontSize: 9, letterSpacing: 1.2 },
-  tagline: { fontFamily: fonts.body, fontSize: 12, color: colors.textSecondary },
-  xpTrack: {
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.ringTrack,
-    marginTop: 4,
-    overflow: 'hidden',
+  tagline: {
+    fontFamily: fonts.body,
+    fontSize: 12,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginTop: spacing.sm,
+    maxWidth: 260,
+    lineHeight: 17,
+    zIndex: 1,
   },
-  xpFill: { height: '100%', borderRadius: 2 },
-  statsRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  streakChip: { flexDirection: 'row', alignItems: 'center', gap: 4, minHeight: 44 },
-  streakText: { fontFamily: fonts.monoBold, fontSize: 12, color: colors.textTertiary },
-  xp: { fontFamily: fonts.mono, fontSize: 12, color: colors.textSecondary },
-  evoWrap: { marginTop: 2, gap: 4 },
-  evoTrack: { height: 5, borderRadius: 3, backgroundColor: colors.ringTrack, overflow: 'hidden' },
-  evoFill: { height: '100%', borderRadius: 3 },
-  evoLabel: { fontFamily: fonts.mono, fontSize: 10, letterSpacing: 0.6, color: colors.textTertiary },
+  switcher: {
+    width: '100%',
+    marginTop: spacing.md,
+    alignItems: 'center',
+    zIndex: 1,
+  },
+  switcherRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  switcherItem: {
+    minWidth: 36,
+    minHeight: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  switcherArt: {
+    width: 32,
+    height: 32,
+    borderWidth: 1.5,
+    borderColor: 'transparent',
+  },
+  lockedHint: {
+    fontFamily: fonts.mono,
+    fontSize: 10,
+    color: colors.textTertiary,
+    letterSpacing: 0.4,
+    textAlign: 'center',
+    marginTop: spacing.xs,
+  },
 });

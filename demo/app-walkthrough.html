@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ProteinQuest Walkthrough</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      min-height: 100vh;
+      background: #08080a;
+      color: #f5f0e8;
+      font-family: system-ui, -apple-system, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 1.5rem;
+    }
+    h1 { font-size: 1.1rem; letter-spacing: 0.2em; color: #c9a86c; margin-bottom: 1rem; }
+    .phone {
+      width: min(390px, 92vw);
+      aspect-ratio: 390 / 844;
+      border-radius: 28px;
+      overflow: hidden;
+      border: 2px solid #2a2824;
+      box-shadow: 0 24px 80px rgba(0,0,0,0.6);
+      position: relative;
+      background: #111;
+    }
+    .phone img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      opacity: 0;
+      transition: opacity 0.6s ease;
+      position: absolute;
+      inset: 0;
+    }
+    .phone img.active { opacity: 1; }
+    .caption {
+      margin-top: 1.25rem;
+      text-align: center;
+      max-width: 360px;
+      min-height: 4.5rem;
+    }
+    .caption strong { display: block; font-size: 1.15rem; margin-bottom: 0.35rem; }
+    .caption span { color: #9a958c; font-size: 0.9rem; line-height: 1.45; }
+    .progress {
+      margin-top: 1rem;
+      display: flex;
+      gap: 6px;
+    }
+    .dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: #3a3834;
+      transition: background 0.3s, transform 0.3s;
+    }
+    .dot.active { background: #c9a86c; transform: scale(1.3); }
+    .url { margin-top: 1.5rem; font-size: 0.7rem; letter-spacing: 0.15em; color: #5a5650; }
+  </style>
+</head>
+<body>
+  <h1>PROTEINQUEST</h1>
+  <div class="phone" id="phone"></div>
+  <div class="caption" id="caption"></div>
+  <div class="progress" id="progress"></div>
+  <div class="url">proteinquest.vercel.app · ~75s autoplay</div>
+  <script>
+    const slides = [
+      { img: 'flow-welcome.png', title: 'Track protein. Grow your dragon.', body: 'Gamified protein tracking — snap meals, hit your goal, evolve.' },
+      { img: 'flow-intro-1.png', title: 'One target every day', body: 'Set your protein goal once. Hit it consistently — that is the game.' },
+      { img: 'step-01-dragon-pick.png', title: 'Pick your companion', body: 'Ember, Frost, or Moss — three dragons, five evolutions each.' },
+      { img: 'step-03-goal-calculated.png', title: 'Your daily target', body: 'The app calculates your protein goal from your stats.' },
+      { img: 'step-04-home-dragon.png', title: 'Today screen', body: 'Progress ring, dragon portrait, streak, and level at a glance.' },
+      { img: 'step-05-scan-camera.png', title: 'Scan any meal', body: 'Point your camera — AI counts protein in seconds.' },
+      { img: 'step-05-analysis.png', title: 'Confirm & log', body: 'Review the breakdown, adjust if needed, tap Log it.' },
+      { img: 'dragon-transformations.png', title: 'Five forms', body: 'Hit your goal to earn XP. Watch your dragon evolve.' },
+      { img: 'live-verify-dragon.png', title: 'Evolution moment', body: 'Charge, flash, morph — your dragon transforms when you level up.' },
+      { img: 'trends-live.png', title: 'Keep the streak', body: 'Track trends, hit goals daily, and unlock every form.' },
+    ];
+
+    const phone = document.getElementById('phone');
+    const caption = document.getElementById('caption');
+    const progress = document.getElementById('progress');
+    let idx = 0;
+
+    slides.forEach((s, i) => {
+      const img = document.createElement('img');
+      img.src = s.img;
+      img.alt = s.title;
+      if (i === 0) img.classList.add('active');
+      phone.appendChild(img);
+
+      const dot = document.createElement('div');
+      dot.className = 'dot' + (i === 0 ? ' active' : '');
+      progress.appendChild(dot);
+    });
+
+    function show(i) {
+      idx = i % slides.length;
+      phone.querySelectorAll('img').forEach((el, j) => el.classList.toggle('active', j === idx));
+      progress.querySelectorAll('.dot').forEach((el, j) => el.classList.toggle('active', j === idx));
+      const s = slides[idx];
+      caption.innerHTML = `<strong>${s.title}</strong><span>${s.body}</span>`;
+    }
+
+    show(0);
+    setInterval(() => show(idx + 1), 7500);
+  </script>
+</body>
+</html>

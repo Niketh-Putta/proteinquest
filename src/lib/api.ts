@@ -1,70 +1,84 @@
 import { decode } from 'base64-arraybuffer';
 
-import { resolveAnalysisProvider } from './ai-keys';
 import { supabase } from './supabase';
 import { todayISODate } from './protein';
 import type { Analysis, FoodItem, Confidence, Profile, ProteinLog } from './types';
 
-async function extractFunctionError(
-  error: { message?: string; context?: Response },
-  data: unknown,
-): Promise<string> {
-  if (data && typeof data === 'object' && 'error' in data && (data as { error: string }).error) {
-    return (data as { error: string }).error;
-  }
-  if (error?.context) {
-    try {
-      const body = await error.context.json();
-      if (body?.error) return String(body.error);
-    } catch {
-      try {
-        const text = await error.context.text();
-        const parsed = JSON.parse(text);
-        if (parsed?.error) return String(parsed.error);
-      } catch {
-        /* fall through */
-      }
-    }
-  }
-  return error?.message ?? 'Could not analyze the photo. Please try again.';
+const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL!;
+const SUPABASE_KEY = process.env.EXPO_PUBLIC_SUPABASE_KEY!;
+const MAX_IMAGE_BASE64 = 3_500_000;
+
+async function getAuthHeaders(): Promise<Record<string, string>> {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const token = sessionData.session?.access_token ?? SUPABASE_KEY;
+
+  return {
+    'Content-Type': 'application/json',
+    apikey: SUPABASE_KEY,
+    Authorization: `Bearer ${token}`,
+  };
+}
+
+function cleanBase64(imageBase64: string): string {
+  const raw = imageBase64.includes(',') ? imageBase64.split(',')[1]! : imageBase64;
+  return raw.replace(/\s/g, '');
 }
 
 function friendlyAnalysisError(message: string): string {
-  if (/Invalid Gemini|aistudio\.google/i.test(message)) return message;
-  if (/billing|not active|quota|insufficient/i.test(message)) {
-    return 'AI service unavailable — add billing at platform.openai.com, then try again.';
+  if (/failed to send|network|fetch/i.test(message)) {
+    return 'Could not reach the analysis server. Check your connection and try again.';
   }
-  if (/No AI provider|Gemini API key in Settings/i.test(message)) return message;
-  if (/OPENAI_API_KEY|not configured/i.test(message)) {
-    return 'Add your Gemini API key in Settings, or use server AI when available.';
+  if (/too large/i.test(message)) return message;
+  if (/quota|RESOURCE_EXHAUSTED|high demand|overloaded|temporarily unavailable/i.test(message)) {
+    return 'AI is busy right now. Try again in a moment.';
+  }
+  if (/billing|not active/i.test(message)) {
+    return 'AI service unavailable. Please try again later.';
+  }
+  if (/malformed|Unterminated string|Unexpected token|JSON/i.test(message)) {
+    return 'Analysis hit a glitch. Tap scan and try again.';
   }
   return message;
-}
-
-async function invokeAnalyze(body: Record<string, unknown>): Promise<Analysis> {
-  const { data, error } = await supabase.functions.invoke('analyze-food', { body });
-  if (error) {
-    const raw = await extractFunctionError(error, data);
-    throw new Error(friendlyAnalysisError(raw));
-  }
-  if (data?.error) throw new Error(friendlyAnalysisError(data.error));
-  if (!data?.analysis) throw new Error('No analysis returned. Please try again.');
-  return data.analysis as Analysis;
 }
 
 export async function analyzeFoodPhoto(
   imageBase64: string,
   mimeType = 'image/jpeg',
 ): Promise<Analysis> {
-  const { provider, geminiKey } = await resolveAnalysisProvider();
-  if (provider === 'gemini' && geminiKey) {
-    return invokeAnalyze({
-      image_base64: imageBase64,
-      mime_type: mimeType,
-      gemini_api_key: geminiKey,
-    });
+  const cleaned = cleanBase64(imageBase64);
+  if (cleaned.length > MAX_IMAGE_BASE64) {
+    throw new Error('Photo is too large. Move closer or retake with less background.');
   }
-  return invokeAnalyze({ image_base64: imageBase64, mime_type: mimeType });
+
+  const headers = await getAuthHeaders();
+  const url = `${SUPABASE_URL}/functions/v1/analyze-food`;
+
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ image_base64: cleaned, mime_type: mimeType }),
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Network error';
+    throw new Error(friendlyAnalysisError(msg));
+  }
+
+  let body: { analysis?: Analysis; error?: string } | null = null;
+  try {
+    body = await res.json();
+  } catch {
+    throw new Error(friendlyAnalysisError(`Analysis server error (${res.status}).`));
+  }
+
+  if (!res.ok || body?.error) {
+    throw new Error(friendlyAnalysisError(body?.error ?? `Analysis failed (${res.status}).`));
+  }
+  if (!body?.analysis) {
+    throw new Error('No analysis returned. Please try again.');
+  }
+  return body.analysis;
 }
 
 export async function uploadFoodPhoto(userId: string, imageBase64: string): Promise<string | null> {
@@ -72,7 +86,7 @@ export async function uploadFoodPhoto(userId: string, imageBase64: string): Prom
     const path = `${userId}/${Date.now()}.jpg`;
     const { error } = await supabase.storage
       .from('food-photos')
-      .upload(path, decode(imageBase64), { contentType: 'image/jpeg' });
+      .upload(path, decode(cleanBase64(imageBase64)), { contentType: 'image/jpeg' });
     return error ? null : path;
   } catch {
     return null;
@@ -118,6 +132,16 @@ export async function fetchLogsForDate(date: string): Promise<ProteinLog[]> {
   return (data ?? []) as ProteinLog[];
 }
 
+export async function countTodayPhotoScans(date = todayISODate()): Promise<number> {
+  const { count, error } = await supabase
+    .from('protein_logs')
+    .select('*', { count: 'exact', head: true })
+    .eq('logged_date', date)
+    .eq('source', 'photo');
+  if (error) throw error;
+  return count ?? 0;
+}
+
 export async function fetchDailyTotals(days: number): Promise<Record<string, number>> {
   const since = new Date();
   since.setDate(since.getDate() - (days - 1));
@@ -139,16 +163,6 @@ export async function deleteLog(id: string): Promise<void> {
   if (error) throw error;
 }
 
-export async function countTodayScans(): Promise<number> {
-  const { count, error } = await supabase
-    .from('protein_logs')
-    .select('id', { count: 'exact', head: true })
-    .eq('logged_date', todayISODate())
-    .eq('source', 'photo');
-  if (error) throw error;
-  return count ?? 0;
-}
-
 export async function fetchProfile(userId: string): Promise<Profile | null> {
   const { data, error } = await supabase
     .from('profiles')
@@ -159,12 +173,76 @@ export async function fetchProfile(userId: string): Promise<Profile | null> {
   return data as Profile | null;
 }
 
+export function isStaleProfileSaveError(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error ?? '');
+  const code =
+    error && typeof error === 'object' && 'code' in error
+      ? String((error as { code?: string }).code ?? '')
+      : '';
+  return (
+    code === '23503' ||
+    msg.includes('profiles_id_fkey') ||
+    msg.includes('foreign key constraint') ||
+    msg.includes('row-level security') ||
+    msg.includes('session expired') ||
+    msg.includes('user_not_found') ||
+    msg.includes('User from sub claim')
+  );
+}
+
+function profileSaveError(error: { message?: string; code?: string; details?: string }): Error {
+  const msg = error.message ?? '';
+  if (__DEV__) {
+    console.error('[upsertProfile]', error.code, msg, error.details);
+  }
+  if (isStaleProfileSaveError(error)) {
+    return new Error('Your session expired. Refresh the page and try again.');
+  }
+  const detail = __DEV__ && error.details ? ` (${error.details})` : '';
+  return new Error(msg ? `${msg}${detail}` : 'Could not save progress');
+}
+
+function isDuplicateProfileError(error: { code?: string; message?: string; status?: number }): boolean {
+  const msg = error.message ?? '';
+  return (
+    error.code === '23505' ||
+    error.status === 409 ||
+    /duplicate key/i.test(msg) ||
+    /already exists/i.test(msg)
+  );
+}
+
+/** Save profile fields. Prefer UPDATE (trigger creates row on signup) to avoid upsert 409s. */
 export async function upsertProfile(profile: Partial<Profile> & { id: string }): Promise<Profile> {
-  const { data, error } = await supabase
+  const { id, ...updates } = profile;
+
+  const { data: updated, error: updateError } = await supabase
     .from('profiles')
-    .upsert(profile)
+    .update(updates)
+    .eq('id', id)
+    .select();
+
+  if (updateError) throw profileSaveError(updateError);
+  if (updated && updated.length > 0) return updated[0] as Profile;
+
+  const { data: inserted, error: insertError } = await supabase
+    .from('profiles')
+    .insert({ id, ...updates })
     .select()
     .single();
-  if (error) throw error;
-  return data as Profile;
+
+  if (insertError) {
+    if (isDuplicateProfileError(insertError)) {
+      const { data: retry, error: retryError } = await supabase
+        .from('profiles')
+        .update(updates)
+        .eq('id', id)
+        .select()
+        .single();
+      if (retryError) throw profileSaveError(retryError);
+      return retry as Profile;
+    }
+    throw profileSaveError(insertError);
+  }
+  return inserted as Profile;
 }

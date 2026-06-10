@@ -6,6 +6,8 @@ export type DragonId = 'fire' | 'ice' | 'forest';
 
 export interface DragonProgress {
   xp: number;
+  /** Derived from XP; stored for quick reads. */
+  level?: number;
   streak: number;
   best_streak: number;
   goals_hit: number;
@@ -21,7 +23,9 @@ export interface Profile {
   goal_type: GoalType | null;
   protein_goal_g: number | null;
   onboarded: boolean;
+  intro_completed: boolean;
   is_premium: boolean;
+  paywall_dismissed: boolean;
   /** @deprecated use dragon_progress */
   xp: number;
   /** @deprecated use dragon_progress */
@@ -34,12 +38,18 @@ export interface Profile {
   last_goal_date: string | null;
   weight_unit: 'kg' | 'lbs';
   active_dragon_id: DragonId | null;
+  /** Dragon locked for today - all logs count toward this dragon only. */
+  daily_dragon_id: DragonId | null;
+  /** ISO date (YYYY-MM-DD) when daily_dragon_id was chosen. */
+  daily_dragon_date: string | null;
   dragon_progress: Partial<Record<DragonId, DragonProgress>>;
 }
 
 export interface FoodItem {
   name: string;
   portion: string;
+  /** Visual size estimate in grams - protein scales with this, not food type alone. */
+  estimated_grams?: number;
   protein_g: number;
   confidence?: Confidence;
 }

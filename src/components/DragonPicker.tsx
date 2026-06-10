@@ -4,14 +4,18 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 
 import { DRAGONS } from '@/lib/character';
 import type { DragonId } from '@/lib/types';
-import { colors, fonts, radius, spacing, type } from '@/theme';
+import { colors, fonts, radius, spacing } from '@/theme';
 
 interface Props {
   value: DragonId | null;
   onChange: (id: DragonId) => void;
+  /** Hide onboarding headers when picking daily dragon on Today. */
+  compact?: boolean;
+  /** Tighter cards for short viewports (daily picker on small phones). */
+  tight?: boolean;
 }
 
-export function DragonPicker({ value, onChange }: Props) {
+export function DragonPicker({ value, onChange, compact = false, tight = false }: Props) {
   const [selected, setSelected] = useState<DragonId | null>(value);
 
   function pick(id: DragonId) {
@@ -21,41 +25,46 @@ export function DragonPicker({ value, onChange }: Props) {
 
   return (
     <View style={styles.wrap}>
-      <Text style={styles.kicker}>CHOOSE YOUR DRAGON</Text>
-      <Text style={styles.title}>Reach your potential.</Text>
-      <Text style={styles.sub}>
-        Pick a companion to grow with. Each dragon has its own evolution path — protein
-        feeds them.
-      </Text>
+      {!compact ? (
+        <>
+          <Text style={styles.kicker}>REACH YOUR POTENTIAL</Text>
+          <Text style={styles.step}>STEP 1 · CHOOSE YOUR COMPANION</Text>
+          <Text style={styles.title}>Who will you grow with?</Text>
+          <Text style={styles.sub}>
+            Lock in one dragon per day. Hit your protein goal to earn XP, level up, and unlock ten
+            evolution forms. Consistency is the unlock.
+          </Text>
+        </>
+      ) : null}
 
-      <View style={styles.grid}>
+      <View style={[styles.list, compact && { marginTop: 0 }, tight && styles.listTight]}>
         {DRAGONS.map((dragon, i) => {
           const active = selected === dragon.id;
           return (
             <Animated.View
               key={dragon.id}
-              entering={FadeInDown.delay(i * 80).springify().damping(16)}
-              style={{ width: '100%' }}>
+              entering={FadeInDown.delay(i * 80).springify().damping(16)}>
               <Pressable
                 onPress={() => pick(dragon.id)}
-                style={[
-                  styles.card,
-                  active && { borderColor: dragon.accent, backgroundColor: colors.accentSurface },
-                ]}>
-                <Image source={dragon.previewArt} style={styles.art} />
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.name, active && { color: dragon.accent }]}>
-                    {dragon.name}
-                  </Text>
-                  <Text style={styles.titleSmall}>{dragon.title}</Text>
-                  <Text style={styles.motto}>{dragon.motto}</Text>
-                </View>
+                style={[styles.row, tight && styles.rowTight, active && styles.rowActive]}>
                 <View
                   style={[
-                    styles.radio,
-                    active && { borderColor: dragon.accent, backgroundColor: dragon.accent },
+                    styles.artFrame,
+                    active && { borderColor: dragon.accent, backgroundColor: colors.surface },
                   ]}>
-                  {active ? <View style={styles.radioInner} /> : null}
+                  <Image source={dragon.previewArt} style={[styles.art, tight && styles.artTight]} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.name, tight && styles.nameTight, active && { color: dragon.accent }]}>
+                    {dragon.name}
+                  </Text>
+                  <Text style={[styles.titleSmall, tight && styles.titleSmallTight]}>{dragon.title}</Text>
+                  <Text style={[styles.motto, tight && styles.mottoTight]}>{dragon.motto}</Text>
+                </View>
+                <View style={[styles.radio, active && { borderColor: dragon.accent }]}>
+                  {active ? (
+                    <View style={[styles.radioDot, { backgroundColor: dragon.accent }]} />
+                  ) : null}
                 </View>
               </Pressable>
             </Animated.View>
@@ -68,33 +77,84 @@ export function DragonPicker({ value, onChange }: Props) {
 
 const styles = StyleSheet.create({
   wrap: { gap: spacing.sm },
-  kicker: { ...type.label, color: colors.accent },
-  title: { fontFamily: fonts.displayHeavy, fontSize: 28, lineHeight: 34, color: colors.text },
-  sub: { ...type.body, fontSize: 14, marginBottom: spacing.sm },
-  grid: { gap: spacing.sm },
-  card: {
+  kicker: {
+    fontFamily: fonts.mono,
+    fontSize: 9,
+    letterSpacing: 3.5,
+    color: colors.accentSecondary,
+  },
+  step: {
+    fontFamily: fonts.mono,
+    fontSize: 10,
+    letterSpacing: 2,
+    color: colors.accent,
+    marginTop: spacing.sm,
+  },
+  title: {
+    fontFamily: fonts.displayHeavy,
+    fontSize: 34,
+    lineHeight: 40,
+    color: colors.text,
+    letterSpacing: -1,
+    marginTop: 4,
+  },
+  sub: {
+    fontFamily: fonts.body,
+    fontSize: 14,
+    marginBottom: spacing.md,
+    lineHeight: 21,
+    color: colors.textSecondary,
+  },
+  list: { gap: spacing.sm, marginTop: spacing.xs },
+  listTight: { gap: spacing.xs },
+  row: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-    backgroundColor: colors.surface,
-    borderWidth: 1.5,
-    borderColor: colors.hairline,
-    borderRadius: radius.lg,
-    padding: spacing.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.sm,
     minHeight: 44,
+    borderRadius: radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'transparent',
   },
-  art: { width: 72, height: 72, borderRadius: radius.md },
-  name: { fontFamily: fonts.display, fontSize: 18, color: colors.text },
-  titleSmall: { fontFamily: fonts.mono, fontSize: 10, letterSpacing: 1, color: colors.textTertiary },
-  motto: { fontFamily: fonts.body, fontSize: 12.5, color: colors.textSecondary, marginTop: 4 },
+  rowActive: {
+    backgroundColor: colors.bgRaised,
+    borderColor: colors.hairline,
+  },
+  rowTight: {
+    paddingVertical: spacing.sm,
+    gap: spacing.sm,
+  },
+  artFrame: {
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    overflow: 'hidden',
+    backgroundColor: colors.surface,
+  },
+  art: { width: 64, height: 64, borderRadius: radius.sm },
+  artTight: { width: 48, height: 48 },
+  name: { fontFamily: fonts.display, fontSize: 17, color: colors.text },
+  nameTight: { fontSize: 15 },
+  titleSmall: {
+    fontFamily: fonts.mono,
+    fontSize: 9,
+    letterSpacing: 1.2,
+    color: colors.textTertiary,
+    marginTop: 2,
+  },
+  titleSmallTight: { fontSize: 8, letterSpacing: 1 },
+  motto: { fontFamily: fonts.body, fontSize: 12, color: colors.textSecondary, marginTop: 4 },
+  mottoTight: { fontSize: 11, marginTop: 2 },
   radio: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
     borderWidth: 1.5,
     borderColor: colors.hairlineBright,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  radioInner: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.onAccent },
+  radioDot: { width: 8, height: 8, borderRadius: 4 },
 });

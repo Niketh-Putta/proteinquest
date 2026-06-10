@@ -31,18 +31,16 @@ import { Button } from '@/components/Button';
 import { Celebration } from '@/components/Celebration';
 import {
   analyzeFoodPhoto,
-  countTodayScans,
   fetchLogsForDate,
   insertLog,
   uploadFoodPhoto,
 } from '@/lib/api';
-import { applyLogToCharacter } from '@/lib/character';
+import { applyLogToCharacter, isDailyDragonLockedForToday } from '@/lib/character';
 import { useLayout } from '@/lib/layout';
-import { FREE_DAILY_SCANS } from '@/lib/payments';
 import { todayISODate } from '@/lib/protein';
 import { useSession } from '@/lib/session';
 import type { Analysis } from '@/lib/types';
-import { colors, fonts, radius, spacing, type } from '@/theme';
+import { colors, fonts, spacing } from '@/theme';
 
 type Phase = 'camera' | 'analyzing' | 'result';
 
@@ -58,7 +56,6 @@ const ANALYZING_STEPS = [
 ];
 
 function ScanSweep() {
-  // Animated horizontal scan line over the photo while analyzing.
   const y = useSharedValue(0);
   useEffect(() => {
     y.value = withRepeat(
@@ -77,7 +74,7 @@ function ScanSweep() {
 
 export default function ScanScreen() {
   const { session, profile, saveProfile } = useSession();
-  const { isNarrow, horizontalPad, contentWidth } = useLayout();
+  const { horizontalPad, contentWidth, contentMaxWidth } = useLayout();
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
 
@@ -89,8 +86,13 @@ export default function ScanScreen() {
   const [proteinOverride, setProteinOverride] = useState('');
   const [analyzeStep, setAnalyzeStep] = useState(0);
   const [saving, setSaving] = useState(false);
-  const [scansLeft, setScansLeft] = useState<number | null>(null);
-  const [celebration, setCelebration] = useState<{ evolved: boolean } | null>(null);
+  const [celebration, setCelebration] = useState<{
+    evolved: boolean;
+    leveledUp: boolean;
+    perkUnlocked: string | null;
+    levelAfter: number;
+    previousStageIndex?: number;
+  } | null>(null);
 
   useEffect(() => {
     if (!permission?.granted && permission?.canAskAgain !== false) {
@@ -99,11 +101,10 @@ export default function ScanScreen() {
   }, [permission, requestPermission]);
 
   useEffect(() => {
-    if (profile?.is_premium) return;
-    countTodayScans()
-      .then((used) => setScansLeft(Math.max(FREE_DAILY_SCANS - used, 0)))
-      .catch(() => setScansLeft(null));
-  }, [profile?.is_premium]);
+    if (profile && !isDailyDragonLockedForToday(profile, todayISODate())) {
+      router.replace('/(tabs)/today');
+    }
+  }, [profile]);
 
   useEffect(() => {
     if (phase !== 'analyzing') return;
@@ -115,18 +116,7 @@ export default function ScanScreen() {
     return () => clearInterval(t);
   }, [phase]);
 
-  async function guardScanAllowance(): Promise<boolean> {
-    if (profile?.is_premium) return true;
-    const used = await countTodayScans().catch(() => 0);
-    if (used >= FREE_DAILY_SCANS) {
-      router.push('/paywall');
-      return false;
-    }
-    return true;
-  }
-
   async function capture() {
-    if (!(await guardScanAllowance())) return;
     try {
       const photo = await cameraRef.current?.takePictureAsync({ quality: 0.8 });
       if (!photo?.uri) throw new Error('Could not capture the photo');
@@ -138,7 +128,6 @@ export default function ScanScreen() {
   }
 
   async function pickFromLibrary() {
-    if (!(await guardScanAllowance())) return;
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
       showError('Photo library access is needed to upload a meal photo.');
@@ -160,14 +149,18 @@ export default function ScanScreen() {
 
   async function analyze(uri: string) {
     setError(null);
+    if (profile && !isDailyDragonLockedForToday(profile, todayISODate())) {
+      router.replace('/(tabs)/today');
+      return;
+    }
     setPhase('analyzing');
     setImageUri(uri);
     try {
-      const ctx = ImageManipulator.manipulate(uri).resize({ width: 1024 });
+      const ctx = ImageManipulator.manipulate(uri).resize({ width: 768 });
       const rendered = await ctx.renderAsync();
       const saved = await rendered.saveAsync({
         format: SaveFormat.JPEG,
-        compress: 0.7,
+        compress: 0.65,
         base64: true,
       });
       if (!saved.base64) {
@@ -193,7 +186,11 @@ export default function ScanScreen() {
   }
 
   async function handleSave() {
-    if (!analysis || !session || !profile) return;
+    if (!analysis || !session) return;
+    if (!profile) {
+      setError('Profile still loading - wait a second and tap Log it again.');
+      return;
+    }
     const proteinG = parseFloat(proteinOverride);
     if (Number.isNaN(proteinG) || proteinG < 0) {
       setError('Enter the protein amount in grams.');
@@ -218,7 +215,15 @@ export default function ScanScreen() {
         source: 'photo',
       });
 
-      const { updates, goalJustHit, evolved } = applyLogToCharacter({
+      const {
+        updates,
+        goalJustHit,
+        evolved,
+        leveledUp,
+        perkUnlocked,
+        levelAfter,
+        stageBeforeIndex,
+      } = applyLogToCharacter({
         profile,
         todayTotalBefore,
         loggedProtein: proteinG,
@@ -229,7 +234,13 @@ export default function ScanScreen() {
 
       if (goalJustHit) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-        setCelebration({ evolved });
+        setCelebration({
+          evolved,
+          leveledUp,
+          perkUnlocked,
+          levelAfter,
+          previousStageIndex: stageBeforeIndex,
+        });
       } else {
         goHome();
       }
@@ -244,23 +255,22 @@ export default function ScanScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-      {/* top bar */}
       <View style={styles.topBar}>
-        <Pressable onPress={goHome} hitSlop={12} style={styles.roundBtn}>
+        <Pressable onPress={goHome} hitSlop={12} style={styles.iconBtn}>
           <Ionicons name="close" size={22} color={colors.text} />
         </Pressable>
         <Text style={styles.topTitle}>
           {phase === 'result' ? 'CONFIRM & LOG' : phase === 'analyzing' ? 'ANALYZING' : 'SCAN MEAL'}
         </Text>
-        <View style={{ width: 40 }} />
+        <View style={{ width: 44 }} />
       </View>
 
       {error ? (
         <Animated.View entering={FadeInDown.springify().damping(16)} style={styles.errorBanner}>
-          <Ionicons name="alert-circle" size={16} color={colors.danger} />
+          <Ionicons name="alert-circle" size={15} color={colors.danger} />
           <Text style={styles.errorText}>{error}</Text>
           <Pressable onPress={() => setError(null)} hitSlop={8}>
-            <Ionicons name="close" size={15} color={colors.textTertiary} />
+            <Ionicons name="close" size={14} color={colors.textTertiary} />
           </Pressable>
         </Animated.View>
       ) : null}
@@ -271,25 +281,24 @@ export default function ScanScreen() {
             <CameraView ref={cameraRef} style={styles.camera} facing="back" />
           ) : (
             <View style={[styles.camera, styles.cameraDenied]}>
-              <Ionicons name="videocam-off-outline" size={36} color={colors.textTertiary} />
+              <Ionicons name="videocam-off-outline" size={32} color={colors.textTertiary} />
               <Text style={styles.deniedTitle}>Camera unavailable</Text>
               <Text style={styles.deniedText}>
                 {permission?.canAskAgain === false
-                  ? 'Camera access was denied. Enable it in your browser/device settings, or upload a photo instead.'
-                  : 'Grant camera access to scan your meal, or upload a photo from your library.'}
+                  ? 'Camera access was denied. Enable it in settings, or upload a photo instead.'
+                  : 'Grant camera access to scan your meal, or upload from your library.'}
               </Text>
               {permission?.canAskAgain !== false ? (
                 <Button
                   title="Allow camera"
                   variant="secondary"
                   onPress={requestPermission}
-                  style={{ marginTop: spacing.md, alignSelf: 'center', minWidth: 180 }}
+                  style={{ marginTop: spacing.lg, alignSelf: 'center', minWidth: 180 }}
                 />
               ) : null}
             </View>
           )}
 
-          {/* viewfinder frame corners */}
           {cameraReady ? (
             <View pointerEvents="none" style={styles.frame}>
               {(['tl', 'tr', 'bl', 'br'] as const).map((corner) => (
@@ -299,20 +308,14 @@ export default function ScanScreen() {
           ) : null}
 
           <View style={styles.controls}>
-            {!profile?.is_premium && scansLeft !== null ? (
-              <Pressable onPress={() => router.push('/paywall')} style={styles.scansPill}>
-                <Ionicons name="sparkles" size={12} color={colors.accent} />
-                <Text style={styles.scansPillText}>
-                  {scansLeft > 0
-                    ? `${scansLeft} FREE SCAN${scansLeft === 1 ? '' : 'S'} LEFT`
-                    : 'OUT OF SCANS \u2014 GO PRO'}
-                </Text>
-              </Pressable>
-            ) : null}
-
             <View style={styles.shutterRow}>
-              <Pressable onPress={pickFromLibrary} style={styles.libraryBtn} hitSlop={8}>
-                <Ionicons name="images-outline" size={22} color={colors.text} />
+              <Pressable
+                onPress={pickFromLibrary}
+                accessibilityLabel="Upload from library"
+                accessibilityRole="button"
+                style={styles.libraryBtn}
+                hitSlop={8}>
+                <Ionicons name="images-outline" size={20} color={colors.text} />
               </Pressable>
 
               <Pressable
@@ -347,7 +350,12 @@ export default function ScanScreen() {
         <ScrollView
           contentContainerStyle={[
             styles.resultScroll,
-            { paddingHorizontal: horizontalPad, maxWidth: 428, width: contentWidth, alignSelf: 'center' },
+            {
+              paddingHorizontal: horizontalPad,
+              maxWidth: contentMaxWidth,
+              width: contentWidth,
+              alignSelf: 'center',
+            },
           ]}
           showsVerticalScrollIndicator={false}>
           {imageUri ? (
@@ -360,35 +368,23 @@ export default function ScanScreen() {
 
           <Animated.View entering={FadeInDown.delay(80).springify().damping(16)}>
             <Text style={styles.foodName}>{analysis.food_name}</Text>
-            <View style={styles.metaRow}>
-              <View
-                style={[
-                  styles.confDot,
-                  {
-                    backgroundColor:
-                      analysis.confidence === 'high'
-                        ? colors.accent
-                        : analysis.confidence === 'medium'
-                          ? colors.warning
-                          : colors.danger,
-                  },
-                ]}
-              />
-              <Text style={styles.metaText}>
-                {analysis.confidence?.toUpperCase()} CONFIDENCE
-                {analysis.calories ? `  \u00B7  ~${Math.round(analysis.calories)} KCAL` : ''}
-              </Text>
-            </View>
+            <Text style={styles.metaText}>
+              {analysis.confidence?.toUpperCase()} CONFIDENCE
+              {analysis.calories ? `  ·  ~${Math.round(analysis.calories)} KCAL` : ''}
+            </Text>
           </Animated.View>
 
-          <Animated.View
-            entering={FadeInDown.delay(160).springify().damping(16)}
-            style={styles.itemsCard}>
+          <View style={styles.rule} />
+
+          <Animated.View entering={FadeInDown.delay(160).springify().damping(16)}>
             {analysis.items.map((item, i) => (
               <View key={`${item.name}-${i}`} style={[styles.itemRow, i > 0 && styles.itemRowBorder]}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.itemName}>{item.name}</Text>
-                  <Text style={styles.itemPortion}>{item.portion}</Text>
+                  <Text style={styles.itemPortion}>
+                    {item.estimated_grams ? `~${item.estimated_grams}g · ` : ''}
+                    {item.portion}
+                  </Text>
                 </View>
                 <View style={styles.itemRight}>
                   <Text style={styles.itemProtein}>
@@ -408,9 +404,9 @@ export default function ScanScreen() {
             </Animated.Text>
           ) : null}
 
-          <Animated.View
-            entering={FadeInDown.delay(240).springify().damping(16)}
-            style={styles.totalCard}>
+          <View style={styles.rule} />
+
+          <Animated.View entering={FadeInDown.delay(240).springify().damping(16)} style={styles.totalBlock}>
             <Text style={styles.totalLabel}>TOTAL PROTEIN</Text>
             <View style={styles.totalInputRow}>
               <TextInput
@@ -422,10 +418,10 @@ export default function ScanScreen() {
               />
               <Text style={styles.totalUnit}>g</Text>
             </View>
-            <Text style={styles.totalHint}>tap the number to adjust</Text>
+            <Text style={styles.totalHint}>tap to adjust</Text>
           </Animated.View>
 
-          <Animated.View entering={FadeInDown.delay(320)} style={{ gap: 4 }}>
+          <Animated.View entering={FadeInDown.delay(320)} style={{ gap: 4, marginTop: spacing.lg }}>
             <Button title="Log it" onPress={handleSave} loading={saving} />
             <Button
               title="Retake"
@@ -445,6 +441,10 @@ export default function ScanScreen() {
           visible={!!celebration}
           profile={profile}
           evolved={celebration?.evolved ?? false}
+          leveledUp={celebration?.leveledUp ?? false}
+          perkUnlocked={celebration?.perkUnlocked}
+          levelAfter={celebration?.levelAfter}
+          previousStageIndex={celebration?.previousStageIndex}
           onDone={() => {
             setCelebration(null);
             goHome();
@@ -464,85 +464,69 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },
-  roundBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.hairline,
+  iconBtn: {
+    width: 44,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  topTitle: { ...type.label, color: colors.textSecondary, fontSize: 12 },
+  topTitle: {
+    fontFamily: fonts.mono,
+    fontSize: 10,
+    letterSpacing: 2.5,
+    color: colors.textSecondary,
+  },
   errorBanner: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
     marginHorizontal: spacing.md,
     marginBottom: spacing.sm,
-    paddingHorizontal: spacing.md,
     paddingVertical: 10,
-    borderRadius: radius.sm,
-    backgroundColor: 'rgba(255, 122, 107, 0.10)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 122, 107, 0.35)',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.danger,
   },
   errorText: { flex: 1, fontFamily: fonts.body, fontSize: 13, color: colors.danger },
-  cameraWrap: { flex: 1, margin: spacing.md, marginTop: 4 },
-  camera: { flex: 1, borderRadius: radius.lg, overflow: 'hidden' },
+  cameraWrap: { flex: 1 },
+  camera: { flex: 1, overflow: 'hidden' },
   cameraDenied: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.hairline,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: spacing.lg,
+    padding: spacing.xl,
   },
-  deniedTitle: { fontFamily: fonts.display, fontSize: 17, color: colors.text, marginTop: spacing.md },
+  deniedTitle: {
+    fontFamily: fonts.display,
+    fontSize: 17,
+    color: colors.text,
+    marginTop: spacing.md,
+  },
   deniedText: {
-    ...type.body,
-    fontSize: 13.5,
+    fontFamily: fonts.body,
+    fontSize: 13,
+    color: colors.textSecondary,
     textAlign: 'center',
     marginTop: spacing.sm,
     maxWidth: 300,
+    lineHeight: 19,
   },
-  frame: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, margin: 22 },
+  frame: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, margin: 28 },
   corner: {
     position: 'absolute',
-    width: 30,
-    height: 30,
-    borderColor: 'rgba(200, 240, 82, 0.9)',
+    width: 24,
+    height: 24,
+    borderColor: colors.accent,
   },
-  tl: { top: 0, left: 0, borderTopWidth: 3, borderLeftWidth: 3, borderTopLeftRadius: 10 },
-  tr: { top: 0, right: 0, borderTopWidth: 3, borderRightWidth: 3, borderTopRightRadius: 10 },
-  bl: { bottom: 96, left: 0, borderBottomWidth: 3, borderLeftWidth: 3, borderBottomLeftRadius: 10 },
-  br: { bottom: 96, right: 0, borderBottomWidth: 3, borderRightWidth: 3, borderBottomRightRadius: 10 },
+  tl: { top: 0, left: 0, borderTopWidth: 2, borderLeftWidth: 2 },
+  tr: { top: 0, right: 0, borderTopWidth: 2, borderRightWidth: 2 },
+  bl: { bottom: 96, left: 0, borderBottomWidth: 2, borderLeftWidth: 2 },
+  br: { bottom: 96, right: 0, borderBottomWidth: 2, borderRightWidth: 2 },
   controls: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
     alignItems: 'center',
-    paddingBottom: spacing.md,
-    gap: spacing.sm,
-  },
-  scansPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: radius.full,
-    backgroundColor: 'rgba(11, 11, 13, 0.78)',
-    borderWidth: 1,
-    borderColor: colors.hairlineBright,
-  },
-  scansPillText: {
-    fontFamily: fonts.monoBold,
-    fontSize: 10,
-    letterSpacing: 1,
-    color: colors.text,
+    paddingBottom: spacing.lg,
   },
   shutterRow: {
     flexDirection: 'row',
@@ -555,37 +539,36 @@ const styles = StyleSheet.create({
     width: 46,
     height: 46,
     borderRadius: 23,
-    backgroundColor: 'rgba(11, 11, 13, 0.78)',
-    borderWidth: 1,
-    borderColor: colors.hairlineBright,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: 'rgba(12, 11, 16, 0.78)',
+    borderWidth: 1,
+    borderColor: colors.hairlineBright,
   },
   libraryBtnPlaceholder: { width: 46 },
   shutter: {
-    width: 74,
-    height: 74,
-    borderRadius: 37,
-    borderWidth: 4,
-    borderColor: '#FFFFFF',
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    borderWidth: 3,
+    borderColor: colors.text,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
   },
   shutterInner: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: colors.accent,
   },
   analyzingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.lg },
   analyzingImageWrap: {
-    width: 240,
-    height: 240,
-    borderRadius: radius.lg,
+    width: 220,
+    height: 220,
     overflow: 'hidden',
-    marginBottom: spacing.lg,
-    borderWidth: 1,
+    marginBottom: spacing.xl,
+    borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.hairlineBright,
   },
   analyzingImage: { width: '100%', height: '100%' },
@@ -593,43 +576,69 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    height: 3,
+    height: 2,
     backgroundColor: colors.accent,
-    shadowColor: colors.accent,
-    shadowOpacity: 0.9,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 0 },
   },
-  analyzingTitle: { fontFamily: fonts.display, fontSize: 20, color: colors.text },
-  analyzingSub: { fontFamily: fonts.mono, fontSize: 12, color: colors.textTertiary, marginTop: 6 },
-  resultScroll: { padding: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.xxl, gap: spacing.sm },
+  analyzingTitle: {
+    fontFamily: fonts.display,
+    fontSize: 20,
+    color: colors.text,
+    letterSpacing: -0.3,
+  },
+  analyzingSub: {
+    fontFamily: fonts.mono,
+    fontSize: 11,
+    color: colors.textTertiary,
+    marginTop: 8,
+    letterSpacing: 0.5,
+  },
+  resultScroll: { paddingTop: spacing.sm, paddingBottom: spacing.xxl },
   resultImage: {
     width: '100%',
-    height: 190,
-    borderRadius: radius.lg,
-    marginBottom: spacing.xs,
+    height: 200,
+    marginBottom: spacing.lg,
   },
-  foodName: { fontFamily: fonts.display, fontSize: 24, color: colors.text },
-  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 },
-  confDot: { width: 7, height: 7, borderRadius: 4 },
-  metaText: { fontFamily: fonts.mono, fontSize: 10.5, letterSpacing: 1, color: colors.textSecondary },
-  itemsCard: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
-    marginTop: spacing.sm,
+  foodName: {
+    fontFamily: fonts.displayHeavy,
+    fontSize: 28,
+    color: colors.text,
+    letterSpacing: -0.8,
   },
-  itemRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 13, gap: spacing.md },
-  itemRowBorder: { borderTopWidth: 1, borderTopColor: colors.hairline },
-  itemName: { fontFamily: fonts.displayMedium, fontSize: 14.5, color: colors.text },
-  itemPortion: { fontFamily: fonts.mono, fontSize: 11, color: colors.textTertiary, marginTop: 2 },
+  metaText: {
+    fontFamily: fonts.mono,
+    fontSize: 10,
+    letterSpacing: 1,
+    color: colors.textTertiary,
+    marginTop: 6,
+  },
+  rule: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.hairlineBright,
+    marginVertical: spacing.lg,
+  },
+  itemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    gap: spacing.md,
+  },
+  itemRowBorder: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.hairline,
+  },
+  itemName: { fontFamily: fonts.displayMedium, fontSize: 14, color: colors.text },
+  itemPortion: {
+    fontFamily: fonts.mono,
+    fontSize: 10,
+    color: colors.textTertiary,
+    marginTop: 2,
+    letterSpacing: 0.3,
+  },
   itemRight: { alignItems: 'flex-end' },
   itemProtein: {
     fontFamily: fonts.display,
     fontSize: 16,
-    color: colors.accent,
+    color: colors.text,
     fontVariant: ['tabular-nums'],
   },
   itemLowConf: {
@@ -639,27 +648,36 @@ const styles = StyleSheet.create({
     color: colors.warning,
     marginTop: 2,
   },
-  notes: { fontFamily: fonts.body, fontSize: 12, color: colors.textTertiary, fontStyle: 'italic' },
-  totalCard: {
-    backgroundColor: colors.accentSurface,
-    borderWidth: 1,
-    borderColor: colors.accentDeep,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    alignItems: 'center',
-    marginVertical: spacing.xs,
+  notes: {
+    fontFamily: fonts.body,
+    fontSize: 12,
+    color: colors.textTertiary,
+    fontStyle: 'italic',
+    marginTop: spacing.sm,
   },
-  totalLabel: { ...type.label, color: colors.textSecondary },
-  totalInputRow: { flexDirection: 'row', alignItems: 'baseline' },
+  totalBlock: { alignItems: 'flex-start' },
+  totalLabel: {
+    fontFamily: fonts.mono,
+    fontSize: 10,
+    letterSpacing: 2,
+    color: colors.textTertiary,
+  },
+  totalInputRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 4, marginTop: 4 },
   totalInput: {
-    fontSize: 54,
+    fontSize: 56,
     fontFamily: fonts.displayHeavy,
-    color: colors.accent,
+    color: colors.text,
     fontVariant: ['tabular-nums'],
     padding: 0,
     minWidth: 60,
-    textAlign: 'center',
+    letterSpacing: -2,
   },
-  totalUnit: { fontSize: 24, fontFamily: fonts.display, color: colors.accentDeep },
-  totalHint: { fontFamily: fonts.mono, fontSize: 10, color: colors.textTertiary, letterSpacing: 0.8 },
+  totalUnit: { fontSize: 22, fontFamily: fonts.display, color: colors.textTertiary, marginBottom: 8 },
+  totalHint: {
+    fontFamily: fonts.mono,
+    fontSize: 10,
+    color: colors.textTertiary,
+    letterSpacing: 0.5,
+    marginTop: 4,
+  },
 });

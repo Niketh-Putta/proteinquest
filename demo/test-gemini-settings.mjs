@@ -1,7 +1,7 @@
 // Browser test: Settings AI Provider UI on mobile viewport.
 import { chromium } from 'playwright';
 
-const BASE = process.argv[2] ?? 'https://proteinlens.vercel.app';
+const BASE = process.argv[2] ?? 'https://proteinquest.vercel.app';
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
 
