@@ -8,7 +8,7 @@ import { isDailyDragonLockedForToday } from '@/lib/character';
 import { useLayout } from '@/lib/layout';
 import { todayISODate } from '@/lib/protein';
 import { useSession } from '@/lib/session';
-import { colors, fonts, shadowAccent, spacing } from '@/theme';
+import { colors, fonts, noTextCaret, pressableWeb, shadowAccent, spacing } from '@/theme';
 
 interface TabBarProps {
   state: { index: number };
@@ -43,12 +43,19 @@ function ScanTabBar({ state, navigation }: TabBarProps) {
         />
 
         <Pressable
+          accessibilityRole="button"
           onPress={openScan}
-          style={({ pressed }) => [styles.scanTab, pressed && { transform: [{ scale: 0.94 }] }]}>
+          style={({ pressed }) => [
+            styles.scanTab,
+            pressableWeb,
+            pressed && { transform: [{ scale: 0.94 }] },
+          ]}>
           <View style={styles.scanBtn}>
             <Ionicons name="scan" size={24} color={colors.onAccent} />
           </View>
-          <Text style={styles.scanLabel}>Scan</Text>
+          <Text selectable={false} pointerEvents="none" style={styles.scanLabel}>
+            Scan
+          </Text>
         </Pressable>
 
         <TabButton
@@ -71,9 +78,14 @@ function TabButton({
   onPress: () => void;
 }) {
   return (
-    <Pressable onPress={onPress} style={styles.tab}>
+    <Pressable accessibilityRole="button" onPress={onPress} style={[styles.tab, pressableWeb]}>
       <Ionicons name={tab.icon} size={20} color={active ? colors.text : colors.textTertiary} />
-      <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>{tab.label}</Text>
+      <Text
+        selectable={false}
+        pointerEvents="none"
+        style={[styles.tabLabel, active && styles.tabLabelActive]}>
+        {tab.label}
+      </Text>
       {active ? <View style={styles.tabIndicator} /> : null}
     </Pressable>
   );
@@ -86,7 +98,7 @@ export default function TabsLayout() {
       tabBar={(props) => <ScanTabBar {...props} />}
       screenOptions={{
         headerShown: false,
-        sceneStyle: { flex: 1, backgroundColor: colors.bg },
+        sceneStyle: { flex: 1, minHeight: 0, backgroundColor: colors.bg },
       }}>
       <Tabs.Screen name="today" />
       <Tabs.Screen name="trends" />
@@ -111,6 +123,7 @@ const styles = StyleSheet.create({
   },
   tab: { alignItems: 'center', gap: 4, width: 72, minHeight: 44, paddingBottom: 2 },
   tabLabel: {
+    ...noTextCaret,
     fontFamily: fonts.mono,
     fontSize: 9,
     letterSpacing: 1.2,
@@ -147,6 +160,7 @@ const styles = StyleSheet.create({
     ...shadowAccent,
   },
   scanLabel: {
+    ...noTextCaret,
     fontFamily: fonts.monoBold,
     fontSize: 9,
     letterSpacing: 1.2,

@@ -20,7 +20,7 @@ import {
   getStoredAdminToken,
   type AdminStats,
 } from '@/lib/admin';
-import { colors, fonts, radius, spacing, type } from '@/theme';
+import { colors, fonts, noTextCaret, pressableWeb, radius, spacing, type } from '@/theme';
 
 function StatCard({
   label,
@@ -144,11 +144,15 @@ export default function AdminScreen() {
         ) : (
           <>
             <View style={styles.toolbar}>
-              <Pressable onPress={() => void loadStats()} disabled={loading}>
-                <Text style={styles.link}>{loading ? 'Refreshing…' : 'Refresh'}</Text>
+              <Pressable onPress={() => void loadStats()} disabled={loading} style={pressableWeb}>
+                <Text selectable={false} pointerEvents="none" style={styles.link}>
+                  {loading ? 'Refreshing…' : 'Refresh'}
+                </Text>
               </Pressable>
-              <Pressable onPress={handleSignOut}>
-                <Text style={styles.linkMuted}>Sign out</Text>
+              <Pressable onPress={handleSignOut} style={pressableWeb}>
+                <Text selectable={false} pointerEvents="none" style={styles.linkMuted}>
+                  Sign out
+                </Text>
               </Pressable>
             </View>
 
@@ -240,12 +244,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   link: {
+    ...noTextCaret,
     fontFamily: fonts.mono,
     fontSize: 12,
     color: colors.accent,
     letterSpacing: 0.5,
   },
   linkMuted: {
+    ...noTextCaret,
     fontFamily: fonts.mono,
     fontSize: 12,
     color: colors.textTertiary,

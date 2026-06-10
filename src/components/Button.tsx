@@ -2,7 +2,7 @@ import React from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, ViewStyle } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 
-import { colors, fonts, radius, spacing } from '@/theme';
+import { colors, fonts, noTextCaret, pressableWeb, radius, spacing } from '@/theme';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -39,6 +39,8 @@ export function Button({ title, onPress, variant = 'primary', disabled, loading,
         <ActivityIndicator color={isPrimary ? colors.onAccent : colors.text} />
       ) : (
         <Text
+          selectable={false}
+          pointerEvents="none"
           style={[
             styles.label,
             { color: isPrimary ? colors.onAccent : variant === 'ghost' ? colors.textSecondary : colors.text },
@@ -52,6 +54,7 @@ export function Button({ title, onPress, variant = 'primary', disabled, loading,
 
 const styles = StyleSheet.create({
   base: {
+    ...pressableWeb,
     height: 52,
     alignItems: 'center',
     justifyContent: 'center',
@@ -66,6 +69,7 @@ const styles = StyleSheet.create({
   },
   ghost: { backgroundColor: 'transparent' },
   label: {
+    ...noTextCaret,
     fontSize: 14,
     fontFamily: fonts.displayMedium,
     letterSpacing: 0.3,

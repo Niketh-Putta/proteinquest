@@ -2,7 +2,7 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { useLayout } from '@/lib/layout';
-import { colors, fonts, spacing, type } from '@/theme';
+import { colors, fonts, noTextCaret, pressableWeb, spacing, type } from '@/theme';
 
 export function FieldLabel({ children }: { children: React.ReactNode }) {
   const { isNarrow } = useLayout();
@@ -101,21 +101,25 @@ export function ChoiceRow<T extends string>({
           <Pressable
             key={opt.value}
             onPress={() => onChange(opt.value)}
-            style={[styles.choice, i > 0 && styles.choiceBorder]}>
+            style={[styles.choice, pressableWeb, i > 0 && styles.choiceBorder]}>
             <View style={[styles.choiceAccent, selected && styles.choiceAccentOn]} />
             <View style={styles.choiceBody}>
               <Text
+                selectable={false}
+                pointerEvents="none"
                 style={[styles.choiceTitle, selected && { color: colors.accent }]}
                 numberOfLines={2}>
                 {opt.title}
               </Text>
               {opt.subtitle ? (
-                <Text style={styles.choiceSubtitle} numberOfLines={2}>
+                <Text selectable={false} pointerEvents="none" style={styles.choiceSubtitle} numberOfLines={2}>
                   {opt.subtitle}
                 </Text>
               ) : null}
             </View>
             <Text
+              selectable={false}
+              pointerEvents="none"
               style={[
                 styles.choiceMark,
                 selected && { color: colors.accent },
@@ -152,8 +156,10 @@ export function SegmentedRow<T extends string>({
           <Pressable
             key={opt.value}
             onPress={() => onChange(opt.value)}
-            style={[styles.segment, selected && styles.segmentSelected]}>
+            style={[styles.segment, pressableWeb, selected && styles.segmentSelected]}>
             <Text
+              selectable={false}
+              pointerEvents="none"
               style={[
                 styles.segmentLabel,
                 selected && styles.segmentLabelOn,
@@ -246,14 +252,16 @@ const styles = StyleSheet.create({
   },
   choiceAccentOn: { backgroundColor: colors.accent },
   choiceBody: { flex: 1, minWidth: 0 },
-  choiceTitle: { fontFamily: fonts.displayMedium, fontSize: 15, color: colors.text },
+  choiceTitle: { ...noTextCaret, fontFamily: fonts.displayMedium, fontSize: 15, color: colors.text },
   choiceSubtitle: {
+    ...noTextCaret,
     fontFamily: fonts.body,
     fontSize: 12.5,
     color: colors.textSecondary,
     marginTop: 2,
   },
   choiceMark: {
+    ...noTextCaret,
     flexShrink: 0,
     fontFamily: fonts.mono,
     fontSize: 12,
@@ -279,6 +287,7 @@ const styles = StyleSheet.create({
   },
   segmentSelected: { borderBottomColor: colors.accent },
   segmentLabel: {
+    ...noTextCaret,
     fontFamily: fonts.mono,
     fontSize: 12,
     letterSpacing: 0.8,

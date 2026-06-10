@@ -1,7 +1,16 @@
-import { useWindowDimensions } from 'react-native';
+import { Platform, useWindowDimensions, ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { spacing } from '@/theme';
+
+/** Fill tab scene height; overflow hidden on web so nested lists scroll. */
+export const flexFill: ViewStyle =
+  Platform.OS === 'web'
+    ? { flex: 1, minHeight: 0, overflow: 'hidden' }
+    : { flex: 1, minHeight: 0 };
+
+/** FlatList / ScrollView body inside a flexFill parent. */
+export const flexScroll: ViewStyle = { flex: 1, minHeight: 0 };
 
 export type Breakpoint = 'phone' | 'tablet' | 'desktop';
 export type HeroLayout = 'stack' | 'split' | 'sidebar';

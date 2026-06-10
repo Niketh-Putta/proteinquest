@@ -1,4 +1,4 @@
-import { Platform } from 'react-native';
+import { Platform, TextStyle, ViewStyle } from 'react-native';
 
 // "Ember dusk" - deep charcoal, warm coral signal, violet undertones.
 // Premium Locked-meets-CalAI; no lime green.
@@ -88,3 +88,13 @@ export const shadowCard = {
   shadowOffset: { width: 0, height: 4 },
   elevation: 8,
 } as const;
+
+/** Label Text inside Pressables — no web caret or text selection. */
+export const noTextCaret: TextStyle =
+  Platform.OS === 'web' ? ({ userSelect: 'none', cursor: 'default' } as TextStyle) : {};
+
+/** Tappable control chrome on web — pointer cursor, no focus ring. */
+export const pressableWeb: ViewStyle =
+  Platform.OS === 'web'
+    ? ({ cursor: 'pointer', outlineWidth: 0 } as unknown as ViewStyle)
+    : {};

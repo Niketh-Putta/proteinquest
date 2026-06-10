@@ -30,7 +30,7 @@ import { Button } from '@/components/Button';
 import { DRAGONS, VISUAL_EVOLUTION_LEVELS } from '@/lib/character';
 import { useLayout, usePinnedFooterGap } from '@/lib/layout';
 import { useSession } from '@/lib/session';
-import { colors, fonts, radius, spacing } from '@/theme';
+import { colors, fonts, noTextCaret, pressableWeb, radius, spacing } from '@/theme';
 
 /** Reference frame size - all visual internals are proportional to this. */
 const VIS_REF = 280;
@@ -577,8 +577,10 @@ export default function IntroScreen() {
                 <Pressable
                   onPress={finish}
                   disabled={saving}
-                  style={[styles.skipBtn, isCompact && styles.skipBtnCompact]}>
-                  <Text style={styles.skipText}>Skip intro</Text>
+                  style={[styles.skipBtn, pressableWeb, isCompact && styles.skipBtnCompact]}>
+                  <Text selectable={false} pointerEvents="none" style={styles.skipText}>
+                    Skip intro
+                  </Text>
                 </Pressable>
               ) : null}
             </View>
@@ -776,6 +778,7 @@ const styles = StyleSheet.create({
   skipBtn: { alignSelf: 'center', paddingVertical: spacing.sm, minHeight: 44, justifyContent: 'center' },
   skipBtnCompact: { paddingVertical: spacing.xs, minHeight: 36 },
   skipText: {
+    ...noTextCaret,
     fontFamily: fonts.mono,
     fontSize: 11,
     letterSpacing: 0.5,

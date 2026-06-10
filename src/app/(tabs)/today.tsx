@@ -20,7 +20,7 @@ import { ProgressRing } from '@/components/ProgressRing';
 import { deleteLog, fetchLogsForDate } from '@/lib/api';
 import { applyDeleteLogToCharacter, dragonById, isDailyDragonLockedForToday } from '@/lib/character';
 import { confirmDestructive } from '@/lib/confirm';
-import { useLayout, useTabBarScrollInset } from '@/lib/layout';
+import { flexFill, flexScroll, useLayout, useTabBarScrollInset } from '@/lib/layout';
 import { todayISODate } from '@/lib/protein';
 import { useSession } from '@/lib/session';
 import type { ProteinLog } from '@/lib/types';
@@ -70,13 +70,15 @@ export default function TodayScreen() {
       <PageCanvas>
         <SafeAreaView style={styles.safe} edges={['top']}>
           <View
-            style={{
-              flex: 1,
-              paddingHorizontal: horizontalPad,
-              maxWidth: contentMaxWidth,
-              width: '100%',
-              alignSelf: 'center',
-            }}>
+            style={[
+              flexFill,
+              {
+                paddingHorizontal: horizontalPad,
+                maxWidth: contentMaxWidth,
+                width: '100%',
+                alignSelf: 'center',
+              },
+            ]}>
             <DailyDragonPicker />
           </View>
         </SafeAreaView>
@@ -267,6 +269,7 @@ export default function TodayScreen() {
             <View style={[styles.desktopRow, { gap: columnGap }]}>
               <FlatList
                 {...listProps}
+                testID="today-log-list"
                 style={styles.desktopMain}
                 contentContainerStyle={[styles.list, { paddingBottom: tabBarScrollInset }]}
                 ListHeaderComponent={renderHeader()}
@@ -281,6 +284,7 @@ export default function TodayScreen() {
         ) : (
           <FlatList
             {...listProps}
+            testID="today-log-list"
             style={styles.listScroll}
             contentContainerStyle={[
               styles.list,
@@ -301,15 +305,15 @@ export default function TodayScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1 },
-  listScroll: { flex: 1 },
-  desktopShell: { flex: 1 },
+  safe: flexFill,
+  listScroll: flexScroll,
+  desktopShell: flexFill,
   desktopRow: {
-    flex: 1,
+    ...flexFill,
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'stretch',
   },
-  desktopMain: { flex: 1, minWidth: 0 },
+  desktopMain: { ...flexScroll, flex: 1, minWidth: 0 },
   desktopAside: {
     paddingTop: spacing.xl + 8,
     ...(Platform.OS === 'web'
