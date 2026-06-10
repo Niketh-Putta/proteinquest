@@ -44,6 +44,17 @@ import { colors, fonts, spacing } from '@/theme';
 
 type Phase = 'camera' | 'analyzing' | 'result';
 
+const DEMO_AUTO_SCAN_KEY = 'pq_demo_auto_scan';
+
+function isDemoAutoScan(): boolean {
+  if (Platform.OS !== 'web') return false;
+  try {
+    return sessionStorage.getItem(DEMO_AUTO_SCAN_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
 function goHome() {
   if (router.canGoBack()) router.back();
   else router.replace('/(tabs)/today');
@@ -94,11 +105,20 @@ export default function ScanScreen() {
     previousStageIndex?: number;
   } | null>(null);
 
+  const demoAutoScan = isDemoAutoScan();
+
   useEffect(() => {
+    if (demoAutoScan) return;
     if (!permission?.granted && permission?.canAskAgain !== false) {
       requestPermission();
     }
-  }, [permission, requestPermission]);
+  }, [demoAutoScan, permission, requestPermission]);
+
+  useEffect(() => {
+    if (!demoAutoScan || phase !== 'camera') return;
+    sessionStorage.removeItem(DEMO_AUTO_SCAN_KEY);
+    pickFromLibrary();
+  }, [demoAutoScan, phase]);
 
   useEffect(() => {
     if (profile && !isDailyDragonLockedForToday(profile, todayISODate())) {
@@ -275,7 +295,7 @@ export default function ScanScreen() {
         </Animated.View>
       ) : null}
 
-      {phase === 'camera' && (
+      {phase === 'camera' && !demoAutoScan && (
         <View style={styles.cameraWrap}>
           {cameraReady ? (
             <CameraView ref={cameraRef} style={styles.camera} facing="back" />
