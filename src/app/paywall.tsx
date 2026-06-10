@@ -16,7 +16,7 @@ const PERKS = [
 ];
 
 export default function Paywall() {
-  const { saveProfile } = useSession();
+  const { session, saveProfile } = useSession();
   const provider = getPaymentProvider();
   const [planId, setPlanId] = useState(provider.plans[1].id);
   const [busy, setBusy] = useState(false);
@@ -24,7 +24,10 @@ export default function Paywall() {
   async function handlePurchase() {
     setBusy(true);
     try {
-      const ok = await provider.purchase(planId);
+      const ok = await provider.purchase(planId, {
+        userId: session?.user.id,
+        email: session?.user.email ?? undefined,
+      });
       if (ok) {
         await saveProfile({ is_premium: true });
         Alert.alert('Welcome to Pro', 'Unlimited scans unlocked.');
@@ -107,25 +110,28 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: colors.card,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.hairline,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: spacing.md,
   },
   kicker: {
-    fontSize: 13,
-    fontWeight: '800',
+    fontFamily: fonts.monoBold,
+    fontSize: 11,
     letterSpacing: 2.5,
     color: colors.accent,
   },
   title: {
+    fontFamily: fonts.displayHeavy,
     fontSize: 40,
-    fontWeight: '800',
+    lineHeight: 46,
     color: colors.text,
     marginTop: spacing.sm,
-    fontFamily: fonts?.rounded,
   },
   subtitle: {
+    fontFamily: fonts.body,
     fontSize: 15,
     color: colors.textSecondary,
     marginTop: spacing.sm,
@@ -133,21 +139,22 @@ const styles = StyleSheet.create({
   },
   perks: { gap: spacing.md, marginVertical: spacing.xl },
   perkRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  perkText: { fontSize: 15, fontWeight: '600', color: colors.text },
+  perkText: { fontFamily: fonts.displayMedium, fontSize: 15, color: colors.text },
   plan: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.card,
-    borderWidth: 1.5,
-    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.hairline,
     borderRadius: radius.md,
     padding: spacing.md,
   },
-  planSelected: { borderColor: colors.accent, backgroundColor: '#15180F' },
-  planTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
-  planCaption: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
-  planPrice: { fontSize: 17, fontWeight: '800', color: colors.text },
+  planSelected: { borderColor: colors.accentDeep, backgroundColor: colors.accentSurface },
+  planTitle: { fontFamily: fonts.display, fontSize: 16, color: colors.text },
+  planCaption: { fontFamily: fonts.body, fontSize: 13, color: colors.textSecondary, marginTop: 2 },
+  planPrice: { fontFamily: fonts.display, fontSize: 17, color: colors.text },
   devNote: {
+    fontFamily: fonts.body,
     fontSize: 12,
     color: colors.textTertiary,
     marginTop: spacing.md,

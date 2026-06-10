@@ -1,47 +1,103 @@
-# SHIP.md — ProteinLens status & next steps
+# SHIP.md — ProteinLens status & manual steps
 
-## Current state (all done, nothing needed from you)
+## Live
 
-- **Live web app**: https://proteinlens.vercel.app (Vercel project `proteinlens`, account `niketh-putta`)
-- **Phone testing**: `npx expo start` → scan QR with Expo Go (see README)
-- **Backend live**: Supabase `csxdkvpvcasuknhnprxp` (eu-west-2) — schema, RLS, anonymous auth,
-  private photo bucket, `analyze-food` Edge Function deployed
-- **Freemium**: 3 free scans/day gate + paywall UI live (payments stubbed, see below)
-- **Native-ready**: app icon, splash, bundle id `com.proteinlens.app`, permission strings,
-  `eas.json` build profiles; `ios/` + `android/` regenerate anytime with `npx expo prebuild`
-- **Quality**: TypeScript clean; end-to-end flow verified by browser automation against the
-  live deployment; demo video at `demo/proteinlens-demo.mp4`
+| What | Where |
+|------|-------|
+| Web app | https://proteinlens.vercel.app |
+| Supabase | `csxdkvpvcasuknhnprxp` (eu-west-2) |
+| Edge functions | `analyze-food` (gpt-4o), `create-checkout`, `stripe-webhook` |
+| Local dev | `npx expo start` → Expo Go or `--web` |
 
-## Manual steps (in priority order)
+## What works now
 
-### 1. Replace the OpenAI key (5 minutes — unlocks REAL AI analysis)
-The key in `~/.gradlify/gradlify.env` is invalid (OpenAI returns 401: "Incorrect API key").
-Until fixed, scans return clearly-labeled demo estimates.
+- **Cal AI-style flow**: center scan button → full-screen camera (expo-camera / getUserMedia) → analyze → confirm → log
+- **Premium dark UI**: Sora + JetBrains Mono, protein ring hero, itemized breakdown with per-item confidence flags
+- **Gamification (Locked-style)**: Whey character evolves across 5 stages, XP, streaks, celebration on goal hit
+- **Evidence-based protein goals**: g/kg from training, goal, age, sex; kg/lbs; reasoning shown in onboarding/settings
+- **Freemium**: 3 free photo scans/day; paywall for unlimited
+- **Auth**: Google Sign-In wired in app (`Continue with Google` on onboarding + settings). Guest/anonymous still works for zero-friction testing.
+- **Payments**: Stripe Checkout edge function ready; test-mode stub active until keys are set
+
+## Manual steps (priority order)
+
+### 1. Activate OpenAI billing (~2 min) — **blocks real AI**
+
+The API key is set in Supabase secrets, but OpenAI returns `billing_not_active` until you add a payment method.
 
 ```bash
-cd ~/proteinlens
-supabase secrets set OPENAI_API_KEY=sk-...   # from platform.openai.com/api-keys
-node demo/test-analyze.mjs                    # verify: should return real analysis of the test meal
+# 1. Add card at https://platform.openai.com/settings/organization/billing
+# 2. Verify:
+cd ~/proteinlens && source .env
+node demo/test-analyze.mjs          # should return real food analysis
+node demo/test-accuracy.mjs         # 7 diverse images (cake, burger, curry, non-food, etc.)
 ```
 
-### 2. Payments (when you want revenue)
-- **Native (App Store/Play)**: Apple/Google require in-app purchase for digital subs → use **RevenueCat**.
-  Create a RevenueCat account, add `react-native-purchases`, implement a provider in `src/lib/payments.ts`.
-- **Web**: Stripe Checkout. Needs `STRIPE_SECRET_KEY` (no Stripe keys found on this machine).
-  Pattern: Edge Function creates a Checkout Session; webhook sets `profiles.is_premium = true`.
-- Until then the paywall "Unlock Pro" is test-mode (grants premium locally).
+Model: **gpt-4o** (set via `OPENAI_MODEL` secret). Change to `gpt-4o-mini` to reduce cost.
 
-### 3. App Store / Play Store (when ready)
-- Enroll: Apple Developer ($99/yr), Google Play Console ($25 once)
-- `npm i -g eas-cli && eas login && eas init`
-- `eas build --platform ios` / `--platform android` (EAS handles certs/keystores)
-- `eas submit` for both
-- Store listings: screenshots, description, **privacy policy URL** (required), data-safety forms
+### 2. Enable Google Sign-In in Supabase (~10 min)
 
-### Notes / machine constraints found tonight
-- **iOS Simulator**: Xcode 16.4 is installed but no iOS simulator runtime, and the disk has
-  only ~7.7 GB free (runtime needs 9.13 GB). Free up space, then: `xcodebuild -downloadPlatform iOS`,
-  then `npx expo run:ios`. Until then, use Expo Go on your iPhone (better anyway — real camera).
-- **Android**: SDK present at `~/Library/Android/sdk`; JDK 17 installed tonight via Homebrew.
-  `npx expo run:android` should work with an emulator or USB device.
-- Supabase DB password is in `.env.local` (gitignored). Keep it safe.
+App code is ready. One-time dashboard setup:
+
+1. **Google Cloud Console** (https://console.cloud.google.com/apis/credentials)
+   - Create OAuth 2.0 Client ID (Web application)
+   - Authorized redirect URIs:
+     - `https://csxdkvpvcasuknhnprxp.supabase.co/auth/v1/callback`
+2. **Supabase Dashboard** → Authentication → Providers → **Google**
+   - Enable, paste Client ID + Client Secret
+3. **Supabase** → Authentication → URL Configuration → Redirect URLs, add:
+   - `https://proteinlens.vercel.app/auth/callback`
+   - `http://localhost:8081/auth/callback`
+   - `proteinlens://auth/callback` (native)
+4. Test with `nikath13putter@gmail.com` on https://proteinlens.vercel.app → onboarding → **Continue with Google**
+
+### 3. Stripe payments for web (~15 min)
+
+No Stripe keys on this machine yet. When ready:
+
+```bash
+# Stripe Dashboard → Products → create monthly + yearly prices
+supabase secrets set \
+  STRIPE_SECRET_KEY=sk_live_... \
+  STRIPE_PRICE_MONTHLY=price_... \
+  STRIPE_PRICE_YEARLY=price_...
+
+# Deploy webhook endpoint in Stripe Dashboard:
+# URL: https://csxdkvpvcasuknhnprxp.supabase.co/functions/v1/stripe-webhook
+# Event: checkout.session.completed
+
+# Enable in app:
+echo 'EXPO_PUBLIC_STRIPE_ENABLED=true' >> .env
+# Redeploy Vercel
+```
+
+Until then, paywall **Unlock Pro (test mode)** grants premium locally.
+
+### 4. Native payments (App Store / Play)
+
+Use **RevenueCat** + `react-native-purchases`. Implement a provider in `src/lib/payments.ts` (stub is RevenueCat-ready).
+
+### 5. App Store / Play Store
+
+See previous SHIP notes: EAS build profiles in `eas.json`, bundle id `com.proteinlens.app`.
+
+## Accuracy test results (latest run)
+
+OpenAI billing inactive — all 7 test images returned a clear API error (no fake chicken/rice demo data):
+
+| Image | Expected | Result |
+|-------|----------|--------|
+| Birthday cake | food | API error (billing) |
+| Cheeseburger | food | API error (billing) |
+| Garden salad | food | API error (billing) |
+| Chicken curry | food | API error (billing) |
+| Protein bar | food | API error (billing) |
+| Empty plate | not food | API error (billing) |
+| Keyboard | not food | API error (billing) |
+
+After billing is active, re-run `node demo/test-accuracy.mjs` — expect real per-item breakdowns and correct `is_food=false` for non-food.
+
+## Machine notes
+
+- iOS Simulator needs ~9 GB runtime download (disk was tight). Expo Go on iPhone works.
+- Android: `npx expo run:android` with emulator or USB device.

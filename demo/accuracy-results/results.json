@@ -1,0 +1,51 @@
+[
+  {
+    "id": "cake",
+    "label": "Birthday cake",
+    "expectFood": true,
+    "ok": false,
+    "error": "OpenAI billing is not active. Add a payment method at platform.openai.com, then retry."
+  },
+  {
+    "id": "burger",
+    "label": "Cheeseburger",
+    "expectFood": true,
+    "ok": false,
+    "error": "OpenAI billing is not active. Add a payment method at platform.openai.com, then retry."
+  },
+  {
+    "id": "salad",
+    "label": "Garden salad",
+    "expectFood": true,
+    "ok": false,
+    "error": "OpenAI billing is not active. Add a payment method at platform.openai.com, then retry."
+  },
+  {
+    "id": "curry",
+    "label": "Chicken curry",
+    "expectFood": true,
+    "ok": false,
+    "error": "OpenAI billing is not active. Add a payment method at platform.openai.com, then retry."
+  },
+  {
+    "id": "protein-bar",
+    "label": "Protein bar",
+    "expectFood": true,
+    "ok": false,
+    "error": "OpenAI billing is not active. Add a payment method at platform.openai.com, then retry."
+  },
+  {
+    "id": "empty-plate",
+    "label": "Empty white plate",
+    "expectFood": false,
+    "ok": false,
+    "error": "OpenAI billing is not active. Add a payment method at platform.openai.com, then retry."
+  },
+  {
+    "id": "keyboard",
+    "label": "Computer keyboard (non-food)",
+    "expectFood": false,
+    "ok": false,
+    "error": "OpenAI billing is not active. Add a payment method at platform.openai.com, then retry."
+  }
+]

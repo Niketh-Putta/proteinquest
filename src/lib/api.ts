@@ -8,8 +8,11 @@ export async function analyzeFoodPhoto(imageBase64: string): Promise<Analysis> {
   const { data, error } = await supabase.functions.invoke('analyze-food', {
     body: { image_base64: imageBase64 },
   });
-  if (error) throw new Error('Could not analyze the photo. Check your connection and try again.');
+  if (error) {
+    throw new Error('Could not analyze the photo. Check your connection and try again.');
+  }
   if (data?.error) throw new Error(data.error);
+  if (!data?.analysis) throw new Error('No analysis returned. Please try again.');
   return data.analysis as Analysis;
 }
 

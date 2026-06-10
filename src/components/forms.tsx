@@ -1,13 +1,7 @@
 import React from 'react';
-import {
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import { colors, radius, spacing } from '@/theme';
+import { colors, fonts, radius, spacing, type } from '@/theme';
 
 export function FieldLabel({ children }: { children: React.ReactNode }) {
   return <Text style={styles.label}>{children}</Text>;
@@ -62,11 +56,11 @@ export function ChoiceRow<T extends string>({
               <Text style={[styles.choiceTitle, selected && { color: colors.accent }]}>
                 {opt.title}
               </Text>
-              {opt.subtitle ? (
-                <Text style={styles.choiceSubtitle}>{opt.subtitle}</Text>
-              ) : null}
+              {opt.subtitle ? <Text style={styles.choiceSubtitle}>{opt.subtitle}</Text> : null}
             </View>
-            <View style={[styles.radio, selected && styles.radioSelected]} />
+            <View style={[styles.radio, selected && styles.radioSelected]}>
+              {selected ? <View style={styles.radioInner} /> : null}
+            </View>
           </Pressable>
         );
       })}
@@ -92,11 +86,7 @@ export function SegmentedRow<T extends string>({
             key={opt.value}
             onPress={() => onChange(opt.value)}
             style={[styles.segment, selected && styles.segmentSelected]}>
-            <Text
-              style={[
-                styles.segmentLabel,
-                selected && { color: colors.accentText },
-              ]}>
+            <Text style={[styles.segmentLabel, selected && { color: colors.onAccent }]}>
               {opt.title}
             </Text>
           </Pressable>
@@ -107,58 +97,53 @@ export function SegmentedRow<T extends string>({
 }
 
 const styles = StyleSheet.create({
-  label: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: colors.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    marginBottom: spacing.sm,
-    marginTop: spacing.lg,
-  },
+  label: { ...type.label, marginBottom: spacing.sm, marginTop: spacing.lg },
   inputWrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.card,
+    backgroundColor: colors.surface,
     borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.hairline,
     paddingHorizontal: spacing.md,
   },
   input: {
     flex: 1,
-    height: 56,
-    fontSize: 20,
-    fontWeight: '600',
+    height: 58,
+    fontSize: 22,
+    fontFamily: fonts.display,
     color: colors.text,
   },
-  suffix: { fontSize: 16, color: colors.textTertiary, fontWeight: '600' },
+  suffix: { fontFamily: fonts.mono, fontSize: 13, color: colors.textTertiary },
   choice: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.card,
+    backgroundColor: colors.surface,
     borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.hairline,
     padding: spacing.md,
   },
-  choiceSelected: { borderColor: colors.accent, backgroundColor: '#15180F' },
-  choiceTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
-  choiceSubtitle: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
+  choiceSelected: { borderColor: colors.accentDeep, backgroundColor: colors.accentSurface },
+  choiceTitle: { fontFamily: fonts.displayMedium, fontSize: 15.5, color: colors.text },
+  choiceSubtitle: { fontFamily: fonts.body, fontSize: 12.5, color: colors.textSecondary, marginTop: 2 },
   radio: {
     width: 22,
     height: 22,
     borderRadius: 11,
-    borderWidth: 2,
-    borderColor: colors.border,
+    borderWidth: 1.5,
+    borderColor: colors.hairlineBright,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  radioSelected: { borderColor: colors.accent, backgroundColor: colors.accent },
+  radioSelected: { borderColor: colors.accent },
+  radioInner: { width: 11, height: 11, borderRadius: 6, backgroundColor: colors.accent },
   segmentWrap: {
     flexDirection: 'row',
-    backgroundColor: colors.card,
+    backgroundColor: colors.surface,
     borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.hairline,
     padding: 4,
     gap: 4,
   },
@@ -170,5 +155,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   segmentSelected: { backgroundColor: colors.accent },
-  segmentLabel: { fontSize: 15, fontWeight: '700', color: colors.textSecondary },
+  segmentLabel: { fontFamily: fonts.displayMedium, fontSize: 14, color: colors.textSecondary },
 });

@@ -30,8 +30,8 @@ That's it — full app with the real camera flow.
 npx expo start --web        # local
 ```
 
-or just open https://proteinlens.vercel.app (deployed). On web, "Take a photo"
-uses the file picker — the camera flow is best experienced on the phone.
+or just open https://proteinlens.vercel.app (deployed). Web has a full in-app
+camera viewfinder (getUserMedia) plus a library upload button.
 
 ## How it works
 
@@ -47,17 +47,23 @@ stubbed provider (`src/lib/payments.ts`) ready for RevenueCat (native) or
 Stripe Checkout (web). The "Unlock Pro" button currently grants premium in
 test mode so you can feel the full experience.
 
-## ⚠️ One thing to fix: the OpenAI key
+## ⚠️ Activate OpenAI billing
 
-The key in `~/.gradlify/gradlify.env` was **rejected by OpenAI as invalid**.
-The analysis endpoint currently returns clearly-labeled **demo estimates**
-(`confidence: low`, a note explaining it). To switch on real AI analysis:
+The API key is configured in Supabase secrets and uses **gpt-4o**, but OpenAI
+returns `billing_not_active` until you add a payment method at
+[platform.openai.com](https://platform.openai.com/settings/organization/billing).
+Until then, scans show a clear error — no fake demo meals.
 
 ```bash
-# get a valid key at https://platform.openai.com/api-keys
-cd ~/proteinlens
-supabase secrets set OPENAI_API_KEY=sk-...your-valid-key...
+cd ~/proteinlens && source .env
+node demo/test-analyze.mjs       # verify real analysis
+node demo/test-accuracy.mjs      # 7 diverse food/non-food images
 ```
+
+## Google Sign-In
+
+Use **Continue with Google** on onboarding or settings. Requires one-time setup
+in Supabase Auth + Google Cloud Console — see `SHIP.md`.
 
 No redeploy needed — the function picks up the new secret immediately.
 

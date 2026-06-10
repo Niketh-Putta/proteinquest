@@ -13,12 +13,19 @@ export interface Profile {
   protein_goal_g: number | null;
   onboarded: boolean;
   is_premium: boolean;
+  xp: number;
+  streak: number;
+  best_streak: number;
+  goals_hit: number;
+  last_goal_date: string | null;
+  weight_unit: 'kg' | 'lbs';
 }
 
 export interface FoodItem {
   name: string;
   portion: string;
   protein_g: number;
+  confidence?: Confidence;
 }
 
 export interface Analysis {

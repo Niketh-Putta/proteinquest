@@ -1,13 +1,10 @@
 import React from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  StyleSheet,
-  Text,
-  ViewStyle,
-} from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, ViewStyle } from 'react-native';
+import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 
-import { colors, radius, spacing } from '@/theme';
+import { colors, fonts, radius, spacing } from '@/theme';
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 interface Props {
   title: string;
@@ -18,47 +15,44 @@ interface Props {
   style?: ViewStyle;
 }
 
-export function Button({
-  title,
-  onPress,
-  variant = 'primary',
-  disabled,
-  loading,
-  style,
-}: Props) {
+export function Button({ title, onPress, variant = 'primary', disabled, loading, style }: Props) {
+  const scale = useSharedValue(1);
+  const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
   const isPrimary = variant === 'primary';
+
   return (
-    <Pressable
+    <AnimatedPressable
       onPress={onPress}
       disabled={disabled || loading}
-      style={({ pressed }) => [
+      onPressIn={() => (scale.value = withSpring(0.97, { damping: 18, stiffness: 400 }))}
+      onPressOut={() => (scale.value = withSpring(1, { damping: 14, stiffness: 300 }))}
+      style={[
         styles.base,
         isPrimary && styles.primary,
         variant === 'secondary' && styles.secondary,
         variant === 'ghost' && styles.ghost,
-        (disabled || loading) && { opacity: 0.45 },
-        pressed && { transform: [{ scale: 0.98 }], opacity: 0.85 },
+        (disabled || loading) && { opacity: 0.4 },
+        animatedStyle,
         style,
       ]}>
       {loading ? (
-        <ActivityIndicator color={isPrimary ? colors.accentText : colors.text} />
+        <ActivityIndicator color={isPrimary ? colors.onAccent : colors.text} />
       ) : (
         <Text
           style={[
             styles.label,
-            isPrimary ? { color: colors.accentText } : { color: colors.text },
-            variant === 'ghost' && { color: colors.textSecondary },
+            { color: isPrimary ? colors.onAccent : variant === 'ghost' ? colors.textSecondary : colors.text },
           ]}>
           {title}
         </Text>
       )}
-    </Pressable>
+    </AnimatedPressable>
   );
 }
 
 const styles = StyleSheet.create({
   base: {
-    height: 54,
+    height: 56,
     borderRadius: radius.md,
     alignItems: 'center',
     justifyContent: 'center',
@@ -66,10 +60,10 @@ const styles = StyleSheet.create({
   },
   primary: { backgroundColor: colors.accent },
   secondary: {
-    backgroundColor: colors.card,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.hairlineBright,
   },
   ghost: { backgroundColor: 'transparent' },
-  label: { fontSize: 16, fontWeight: '700' },
+  label: { fontSize: 16, fontFamily: fonts.display },
 });

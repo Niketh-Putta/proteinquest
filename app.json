@@ -26,7 +26,9 @@
         "foregroundImage": "./assets/images/android-icon-foreground.png"
       },
       "predictiveBackGestureEnabled": false,
-      "permissions": ["android.permission.CAMERA"]
+      "permissions": [
+        "android.permission.CAMERA"
+      ]
     },
     "web": {
       "output": "single",
@@ -48,7 +50,9 @@
           "cameraPermission": "ProteinLens uses the camera to photograph your meals and estimate their protein content.",
           "photosPermission": "ProteinLens uses your photo library so you can analyze meals you've already photographed."
         }
-      ]
+      ],
+      "expo-font",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,

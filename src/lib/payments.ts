@@ -1,15 +1,6 @@
-// Payment provider abstraction.
-//
-// Native (App Store / Play Store): digital subscriptions MUST use in-app
-// purchases. Wire RevenueCat here (react-native-purchases) once the app has
-// store listings + a RevenueCat account.
-//
-// Web: wire Stripe Checkout. Requires STRIPE_SECRET_KEY (server side, e.g. a
-// Supabase Edge Function creating a Checkout Session) and a success webhook
-// that sets profiles.is_premium = true.
-//
-// Neither key exists on this machine yet, so the active provider is a stub
-// that unlocks premium locally for testing the gated experience.
+import { Platform } from 'react-native';
+
+import { supabase } from './supabase';
 
 export interface PaymentPlan {
   id: string;
@@ -22,8 +13,10 @@ export interface PaymentProvider {
   name: string;
   isConfigured: boolean;
   plans: PaymentPlan[];
-  /** Returns true if the purchase succeeded and premium should be granted. */
-  purchase(planId: string): Promise<boolean>;
+  purchase(
+    planId: string,
+    opts?: { userId?: string; email?: string },
+  ): Promise<boolean>;
 }
 
 export const PLANS: PaymentPlan[] = [
@@ -41,18 +34,48 @@ export const PLANS: PaymentPlan[] = [
   },
 ];
 
+const stripeEnabled = process.env.EXPO_PUBLIC_STRIPE_ENABLED === 'true';
+
+const stripeProvider: PaymentProvider = {
+  name: 'stripe',
+  isConfigured: stripeEnabled,
+  plans: PLANS,
+  async purchase(planId: string, opts?: { userId?: string; email?: string }) {
+    const origin =
+      Platform.OS === 'web' && typeof window !== 'undefined'
+        ? window.location.origin
+        : 'https://proteinlens.vercel.app';
+    const { data, error } = await supabase.functions.invoke('create-checkout', {
+      body: {
+        plan_id: planId,
+        user_id: opts?.userId,
+        customer_email: opts?.email,
+        success_url: `${origin}/?checkout=success`,
+        cancel_url: `${origin}/paywall`,
+      },
+    });
+    if (error || data?.error) {
+      throw new Error(data?.error ?? 'Checkout failed. Stripe may not be configured yet.');
+    }
+    if (Platform.OS === 'web' && data?.url) {
+      window.location.href = data.url;
+      return false;
+    }
+    throw new Error('Complete checkout in the web app.');
+  },
+};
+
 const stubProvider: PaymentProvider = {
   name: 'dev-stub',
   isConfigured: false,
   plans: PLANS,
-  async purchase(_planId: string) {
-    // No payment processor configured; grant premium for testing.
+  async purchase(_planId: string, _opts?: { userId?: string; email?: string }) {
     return true;
   },
 };
 
 export function getPaymentProvider(): PaymentProvider {
-  // Swap for a RevenueCat provider (native) / Stripe provider (web) when keys exist.
+  if (stripeEnabled) return stripeProvider;
   return stubProvider;
 }
 

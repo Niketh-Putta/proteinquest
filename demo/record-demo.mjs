@@ -1,5 +1,5 @@
-// Records a walkthrough video of ProteinLens running on Expo web.
-// Usage: node demo/record-demo.mjs
+// Records a walkthrough video of ProteinLens on Expo web.
+// Usage: APP_URL=https://proteinlens.vercel.app node demo/record-demo.mjs
 import { chromium } from 'playwright';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -7,113 +7,89 @@ import fs from 'node:fs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const APP_URL = process.env.APP_URL ?? 'http://localhost:8081';
-const VIEWPORT = { width: 390, height: 844 }; // iPhone-sized portrait
+const VIEWPORT = { width: 390, height: 844 };
 
-const browser = await chromium.launch();
+const browser = await chromium.launch({
+  args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'],
+});
 const context = await browser.newContext({
   viewport: VIEWPORT,
   recordVideo: { dir: path.join(__dirname, 'video-raw'), size: VIEWPORT },
+  permissions: ['camera'],
 });
 const page = await context.newPage();
-
 page.on('pageerror', (e) => console.log('[pageerror]', e.message));
 
 async function pause(ms) {
   await page.waitForTimeout(ms);
 }
-
 async function shot(name) {
   await page.screenshot({ path: path.join(__dirname, `step-${name}.png`) });
   console.log(`step: ${name}`);
 }
 
 try {
-  console.log('Loading app (first bundle can be slow)...');
-  await page.goto(APP_URL, { waitUntil: 'domcontentloaded' });
+  console.log('Loading', APP_URL);
+  await page.goto(APP_URL, { waitUntil: 'domcontentloaded', timeout: 180_000 });
 
-  // ---- Onboarding ----
-  await page.getByText("Let's set your", { exact: false }).waitFor({ timeout: 180_000 });
+  await page.getByText('One number.', { exact: false }).waitFor({ timeout: 180_000 });
   await shot('01-onboarding');
-  await pause(1500);
+  await pause(1200);
 
-  await page.getByPlaceholder('25').fill('24');
-  await pause(400);
-  await page.getByPlaceholder('75').fill('78');
-  await pause(400);
+  await page.locator('input').nth(0).fill('28');
+  await page.locator('input').nth(1).fill('178');
+  await page.getByText('lbs', { exact: true }).click();
   await page.getByText('Male', { exact: true }).click();
-  await pause(600);
-  await page.getByText('Active', { exact: true }).click();
-  await pause(600);
-  await page.getByText('Build muscle', { exact: true }).click();
-  await pause(800);
-
-  // Scroll to reveal the computed goal + CTA
-  await page.mouse.wheel(0, 1200);
-  await pause(1500);
+  await page.getByText('Strength training', { exact: false }).first().click();
+  await page.getByText('Build muscle', { exact: false }).first().click();
+  await page.mouse.wheel(0, 900);
+  await pause(1200);
   await shot('02-goal-computed');
 
-  await page.getByText('Start tracking', { exact: true }).click();
-
-  // ---- Today dashboard (empty) ----
-  await page.getByText("Today's protein", { exact: false }).waitFor({ timeout: 60_000 });
+  await page.getByText('Start tracking').click();
+  await page.getByText('PROTEIN TODAY').waitFor({ timeout: 60_000 });
   await pause(2000);
-  await shot('03-dashboard-empty');
+  await shot('03-dashboard');
 
-  // ---- Snap flow ----
-  await page.getByText('Snap meal', { exact: true }).click();
-  await page.getByText('What are you eating?', { exact: false }).waitFor({ timeout: 30_000 });
-  await pause(1200);
-  await shot('04-snap');
+  await page.goto(`${APP_URL}/scan`, { waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(3500);
+  await shot('04-scan-camera');
 
-  const mealPath = path.join(__dirname, 'demo-meal.jpg');
-  const chooserPromise = page.waitForEvent('filechooser', { timeout: 30_000 });
-  await page.getByText('Choose from library', { exact: true }).click();
-  const chooser = await chooserPromise;
-  await chooser.setFiles(mealPath);
+  // Shutter capture with fake camera stream
+  await page.locator('div[tabindex="0"]').filter({ hasNot: page.locator('svg') }).last().click();
 
-  console.log('Waiting for AI analysis...');
-  await page.getByText('Total protein', { exact: false }).waitFor({ timeout: 120_000 });
-  await pause(1500);
-  await shot('05-analysis');
-  await page.mouse.wheel(0, 900);
-  await pause(2000);
-
-  await page.getByText('Log it', { exact: true }).click();
-
-  // ---- Dashboard with progress ----
-  await page.getByText("Today's protein", { exact: false }).waitFor({ timeout: 60_000 });
-  await pause(2500);
-  await shot('06-dashboard-logged');
-
-  // ---- Trends ----
-  await page.getByText('Trends', { exact: true }).click();
-  await page.getByText('Last 7 days', { exact: false }).waitFor({ timeout: 30_000 });
-  await pause(2500);
-  await shot('07-trends');
-
-  // ---- Goal tab ----
-  await page.getByText('Goal', { exact: true }).first().click();
-  await page.getByText('Current daily target', { exact: false }).waitFor({ timeout: 30_000 });
-  await pause(2500);
-  await shot('08-goal');
-
-  // ---- Back to Today for the closing shot ----
-  await page.getByText('Today', { exact: true }).first().click();
-  await pause(2500);
-
-  console.log('Walkthrough complete.');
-} catch (err) {
-  await shot('ZZ-failure');
-  console.error('DEMO FAILED:', err.message);
-  process.exitCode = 1;
-} finally {
-  await context.close(); // flushes the video
-  const video = await page.video()?.path();
-  await browser.close();
-  if (video && fs.existsSync(video)) {
-    const dest = path.join(__dirname, 'proteinlens-demo.webm');
-    fs.copyFileSync(video, dest);
-    fs.rmSync(path.dirname(video), { recursive: true, force: true });
-    console.log('VIDEO SAVED:', dest);
+  console.log('Waiting for analysis...');
+  try {
+    await page.getByText('TOTAL PROTEIN').waitFor({ timeout: 90_000 });
+    await pause(1500);
+    await shot('05-analysis');
+    await page.getByText('Log it').click();
+    await pause(3000);
+    await shot('06-logged');
+  } catch {
+    await shot('05-analysis-error');
+    console.log('Analysis may have failed (check OpenAI billing). Continuing.');
   }
+
+  await page.goto(APP_URL, { waitUntil: 'domcontentloaded' });
+  await page.getByText('Trends', { exact: true }).click();
+  await page.getByText('LAST 7 DAYS').waitFor({ timeout: 30_000 }).catch(() => {});
+  await pause(2000);
+  await shot('07-trends');
+} catch (e) {
+  console.error('Demo failed:', e.message);
+  await shot('error');
+} finally {
+  await context.close();
+  await browser.close();
+}
+
+const rawDir = path.join(__dirname, 'video-raw');
+const videos = fs.readdirSync(rawDir).filter((f) => f.endsWith('.webm'));
+if (videos.length) {
+  const src = path.join(rawDir, videos.sort().at(-1));
+  const dest = path.join(__dirname, 'proteinlens-demo.webm');
+  fs.copyFileSync(src, dest);
+  console.log('Raw video:', dest);
+  console.log('Convert: ffmpeg -i demo/proteinlens-demo.webm -c:v libx264 demo/proteinlens-demo.mp4');
 }
