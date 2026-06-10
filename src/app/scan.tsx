@@ -37,6 +37,7 @@ import {
   uploadFoodPhoto,
 } from '@/lib/api';
 import { applyLogToCharacter } from '@/lib/character';
+import { useLayout } from '@/lib/layout';
 import { FREE_DAILY_SCANS } from '@/lib/payments';
 import { todayISODate } from '@/lib/protein';
 import { useSession } from '@/lib/session';
@@ -76,6 +77,7 @@ function ScanSweep() {
 
 export default function ScanScreen() {
   const { session, profile, saveProfile } = useSession();
+  const { isNarrow, horizontalPad, contentWidth } = useLayout();
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
 
@@ -241,7 +243,7 @@ export default function ScanScreen() {
   const cameraReady = permission?.granted;
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       {/* top bar */}
       <View style={styles.topBar}>
         <Pressable onPress={goHome} hitSlop={12} style={styles.roundBtn}>
@@ -342,7 +344,12 @@ export default function ScanScreen() {
       )}
 
       {phase === 'result' && analysis && (
-        <ScrollView contentContainerStyle={styles.resultScroll} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={[
+            styles.resultScroll,
+            { paddingHorizontal: horizontalPad, maxWidth: 428, width: contentWidth, alignSelf: 'center' },
+          ]}
+          showsVerticalScrollIndicator={false}>
           {imageUri ? (
             <Animated.Image
               entering={FadeIn}

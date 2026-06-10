@@ -93,8 +93,10 @@ const styles = StyleSheet.create({
     color: colors.textTertiary,
   },
   scanBtn: {
-    width: 62,
-    height: 62,
+    width: 64,
+    height: 64,
+    minWidth: 44,
+    minHeight: 44,
     borderRadius: 31,
     backgroundColor: colors.accent,
     alignItems: 'center',

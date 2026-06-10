@@ -39,6 +39,7 @@ export function ProgressRing({ consumed, goal, size = 264 }: Props) {
 
   const remaining = Math.max(goal - consumed, 0);
   const hitGoal = goal > 0 && consumed >= goal;
+  const scale = size / 264;
 
   return (
     <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
@@ -82,12 +83,14 @@ export function ProgressRing({ consumed, goal, size = 264 }: Props) {
           transform={`rotate(-90 ${size / 2} ${size / 2})`}
         />
       </Svg>
-      <Text style={styles.label}>PROTEIN TODAY</Text>
+      <Text style={[styles.label, { fontSize: 10 * scale }]}>PROTEIN TODAY</Text>
       <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
-        <Text style={styles.consumed}>{Math.round(consumed)}</Text>
-        <Text style={styles.unit}>g</Text>
+        <Text style={[styles.consumed, { fontSize: 76 * scale, lineHeight: 80 * scale }]}>
+          {Math.round(consumed)}
+        </Text>
+        <Text style={[styles.unit, { fontSize: 30 * scale }]}>g</Text>
       </View>
-      <Text style={styles.goalLine}>
+      <Text style={[styles.goalLine, { fontSize: 12 * scale }]}>
         {hitGoal ? 'goal complete' : `${Math.round(remaining)}g to ${goal}g`}
       </Text>
     </View>

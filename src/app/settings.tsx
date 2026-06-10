@@ -13,7 +13,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AccountCard } from '@/components/AccountCard';
+import { DragonRoster } from '@/components/DragonRoster';
 import { GoalEditor } from '@/components/GoalEditor';
+import { useLayout } from '@/lib/layout';
 import { useSession } from '@/lib/session';
 import type { Profile } from '@/lib/types';
 import { colors, fonts, spacing, type } from '@/theme';
@@ -25,6 +27,7 @@ function goHome() {
 
 export default function SettingsScreen() {
   const { profile, saveProfile } = useSession();
+  const { contentWidth, horizontalPad } = useLayout();
   const [saving, setSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -44,7 +47,7 @@ export default function SettingsScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <View style={styles.topBar}>
         <Pressable onPress={goHome} hitSlop={12} style={styles.roundBtn}>
           <Ionicons name="close" size={22} color={colors.text} />
@@ -56,10 +59,14 @@ export default function SettingsScreen() {
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView
-          contentContainerStyle={styles.scroll}
+          contentContainerStyle={[
+            styles.scroll,
+            { paddingHorizontal: horizontalPad, width: contentWidth, maxWidth: 428, alignSelf: 'center' },
+          ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}>
           <AccountCard />
+          {profile ? <DragonRoster profile={profile} /> : null}
           <Text style={styles.subtitle}>
             Adjust your stats and the target recalculates with full reasoning.
           </Text>

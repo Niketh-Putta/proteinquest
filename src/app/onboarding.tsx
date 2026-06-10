@@ -1,7 +1,6 @@
 import { router } from 'expo-router';
 import React, { useState } from 'react';
 import {
-  Image,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -12,23 +11,45 @@ import {
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { AccountCard } from '@/components/AccountCard';
+import { Button } from '@/components/Button';
+import { DragonPicker } from '@/components/DragonPicker';
 import { GoalEditor } from '@/components/GoalEditor';
-import { STAGES } from '@/lib/character';
+import { emptyDragonProgress } from '@/lib/character';
+import { useLayout } from '@/lib/layout';
 import { useSession } from '@/lib/session';
-import type { Profile } from '@/lib/types';
+import type { DragonId, Profile } from '@/lib/types';
 import { colors, fonts, spacing, type } from '@/theme';
+
+type Step = 'dragon' | 'goal';
 
 export default function Onboarding() {
   const { saveProfile } = useSession();
+  const { contentWidth, horizontalPad, isNarrow } = useLayout();
+  const [step, setStep] = useState<Step>('dragon');
+  const [dragonId, setDragonId] = useState<DragonId | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function handleSubmit(updates: Partial<Profile>) {
+    if (!dragonId) {
+      setError('Choose a dragon to continue.');
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
-      await saveProfile(updates);
+      const progress = emptyDragonProgress();
+      await saveProfile({
+        ...updates,
+        active_dragon_id: dragonId,
+        dragon_progress: { [dragonId]: progress },
+        xp: 0,
+        streak: 0,
+        best_streak: 0,
+        goals_hit: 0,
+        last_goal_date: null,
+        onboarded: true,
+      });
       router.replace('/(tabs)/today');
     } catch (e: any) {
       setError(e.message ?? 'Could not save. Please try again.');
@@ -38,50 +59,59 @@ export default function Onboarding() {
   }
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <KeyboardAvoidingView
-        style={{ flex: 1 }}
+        style={{ flex: 1, alignItems: 'center' }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView
-          contentContainerStyle={styles.scroll}
+          contentContainerStyle={[
+            styles.scroll,
+            { paddingHorizontal: horizontalPad, width: contentWidth, maxWidth: 428, alignSelf: 'center' },
+          ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}>
-          <Animated.View entering={FadeInDown.springify().damping(16)}>
-            <Text style={styles.kicker}>PROTEINLENS</Text>
-            <Text style={styles.title}>One number.{'\n'}Every day.</Text>
-            <Text style={styles.subtitle}>
-              Four quick questions and we&apos;ll calculate exactly how much protein your
-              body needs {'\u2014'} with the reasoning behind it.
-            </Text>
-          </Animated.View>
-
-          <Animated.View entering={FadeInDown.delay(100).springify().damping(16)}>
-            <AccountCard />
-          </Animated.View>
-
-          <Animated.View
-            entering={FadeInDown.delay(140).springify().damping(16)}
-            style={styles.wheyRow}>
-            <Image source={STAGES[0].art} style={styles.wheyArt} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.wheyName}>This is Whey.</Text>
-              <Text style={styles.wheyText}>
-                Your protein buddy. Hit your daily goal and watch him grow from hatchling
-                to titan.
+          {step === 'dragon' ? (
+            <Animated.View entering={FadeInDown.springify().damping(16)}>
+              <DragonPicker value={dragonId} onChange={setDragonId} />
+              {error ? <Text style={styles.error}>{error}</Text> : null}
+              <Button
+                title="Continue"
+                onPress={() => {
+                  if (!dragonId) {
+                    setError('Choose a dragon to continue.');
+                    return;
+                  }
+                  setError(null);
+                  setStep('goal');
+                }}
+                disabled={!dragonId}
+                style={{ marginTop: spacing.lg }}
+              />
+            </Animated.View>
+          ) : (
+            <Animated.View entering={FadeInDown.springify().damping(16)}>
+              <Text style={styles.kicker}>STEP 2 OF 2</Text>
+              <Text style={[styles.title, isNarrow && { fontSize: 32, lineHeight: 38 }]}>
+                Your protein target.
               </Text>
-            </View>
-          </Animated.View>
-
-          {error ? <Text style={styles.error}>{error}</Text> : null}
-
-          <Animated.View entering={FadeInDown.delay(240).springify().damping(16)}>
-            <GoalEditor
-              profile={null}
-              submitLabel="Start tracking"
-              saving={saving}
-              onSubmit={handleSubmit}
-            />
-          </Animated.View>
+              <Text style={styles.subtitle}>
+                Feed {dragonId} every day by hitting this number.
+              </Text>
+              {error ? <Text style={styles.error}>{error}</Text> : null}
+              <GoalEditor
+                profile={null}
+                submitLabel="Start tracking"
+                saving={saving}
+                onSubmit={handleSubmit}
+              />
+              <Button
+                title="Back"
+                variant="ghost"
+                onPress={() => setStep('dragon')}
+                style={{ marginTop: spacing.sm }}
+              />
+            </Animated.View>
+          )}
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -90,29 +120,15 @@ export default function Onboarding() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
-  scroll: { padding: spacing.lg, paddingBottom: spacing.xxl },
-  kicker: { ...type.label, color: colors.accent, marginTop: spacing.md },
+  scroll: { paddingBottom: spacing.xxl, paddingTop: spacing.md },
+  kicker: { ...type.label, color: colors.accent },
   title: {
     fontFamily: fonts.displayHeavy,
-    fontSize: 40,
-    lineHeight: 46,
+    fontSize: 36,
+    lineHeight: 42,
     color: colors.text,
     marginTop: spacing.sm,
   },
-  subtitle: { ...type.body, marginTop: spacing.md, maxWidth: 320 },
-  wheyRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-    borderRadius: 22,
-    padding: spacing.md,
-    marginTop: spacing.xl,
-  },
-  wheyArt: { width: 84, height: 84, borderRadius: 16 },
-  wheyName: { fontFamily: fonts.display, fontSize: 16, color: colors.text },
-  wheyText: { ...type.body, fontSize: 13, marginTop: 4 },
+  subtitle: { ...type.body, marginTop: spacing.sm, marginBottom: spacing.md },
   error: { fontFamily: fonts.body, fontSize: 13, color: colors.danger, marginTop: spacing.md },
 });

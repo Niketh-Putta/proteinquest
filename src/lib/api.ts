@@ -4,14 +4,49 @@ import { supabase } from './supabase';
 import { todayISODate } from './protein';
 import type { Analysis, FoodItem, Confidence, Profile, ProteinLog } from './types';
 
+async function extractFunctionError(
+  error: { message?: string; context?: Response },
+  data: unknown,
+): Promise<string> {
+  if (data && typeof data === 'object' && 'error' in data && (data as { error: string }).error) {
+    return (data as { error: string }).error;
+  }
+  if (error?.context) {
+    try {
+      const body = await error.context.json();
+      if (body?.error) return String(body.error);
+    } catch {
+      try {
+        const text = await error.context.text();
+        const parsed = JSON.parse(text);
+        if (parsed?.error) return String(parsed.error);
+      } catch {
+        /* fall through */
+      }
+    }
+  }
+  return error?.message ?? 'Could not analyze the photo. Please try again.';
+}
+
+function friendlyAnalysisError(message: string): string {
+  if (/billing|not active|quota|insufficient/i.test(message)) {
+    return 'AI service unavailable — add billing at platform.openai.com, then try again.';
+  }
+  if (/OPENAI_API_KEY|not configured/i.test(message)) {
+    return 'AI analysis is not configured yet. Check back soon.';
+  }
+  return message;
+}
+
 export async function analyzeFoodPhoto(imageBase64: string): Promise<Analysis> {
   const { data, error } = await supabase.functions.invoke('analyze-food', {
     body: { image_base64: imageBase64 },
   });
   if (error) {
-    throw new Error('Could not analyze the photo. Check your connection and try again.');
+    const raw = await extractFunctionError(error, data);
+    throw new Error(friendlyAnalysisError(raw));
   }
-  if (data?.error) throw new Error(data.error);
+  if (data?.error) throw new Error(friendlyAnalysisError(data.error));
   if (!data?.analysis) throw new Error('No analysis returned. Please try again.');
   return data.analysis as Analysis;
 }
@@ -24,7 +59,7 @@ export async function uploadFoodPhoto(userId: string, imageBase64: string): Prom
       .upload(path, decode(imageBase64), { contentType: 'image/jpeg' });
     return error ? null : path;
   } catch {
-    return null; // photo upload is best-effort; the log itself matters more
+    return null;
   }
 }
 

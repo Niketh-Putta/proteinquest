@@ -5,7 +5,8 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { fetchDailyTotals } from '@/lib/api';
-import { effectiveStreak } from '@/lib/character';
+import { activeProgress, effectiveStreak } from '@/lib/character';
+import { useLayout } from '@/lib/layout';
 import { todayISODate } from '@/lib/protein';
 import { useSession } from '@/lib/session';
 import { colors, fonts, radius, spacing, type } from '@/theme';
@@ -14,6 +15,7 @@ const DAYS = 7;
 
 export default function TrendsScreen() {
   const { profile } = useSession();
+  const { contentWidth, horizontalPad } = useLayout();
   const [totals, setTotals] = useState<Record<string, number>>({});
 
   useFocusEffect(
@@ -36,7 +38,9 @@ export default function TrendsScreen() {
   const maxValue = Math.max(goal, ...days.map((d) => d.total), 1);
   const hitDays = days.filter((d) => goal > 0 && d.total >= goal).length;
   const avg = Math.round(days.reduce((s, d) => s + d.total, 0) / DAYS);
-  const streak = profile ? effectiveStreak(profile, todayISODate(), todayISODate(-1)) : 0;
+  const streak = profile
+    ? effectiveStreak(activeProgress(profile), todayISODate(), todayISODate(-1))
+    : 0;
 
   const stats = [
     { label: 'DAILY AVG', value: `${avg}g` },
@@ -45,8 +49,13 @@ export default function TrendsScreen() {
   ];
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+      <ScrollView
+        contentContainerStyle={[
+          styles.scroll,
+          { paddingHorizontal: horizontalPad, width: contentWidth, maxWidth: 428, alignSelf: 'center' },
+        ]}
+        showsVerticalScrollIndicator={false}>
         <Text style={styles.kicker}>LAST 7 DAYS</Text>
         <Text style={styles.title}>Trends</Text>
 

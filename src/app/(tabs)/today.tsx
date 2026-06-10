@@ -16,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { CharacterCard } from '@/components/CharacterCard';
 import { ProgressRing } from '@/components/ProgressRing';
 import { deleteLog, fetchLogsForDate } from '@/lib/api';
+import { useLayout } from '@/lib/layout';
 import { todayISODate } from '@/lib/protein';
 import { useSession } from '@/lib/session';
 import type { ProteinLog } from '@/lib/types';
@@ -23,6 +24,7 @@ import { colors, fonts, radius, spacing, type } from '@/theme';
 
 export default function TodayScreen() {
   const { profile } = useSession();
+  const { ringSize, horizontalPad, contentWidth, isNarrow } = useLayout();
   const [logs, setLogs] = useState<ProteinLog[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -66,11 +68,14 @@ export default function TodayScreen() {
     .toUpperCase();
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <FlatList
         data={logs}
         keyExtractor={(l) => l.id}
-        contentContainerStyle={styles.list}
+        contentContainerStyle={[
+          styles.list,
+          { paddingHorizontal: horizontalPad, width: contentWidth, maxWidth: 428, alignSelf: 'center' },
+        ]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -88,7 +93,7 @@ export default function TodayScreen() {
             <View style={styles.header}>
               <View>
                 <Text style={styles.date}>{dateLabel}</Text>
-                <Text style={styles.wordmark}>
+                <Text style={[styles.wordmark, isNarrow && { fontSize: 22 }]}>
                   Protein<Text style={{ color: colors.accent }}>Lens</Text>
                 </Text>
               </View>
@@ -101,7 +106,7 @@ export default function TodayScreen() {
             </View>
 
             <View style={styles.ringWrap}>
-              <ProgressRing consumed={consumed} goal={goal} />
+              <ProgressRing consumed={consumed} goal={goal} size={ringSize} />
             </View>
 
             {profile ? (
@@ -120,8 +125,8 @@ export default function TodayScreen() {
             </View>
             <Text style={styles.emptyTitle}>No meals logged yet</Text>
             <Text style={styles.emptyText}>
-              Tap the scan button and point it at your food {'\u2014'} Whey gets stronger
-              every time you hit your goal.
+              Tap scan, photograph your meal, and feed your dragon every time you
+              hit your protein goal.
             </Text>
           </Animated.View>
         }
@@ -154,7 +159,7 @@ export default function TodayScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
-  list: { padding: spacing.lg, paddingBottom: 40 },
+  list: { paddingTop: spacing.md, paddingBottom: 100 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -163,8 +168,8 @@ const styles = StyleSheet.create({
   date: { ...type.label, color: colors.accent },
   wordmark: { fontFamily: fonts.displayHeavy, fontSize: 24, color: colors.text, marginTop: 2 },
   gearBtn: {
-    width: 40,
-    height: 40,
+    width: 44,
+    height: 44,
     borderRadius: 20,
     backgroundColor: colors.surface,
     borderWidth: 1,
