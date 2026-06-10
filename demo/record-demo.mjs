@@ -1,183 +1,203 @@
-// ProteinQuest product demo (~60–90s): intro → onboarding → daily pick → scan → celebration → end card
-// APP_URL=https://proteinquest.vercel.app node demo/record-demo.mjs
+// ProteinQuest ~45s demo: Today → scan meal → XP + evolution → Trends
+// node demo/record-demo.mjs
+// APP_URL=https://proteinquest.vercel.app MOCK_SCAN=1 node demo/record-demo.mjs
 import { chromium } from 'playwright';
+import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import path from 'node:path';
 import fs from 'node:fs';
+import path from 'node:path';
+
+import { mockAnalysis, seedDemoUser, STORAGE_KEY } from './seed-demo-user.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const APP_URL = process.env.APP_URL ?? 'https://proteinquest.vercel.app';
+const MOCK_SCAN = process.env.MOCK_SCAN !== '0';
+const TARGET_SECONDS = Number(process.env.TARGET_SECONDS ?? 45);
 const VIEWPORT = { width: 390, height: 844 };
-const PAUSE = (ms) => new Promise((r) => setTimeout(r, ms));
+const MEAL_IMAGE = path.join(__dirname, 'meal-scan.jpg');
+const OUTPUT = path.join(__dirname, 'proteinquest-demo.webm');
+const RAW_DIR = path.join(__dirname, 'video-raw');
+
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function ensureMealImage() {
+  if (fs.existsSync(MEAL_IMAGE)) return MEAL_IMAGE;
+  const fallback = path.join(__dirname, 'demo-meal.jpg');
+  if (fs.existsSync(fallback)) return fallback;
+  throw new Error('Missing demo/meal-scan.jpg — add a meal photo first.');
+}
+
+async function injectSession(page, session) {
+  await page.addInitScript(
+    ({ key, value }) => {
+      window.localStorage.setItem(
+        key,
+        JSON.stringify({
+          access_token: value.access_token,
+          refresh_token: value.refresh_token,
+          expires_at: value.expires_at,
+          expires_in: value.expires_in,
+          token_type: value.token_type,
+          user: value.user,
+        }),
+      );
+    },
+    { key: STORAGE_KEY, value: session },
+  );
+}
+
+async function setupMockScan(page) {
+  if (!MOCK_SCAN) return;
+  await page.route('**/functions/v1/analyze-food', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ analysis: mockAnalysis() }),
+    });
+  });
+}
+
+async function waitForToday(page) {
+  await page.getByText('PROTEIN TODAY').waitFor({ timeout: 60_000 });
+}
+
+async function uploadAndLogMeal(page) {
+  await page.goto(`${APP_URL}/scan`, { waitUntil: 'domcontentloaded' });
+  await wait(2000);
+
+  const [chooser] = await Promise.all([
+    page.waitForEvent('filechooser', { timeout: 20_000 }),
+    page.getByRole('button', { name: 'Upload from library' }).click(),
+  ]);
+  await chooser.setFiles(ensureMealImage());
+
+  await page.getByText('TOTAL PROTEIN').waitFor({ timeout: MOCK_SCAN ? 15_000 : 120_000 });
+  await wait(3800);
+
+  await page.getByText('Log it', { exact: true }).click();
+}
+
+async function waitForEvolution(page) {
+  const evolved = page.getByText(/EVOLVED|evolved|Watch your dragon transform/i);
+  await evolved.first().waitFor({ timeout: 20_000 });
+  // Full morph: charge (~1.3s) + crossfade (~3.4s) + reveal copy
+  await wait(11000);
+}
+
+async function dismissCelebration(page) {
+  const dismiss = page.getByText(/tap to continue/i);
+  if (await dismiss.isVisible().catch(() => false)) {
+    await dismiss.click();
+  } else {
+    await page.locator('body').click({ position: { x: 195, y: 420 } });
+  }
+  await wait(1500);
+}
+
+async function showTrends(page) {
+  await page.getByText('Trends', { exact: true }).click();
+  await page.getByText('Rhythm').waitFor({ timeout: 15_000 });
+  await page.getByText('Daily intake').waitFor({ timeout: 10_000 });
+  await wait(8000);
+}
+
+function finalizeVideo(rawPath) {
+  fs.mkdirSync(path.dirname(OUTPUT), { recursive: true });
+
+  let duration = 0;
+  try {
+    duration = Number(
+      execSync(`ffprobe -v error -show_entries format=duration -of csv=p=0 "${rawPath}"`, {
+        encoding: 'utf8',
+      }).trim(),
+    );
+  } catch {
+    fs.copyFileSync(rawPath, OUTPUT);
+    return { output: OUTPUT, duration: 0, trimmed: false };
+  }
+
+  if (duration <= TARGET_SECONDS + 3) {
+    fs.copyFileSync(rawPath, OUTPUT);
+    return { output: OUTPUT, duration, trimmed: false };
+  }
+
+  const trimmed = path.join(__dirname, 'proteinquest-demo-trimmed.webm');
+  execSync(
+    `ffmpeg -y -i "${rawPath}" -t ${TARGET_SECONDS} -c:v libvpx-vp9 -crf 32 -b:v 0 -an "${trimmed}"`,
+    { stdio: 'inherit' },
+  );
+  fs.copyFileSync(trimmed, OUTPUT);
+  fs.unlinkSync(trimmed);
+
+  const finalDuration = Number(
+    execSync(`ffprobe -v error -show_entries format=duration -of csv=p=0 "${OUTPUT}"`, {
+      encoding: 'utf8',
+    }).trim(),
+  );
+
+  return { output: OUTPUT, duration: finalDuration, trimmed: true };
+}
+
+console.log('Seeding demo user…');
+const { session } = await seedDemoUser();
+console.log('Recording against', APP_URL, MOCK_SCAN ? '(mock scan)' : '(live AI)');
+
+if (fs.existsSync(RAW_DIR)) {
+  for (const f of fs.readdirSync(RAW_DIR)) {
+    fs.unlinkSync(path.join(RAW_DIR, f));
+  }
+} else {
+  fs.mkdirSync(RAW_DIR, { recursive: true });
+}
 
 const browser = await chromium.launch({
   headless: true,
   args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'],
 });
+
 const context = await browser.newContext({
   viewport: VIEWPORT,
-  recordVideo: { dir: path.join(__dirname, 'video-raw'), size: VIEWPORT },
+  recordVideo: { dir: RAW_DIR, size: VIEWPORT },
   permissions: ['camera'],
 });
+
 const page = await context.newPage();
 page.on('pageerror', (e) => console.warn('page error:', e.message));
 
-async function shot(name) {
-  await page.screenshot({ path: path.join(__dirname, `step-${name}.png`) });
-  console.log('step:', name);
-}
-
-async function skipIntroIfNeeded() {
-  const skip = page.getByText('Skip intro');
-  if (await skip.isVisible({ timeout: 4000 }).catch(() => false)) {
-    await shot('00-intro');
-    await skip.click();
-    await PAUSE(1200);
-    return true;
-  }
-  const next = page.getByText('Next');
-  if (await next.isVisible({ timeout: 2000 }).catch(() => false)) {
-    await shot('00-intro');
-    for (let i = 0; i < 3; i++) {
-      if (!(await next.isVisible().catch(() => false))) break;
-      await next.click();
-      await PAUSE(600);
-    }
-    const start = page.getByText('Get started');
-    if (await start.isVisible().catch(() => false)) await start.click();
-    await PAUSE(1200);
-    return true;
-  }
-  return false;
-}
-
-async function runOnboarding() {
-  const dragonPick = page.getByText('Who will you grow with?');
-  if (!(await dragonPick.isVisible({ timeout: 15000 }).catch(() => false))) return false;
-
-  await shot('01-dragon-pick');
-  await page.getByText('Ember', { exact: true }).click();
-  await PAUSE(500);
-  await page.getByText('Continue').click();
-  await PAUSE(1000);
-  await shot('02-goal-setup');
-
-  await page.locator('input').nth(0).fill('28');
-  await page.locator('input').nth(1).fill('72');
-  await page.getByText('Female', { exact: true }).click();
-  await page.getByText('Moderate', { exact: false }).first().click();
-  await page.getByText('Build muscle', { exact: false }).first().click();
-  await page.mouse.wheel(0, 700);
-  await PAUSE(1200);
-  await shot('03-goal-calculated');
-  await page.getByText('Start tracking').click();
-  await PAUSE(2500);
-  return true;
-}
-
-async function dailyDragonPick() {
-  const picker = page.getByText('Who are you growing today?');
-  if (await picker.isVisible({ timeout: 8000 }).catch(() => false)) {
-    await shot('04-daily-dragon-pick');
-    await page.getByText('Frost', { exact: true }).click();
-    await PAUSE(600);
-    await page.getByText('Lock in for today').click();
-    await PAUSE(2000);
-    return true;
-  }
-  return false;
-}
-
-async function waitForToday() {
-  await dailyDragonPick();
-  const today = page.getByText('PROTEIN TODAY');
-  const daily = page.getByText('Who are you growing today?');
-  await Promise.race([
-    today.waitFor({ timeout: 60_000 }),
-    daily.waitFor({ timeout: 60_000 }).then(() => dailyDragonPick()),
-  ]);
-  if (await daily.isVisible().catch(() => false)) await dailyDragonPick();
-  await today.waitFor({ timeout: 30_000 });
-  await shot('05-today-home');
-  await PAUSE(3500);
-}
-
-async function scanMeal() {
-  await page.goto(`${APP_URL}/scan`, { waitUntil: 'domcontentloaded' });
-  await PAUSE(4000);
-  await shot('06-scan-camera');
-
-  const shutter = page.locator('div[tabindex="0"]').filter({ hasNot: page.locator('svg') }).last();
-  if (await shutter.isVisible().catch(() => false)) {
-    await shutter.click();
-    await PAUSE(7000);
-  }
-
-  const hasResult = await page.getByText('TOTAL PROTEIN').isVisible().catch(() => false);
-  if (hasResult) {
-    await shot('07-analysis');
-    await page.getByText('Log it').click();
-    await PAUSE(4500);
-    const evolved = await page.getByText(/EVOLVING|EVOLVED|Level up|You showed up/i).isVisible().catch(() => false);
-    if (evolved) {
-      await shot('08-celebration');
-      await PAUSE(3500);
-      await page.locator('body').click({ position: { x: 195, y: 500 } }).catch(() => {});
-      await PAUSE(1500);
-    } else {
-      await shot('08-logged');
-    }
-    return true;
-  }
-
-  await shot('07-scan-status');
-  console.log('Scan analysis unavailable — showing camera + today flow only');
-  return false;
-}
-
-async function showEndCard() {
-  const endCard = path.join(__dirname, 'end-card.html');
-  await page.goto(`file://${endCard}`, { waitUntil: 'domcontentloaded' });
-  await PAUSE(2500);
-  await shot('09-end-card');
-}
+await setupMockScan(page);
+await injectSession(page, session);
 
 try {
-  console.log('Recording demo against', APP_URL);
-  await page.goto(APP_URL, { waitUntil: 'networkidle', timeout: 180_000 });
-  await page.evaluate(() => localStorage.clear());
-  await page.reload({ waitUntil: 'networkidle' });
-  await PAUSE(4000);
+  await page.goto(APP_URL, { waitUntil: 'domcontentloaded', timeout: 120_000 });
+  await wait(2500);
+  await waitForToday(page);
+  await wait(6500);
 
-  await skipIntroIfNeeded();
-  await runOnboarding();
-  await waitForToday();
-  await scanMeal();
+  await uploadAndLogMeal(page);
+  await wait(1200);
+  await waitForEvolution(page);
+  await dismissCelebration(page);
 
-  await page.goto(APP_URL, { waitUntil: 'domcontentloaded' });
-  await PAUSE(2500);
-  await shot('10-today-after');
-  await PAUSE(2000);
+  await page.goto(`${APP_URL}/today`, { waitUntil: 'domcontentloaded' });
+  await wait(3500);
 
-  await page.getByText('Trends', { exact: true }).click();
-  await PAUSE(3000);
-  await shot('11-trends');
-
-  await showEndCard();
+  await showTrends(page);
 } catch (e) {
-  console.error('Demo error:', e.message);
-  await shot('error');
+  console.error('Demo recording error:', e.message);
+  await page.screenshot({ path: path.join(__dirname, 'record-error.png'), fullPage: true });
+  throw e;
 } finally {
   await context.close();
   await browser.close();
 }
 
-const rawDir = path.join(__dirname, 'video-raw');
-if (fs.existsSync(rawDir)) {
-  const videos = fs.readdirSync(rawDir).filter((f) => f.endsWith('.webm'));
-  if (videos.length) {
-    const dest = path.join(__dirname, 'proteinquest-demo.webm');
-    fs.copyFileSync(path.join(rawDir, videos.at(-1)), dest);
-    console.log('VIDEO:', dest);
-  }
+const rawVideos = fs.readdirSync(RAW_DIR).filter((f) => f.endsWith('.webm'));
+if (!rawVideos.length) {
+  throw new Error('No Playwright video captured.');
 }
+
+const rawPath = path.join(RAW_DIR, rawVideos.at(-1));
+const result = finalizeVideo(rawPath);
+
+console.log('VIDEO:', result.output);
+console.log('Duration:', result.duration.toFixed(1), 's', result.trimmed ? '(trimmed)' : '');
