@@ -1,4 +1,4 @@
-// ProteinQuest ~45s demo: Today → scan meal → XP + evolution → Trends
+// ProteinQuest ~45s demo: intro → onboarding → scan → evolution → trends
 // node demo/record-demo.mjs
 // APP_URL=https://proteinquest.vercel.app MOCK_SCAN=1 node demo/record-demo.mjs
 import { chromium } from 'playwright';
@@ -7,13 +7,13 @@ import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { mockAnalysis, seedDemoUser, STORAGE_KEY } from './seed-demo-user.mjs';
+import { mockAnalysis, STORAGE_KEY, upgradeDemoUserForRecording } from './seed-demo-user.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-// Local dev server includes pq_demo_auto_scan (no camera green screen). Override with APP_URL for prod after deploy.
 const APP_URL = process.env.APP_URL ?? 'http://localhost:8081';
 const MOCK_SCAN = process.env.MOCK_SCAN !== '0';
 const TARGET_SECONDS = Number(process.env.TARGET_SECONDS ?? 45);
+const EVOLUTION_POST_SPEED = Number(process.env.EVOLUTION_POST_SPEED ?? 1);
 const VIEWPORT = { width: 390, height: 844 };
 const MEAL_IMAGE = path.join(__dirname, 'meal-scan.jpg');
 const OUTPUT_WEBM = path.join(__dirname, 'proteinquest-demo.webm');
@@ -30,24 +30,10 @@ function ensureMealImage() {
   throw new Error('Missing demo/meal-scan.jpg — add a meal photo first.');
 }
 
-async function injectSession(page, session) {
-  await page.addInitScript(
-    ({ key, value }) => {
-      window.localStorage.setItem(
-        key,
-        JSON.stringify({
-          access_token: value.access_token,
-          refresh_token: value.refresh_token,
-          expires_at: value.expires_at,
-          expires_in: value.expires_in,
-          token_type: value.token_type,
-          user: value.user,
-        }),
-      );
-      sessionStorage.setItem('pq_demo_auto_scan', '1');
-    },
-    { key: STORAGE_KEY, value: session },
-  );
+async function setupDemoInit(page) {
+  await page.addInitScript(() => {
+    sessionStorage.setItem('pq_demo_auto_scan', '1');
+  });
 }
 
 async function setupMockScan(page) {
@@ -61,67 +47,60 @@ async function setupMockScan(page) {
   });
 }
 
-async function fastSkipIntro(page) {
-  if (await page.getByText('Skip intro').isVisible({ timeout: 1500 }).catch(() => false)) {
-    await page.getByText('Skip intro').click();
-    await wait(300);
-    return;
-  }
-  for (let i = 0; i < 4; i++) {
-    const next = page.getByRole('button', { name: 'Next' });
-    if (!(await next.isVisible({ timeout: 400 }).catch(() => false))) break;
-    await next.click();
-    await wait(180);
-  }
-  const getStarted = page.getByRole('button', { name: 'Get started' });
-  if (await getStarted.isVisible({ timeout: 400 }).catch(() => false)) {
-    await getStarted.click();
-    await wait(300);
-  }
+async function readSession(page) {
+  return page.evaluate((key) => {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  }, STORAGE_KEY);
 }
 
-async function fastSkipOnboarding(page) {
-  if (!(await page.getByText('How much protein per day?').isVisible({ timeout: 1200 }).catch(() => false))) {
-    return;
+async function playIntro(page) {
+  await page.getByText('Snap meals, get protein').waitFor({ timeout: 60_000 });
+  await wait(700);
+
+  const steps = 5;
+  for (let i = 0; i < steps; i++) {
+    const isLast = i === steps - 1;
+    const label = isLast ? 'Get started' : 'Next';
+    const btn = page.getByText(label, { exact: true });
+    await btn.waitFor({ timeout: 15_000 });
+    await btn.click();
+    await wait(isLast ? 900 : 680);
   }
+
+  await page.getByText('Who will you grow with?').waitFor({ timeout: 20_000 });
+  await wait(400);
+}
+
+async function playOnboarding(page) {
   const ember = page.getByText('Ember', { exact: true }).first();
-  if (await ember.isVisible({ timeout: 400 }).catch(() => false)) {
-    await ember.click();
-    const continueBtn = page.getByRole('button', { name: 'Continue' });
-    if (await continueBtn.isVisible({ timeout: 400 }).catch(() => false)) {
-      await continueBtn.click();
-      await wait(250);
-    }
-  }
+  await ember.waitFor({ timeout: 10_000 });
+  await ember.click();
+  await wait(350);
+  await page.getByText('Continue', { exact: true }).click();
+  await wait(450);
+
+  await page.getByText('Set your protein goal').waitFor({ timeout: 10_000 });
   const inputs = page.locator('input');
-  if ((await inputs.count()) >= 2) {
-    await inputs.nth(0).fill('28');
-    await inputs.nth(1).fill('72');
-  }
-  const male = page.getByText('Male', { exact: true });
-  if (await male.isVisible({ timeout: 400 }).catch(() => false)) await male.click();
-  const strength = page.getByText('Strength training', { exact: false }).first();
-  if (await strength.isVisible({ timeout: 400 }).catch(() => false)) await strength.click();
-  const buildMuscle = page.getByText('Build muscle', { exact: false }).first();
-  if (await buildMuscle.isVisible({ timeout: 400 }).catch(() => false)) await buildMuscle.click();
-  const start = page.getByText('Start tracking');
-  if (await start.isVisible({ timeout: 400 }).catch(() => false)) {
-    await start.click();
-    await wait(800);
-  }
+  await inputs.nth(0).fill('28');
+  await inputs.nth(1).fill('72');
+  await wait(200);
+  await page.getByText('Male', { exact: true }).click();
+  await page.getByText('Strength training', { exact: false }).first().click();
+  await page.getByText('Build muscle', { exact: false }).first().click();
+  await wait(500);
+  await page.getByText('Start tracking').click();
+  await wait(900);
 }
 
-async function fastPickDailyDragon(page) {
-  if (!(await page.getByText('Who are you growing today?').isVisible({ timeout: 1200 }).catch(() => false))) {
-    return;
-  }
+async function playDailyDragon(page) {
+  await page.getByText('Who are you growing today?').waitFor({ timeout: 15_000 });
+  await wait(400);
   const ember = page.getByText('Ember', { exact: true }).first();
-  if (await ember.isVisible({ timeout: 600 }).catch(() => false)) await ember.click();
-  const lock = page.getByRole('button', { name: 'Lock in for today' });
-  if (await lock.isVisible({ timeout: 600 }).catch(() => false)) {
-    await lock.click();
-    await wait(600);
-  }
+  await ember.click();
+  await wait(300);
+  await page.getByText('Lock in for today', { exact: true }).click();
+  await wait(700);
 }
 
 async function waitForToday(page) {
@@ -139,16 +118,15 @@ async function uploadAndLogMeal(page) {
 
   await page.getByText('ANALYZING').waitFor({ timeout: 8_000 }).catch(() => {});
   await page.getByText('TOTAL PROTEIN').waitFor({ timeout: MOCK_SCAN ? 15_000 : 120_000 });
-  await wait(2800);
+  await wait(1800);
 
   await page.getByText('Log it', { exact: true }).click();
 }
 
 async function waitForEvolution(page) {
-  const evolved = page.getByText(/EVOLVED|evolved|Watch your dragon transform/i);
-  await evolved.first().waitFor({ timeout: 20_000 });
-  // Full morph: charge (~1.3s) + crossfade (~3.4s) + reveal copy
-  await wait(11000);
+  await page.getByText(/EVOLVING|Watch your dragon transform/i).first().waitFor({ timeout: 20_000 });
+  // Morph completes at MORPH_MS (2.1s) + brief reveal copy
+  await wait(3800);
 }
 
 async function dismissCelebration(page) {
@@ -158,28 +136,27 @@ async function dismissCelebration(page) {
   } else {
     await page.locator('body').click({ position: { x: 195, y: 420 } });
   }
-  await wait(1000);
+  await wait(600);
 }
 
 async function showTrends(page) {
   await page.getByText('Trends', { exact: true }).click();
   await page.getByText('Rhythm').waitFor({ timeout: 15_000 });
   await page.getByText('Daily intake').waitFor({ timeout: 10_000 });
-  await wait(6500);
+  await wait(7500);
 }
 
 function ensureDemoMusic(durationSec) {
   if (fs.existsSync(MUSIC_FILE)) return MUSIC_FILE;
 
   const dur = Math.ceil(durationSec + 8);
-  // Royalty-free: soft ambient pad generated locally (no external copyright)
   const filter = [
     `sine=frequency=196:duration=${dur}:sample_rate=44100`,
     `sine=frequency=246.94:duration=${dur}:sample_rate=44100`,
     `sine=frequency=293.66:duration=${dur}:sample_rate=44100`,
     `sine=frequency=392:duration=${dur}:sample_rate=44100`,
   ]
-    .map((src, i) => `-f lavfi -i "${src}"`)
+    .map((src) => `-f lavfi -i "${src}"`)
     .join(' ');
 
   const mixInputs = '[0:a]volume=0.06[a0];[1:a]volume=0.05[a1];[2:a]volume=0.04[a2];[3:a]volume=0.03[a3]';
@@ -219,11 +196,16 @@ function finalizeVideo(rawPath) {
     );
   }
 
-  const finalDuration = getDuration(trimmedPath);
+  let finalDuration = getDuration(trimmedPath);
   const music = ensureDemoMusic(finalDuration);
 
+  let videoFilter = 'copy';
+  if (EVOLUTION_POST_SPEED > 1 && EVOLUTION_POST_SPEED <= 1.2) {
+    videoFilter = `setpts=PTS/${EVOLUTION_POST_SPEED}`;
+  }
+
   execSync(
-    `ffmpeg -y -i "${trimmedPath}" -i "${music}" -filter_complex "[1:a]volume=0.22,afade=t=in:st=0:d=1.5,afade=t=out:st=${Math.max(0, finalDuration - 3)}:d=3[a]" -map 0:v -map "[a]" -c:v copy -c:a libopus -b:a 96k -shortest "${OUTPUT_WEBM}"`,
+    `ffmpeg -y -i "${trimmedPath}" -i "${music}" -filter_complex "[1:a]volume=0.22,afade=t=in:st=0:d=1.5,afade=t=out:st=${Math.max(0, finalDuration - 3)}:d=3[a]" -map 0:v -map "[a]" -c:v ${videoFilter === 'copy' ? 'copy' : 'libvpx-vp9'} ${videoFilter === 'copy' ? '' : `-vf "${videoFilter}" -crf 32 -b:v 0`} -c:a libopus -b:a 96k -shortest "${OUTPUT_WEBM}"`,
     { stdio: 'inherit' },
   );
 
@@ -236,18 +218,16 @@ function finalizeVideo(rawPath) {
     fs.unlinkSync(trimmedPath);
   }
 
-  const webmDuration = getDuration(OUTPUT_WEBM);
+  finalDuration = getDuration(OUTPUT_WEBM);
   return {
     webm: OUTPUT_WEBM,
     mp4: OUTPUT_MP4,
-    duration: webmDuration,
+    duration: finalDuration,
     trimmed: duration > TARGET_SECONDS + 3,
   };
 }
 
-console.log('Seeding demo user…');
-const { session } = await seedDemoUser();
-console.log('Recording against', APP_URL, MOCK_SCAN ? '(mock scan)' : '(live AI)');
+console.log('Recording fresh-user demo against', APP_URL, MOCK_SCAN ? '(mock scan)' : '(live AI)');
 
 if (fs.existsSync(RAW_DIR)) {
   for (const f of fs.readdirSync(RAW_DIR)) {
@@ -267,29 +247,37 @@ const context = await browser.newContext({
 const page = await context.newPage();
 page.on('pageerror', (e) => console.warn('page error:', e.message));
 
+await setupDemoInit(page);
 await setupMockScan(page);
-await injectSession(page, session);
 
 try {
-  await page.goto(`${APP_URL}/today`, { waitUntil: 'domcontentloaded', timeout: 120_000 });
-  await wait(300);
-  await fastSkipIntro(page);
-  await fastSkipOnboarding(page);
-  await fastPickDailyDragon(page);
+  await page.goto(`${APP_URL}/`, { waitUntil: 'domcontentloaded', timeout: 120_000 });
+  await page.evaluate(() => localStorage.clear());
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await wait(1200);
+
+  await playIntro(page);
+  await playOnboarding(page);
+  await playDailyDragon(page);
   await waitForToday(page);
-  await wait(2200);
+  await wait(2000);
+
+  const session = await readSession(page);
+  if (!session?.user?.id) throw new Error('No auth session after onboarding');
+  console.log('Upgrading demo user for evolution + trends…');
+  await upgradeDemoUserForRecording(session, 'fire');
+
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await waitForToday(page);
+  await wait(1200);
 
   await uploadAndLogMeal(page);
-  await wait(500);
+  await wait(300);
   await waitForEvolution(page);
   await dismissCelebration(page);
 
-  await page.goto(`${APP_URL}/today`, { waitUntil: 'domcontentloaded' });
-  await wait(1800);
-
   await showTrends(page);
-  // Hold on trends chart so final cut lands ~42–46s
-  await wait(12000);
+  await wait(4500);
 } catch (e) {
   console.error('Demo recording error:', e.message);
   await page.screenshot({ path: path.join(__dirname, 'record-error.png'), fullPage: true });

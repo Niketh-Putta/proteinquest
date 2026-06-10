@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Dimensions, Image, Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { ImageSourcePropType } from 'react-native';
 import * as Haptics from 'expo-haptics';
@@ -29,11 +29,13 @@ import type { Profile } from '@/lib/types';
 import { colors, fonts, radius, spacing } from '@/theme';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
-const MORPH_MS = 3400;
-const CHARGE_MS = 1300;
+const MORPH_MS = 2100;
+const CHARGE_MS = 780;
 const FLASH_AT = CHARGE_MS;
-const CROSSFADE_AT = FLASH_AT + 180;
-const CROSSFADE_MS = 900;
+const CROSSFADE_AT = FLASH_AT + 110;
+const CROSSFADE_MS = 560;
+const CHARGE_PULSE_MS = 190;
+const CHARGE_PULSES = 4;
 
 function triggerHaptic(type: 'impact' | 'success' | 'heavy') {
   if (Platform.OS === 'web') return;
@@ -132,23 +134,33 @@ function EvolutionMorph({
   const flash = useSharedValue(0);
   const charge = useSharedValue(1);
   const glowPulse = useSharedValue(0.18);
+  const onMorphCompleteRef = useRef(onMorphComplete);
+  onMorphCompleteRef.current = onMorphComplete;
+
+  useEffect(() => {
+    const morphCompleteTimer = setTimeout(() => {
+      triggerHaptic('success');
+      onMorphCompleteRef.current();
+    }, MORPH_MS);
+    return () => clearTimeout(morphCompleteTimer);
+  }, []);
 
   useEffect(() => {
     triggerHaptic('impact');
 
     charge.value = withRepeat(
       withSequence(
-        withTiming(1.12, { duration: 260, easing: Easing.inOut(Easing.quad) }),
-        withTiming(0.94, { duration: 260, easing: Easing.inOut(Easing.quad) }),
+        withTiming(1.12, { duration: CHARGE_PULSE_MS, easing: Easing.inOut(Easing.quad) }),
+        withTiming(0.94, { duration: CHARGE_PULSE_MS, easing: Easing.inOut(Easing.quad) }),
       ),
-      5,
+      CHARGE_PULSES,
     );
     glowPulse.value = withRepeat(
       withSequence(
-        withTiming(0.42, { duration: 260, easing: Easing.out(Easing.quad) }),
-        withTiming(0.14, { duration: 260, easing: Easing.in(Easing.quad) }),
+        withTiming(0.42, { duration: CHARGE_PULSE_MS, easing: Easing.out(Easing.quad) }),
+        withTiming(0.14, { duration: CHARGE_PULSE_MS, easing: Easing.in(Easing.quad) }),
       ),
-      5,
+      CHARGE_PULSES,
     );
 
     flash.value = withDelay(
@@ -157,7 +169,7 @@ function EvolutionMorph({
         withTiming(1, { duration: 90, easing: Easing.out(Easing.quad) }, (done) => {
           if (done) runOnJS(triggerHaptic)('heavy');
         }),
-        withTiming(0, { duration: 620, easing: Easing.out(Easing.cubic) }),
+        withTiming(0, { duration: 380, easing: Easing.out(Easing.cubic) }),
       ),
     );
 
@@ -178,15 +190,10 @@ function EvolutionMorph({
       CROSSFADE_AT + 80,
       withSequence(
         withSpring(1.22, { damping: 7, stiffness: 160 }),
-        withSpring(1, { damping: 11, stiffness: 130 }, (done) => {
-          if (done) {
-            runOnJS(triggerHaptic)('success');
-            runOnJS(onMorphComplete)();
-          }
-        }),
+        withSpring(1, { damping: 11, stiffness: 130 }),
       ),
     );
-  }, [charge, flash, glowPulse, newOpacity, newScale, oldOpacity, oldScale, onMorphComplete]);
+  }, [charge, flash, glowPulse, newOpacity, newScale, oldOpacity, oldScale]);
 
   const oldStyle = useAnimatedStyle(() => ({
     opacity: oldOpacity.value,

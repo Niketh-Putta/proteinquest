@@ -1,4 +1,4 @@
-// Seed an anonymous demo user: onboarded profile near level-up + 6 days of trend logs.
+// Demo user helpers: fresh anonymous session + post-onboarding upgrade for evolution/trends.
 // Used by demo/record-demo.mjs for a reliable ~45s product video.
 import { createClient } from '@supabase/supabase-js';
 
@@ -7,9 +7,9 @@ const SUPABASE_KEY = 'sb_publishable_Zg6Jj70nqJcd7OGof5iP6w_9My7yS9F';
 export const STORAGE_KEY = `sb-${new URL(SUPABASE_URL).hostname.split('.')[0]}-auth-token`;
 
 const TREND_TOTALS = [92, 108, 85, 115, 98, 102];
-const DEMO_GOAL_G = 40;
+export const DEMO_GOAL_G = 40;
 /** Level 4 XP — one goal hit (+100) + ~42g meal pushes to level 5 (evolution). */
-const SEED_XP = 571;
+export const SEED_XP = 571;
 
 function todayISO(offsetDays = 0) {
   const d = new Date();
@@ -44,6 +44,14 @@ export function mockAnalysis() {
   };
 }
 
+function supabaseForSession(session) {
+  const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  return { supabase, sessionReady: supabase.auth.setSession(session) };
+}
+
+/** Legacy: pre-seeded onboarded user (skips intro). Prefer fresh flow + upgradeDemoUserForRecording. */
 export async function seedDemoUser() {
   const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -54,8 +62,46 @@ export async function seedDemoUser() {
 
   const session = signIn.session;
   const userId = signIn.user.id;
+  await applyDemoUpgrade(supabase, userId, 'fire', { introCompleted: true, onboarded: true });
+
+  return { session, userId, storageKey: STORAGE_KEY, goalG: DEMO_GOAL_G };
+}
+
+/**
+ * After live intro/onboarding, bump XP near evolution + insert trend history.
+ * Keeps daily dragon lock and onboarded state from the recording session.
+ */
+export async function upgradeDemoUserForRecording(session, dragonId = 'fire') {
+  const { supabase, sessionReady } = supabaseForSession(session);
+  await sessionReady;
+  const userId = session.user.id;
+  await applyDemoUpgrade(supabase, userId, dragonId, {
+    introCompleted: true,
+    onboarded: true,
+    preserveDailyDragon: true,
+  });
+  return { userId, goalG: DEMO_GOAL_G };
+}
+
+async function applyDemoUpgrade(
+  supabase,
+  userId,
+  dragonId,
+  { introCompleted, onboarded, preserveDailyDragon = false },
+) {
   const today = todayISO();
   const yesterday = todayISO(-1);
+
+  const { data: existing, error: fetchError } = await supabase
+    .from('profiles')
+    .select('daily_dragon_id, daily_dragon_date, active_dragon_id')
+    .eq('id', userId)
+    .single();
+  if (fetchError) throw fetchError;
+
+  const activeDragon = preserveDailyDragon
+    ? (existing.daily_dragon_id ?? existing.active_dragon_id ?? dragonId)
+    : dragonId;
 
   const dragonProgress = {
     xp: SEED_XP,
@@ -68,21 +114,13 @@ export async function seedDemoUser() {
 
   const profile = {
     id: userId,
-    age: 28,
-    weight_kg: 72,
-    sex: 'female',
-    activity_level: 'moderate',
-    goal_type: 'build_muscle',
     protein_goal_g: DEMO_GOAL_G,
-    onboarded: true,
-    intro_completed: true,
-    is_premium: false,
-    paywall_dismissed: false,
-    weight_unit: 'kg',
-    active_dragon_id: 'fire',
-    daily_dragon_id: 'fire',
-    daily_dragon_date: today,
-    dragon_progress: { fire: dragonProgress },
+    intro_completed: introCompleted,
+    onboarded,
+    active_dragon_id: activeDragon,
+    daily_dragon_id: preserveDailyDragon ? (existing.daily_dragon_id ?? activeDragon) : activeDragon,
+    daily_dragon_date: preserveDailyDragon ? (existing.daily_dragon_date ?? today) : today,
+    dragon_progress: { [activeDragon]: dragonProgress },
     xp: SEED_XP,
     streak: dragonProgress.streak,
     best_streak: dragonProgress.best_streak,
@@ -92,6 +130,8 @@ export async function seedDemoUser() {
 
   const { error: profileError } = await supabase.from('profiles').upsert(profile);
   if (profileError) throw profileError;
+
+  await supabase.from('protein_logs').delete().eq('user_id', userId);
 
   const logs = TREND_TOTALS.map((protein_g, i) => ({
     user_id: userId,
@@ -107,8 +147,6 @@ export async function seedDemoUser() {
 
   const { error: logsError } = await supabase.from('protein_logs').insert(logs);
   if (logsError) throw logsError;
-
-  return { session, userId, storageKey: STORAGE_KEY, goalG: DEMO_GOAL_G };
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
