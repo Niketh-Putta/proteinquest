@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      width: 480px;
+      height: 640px;
+      font-family: Arial, Helvetica, sans-serif;
+      background: #fff;
+      color: #111;
+      padding: 24px;
+    }
+    .panel {
+      border: 3px solid #111;
+      height: 100%;
+      padding: 24px;
+    }
+    h1 { font-size: 28px; margin-bottom: 8px; }
+    .rule-thick { border-top: 8px solid #111; margin: 8px 0 16px; }
+    .rule { border-top: 2px solid #111; margin: 12px 0; }
+    .serving { font-size: 16px; line-height: 1.5; }
+    .protein-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin: 24px 0;
+    }
+    .protein-row span:first-child { font-size: 22px; }
+    .protein-value { font-size: 42px; font-weight: 700; }
+    .macro { font-size: 18px; margin: 8px 0; }
+    .product {
+      margin-top: 48px;
+      border: 2px solid #999;
+      background: #f4f4f4;
+      padding: 40px 16px;
+      text-align: center;
+    }
+    .product h2 { font-size: 20px; margin-bottom: 8px; }
+    .product p { font-size: 16px; color: #666; }
+  </style>
+</head>
+<body>
+  <div class="panel">
+    <h1>Nutrition Facts</h1>
+    <div class="rule-thick"></div>
+    <p class="serving">Serving size 1 container (330g)</p>
+    <p class="serving">Servings per container 1</p>
+    <div class="rule"></div>
+    <p class="serving"><strong>Amount per serving</strong></p>
+    <div class="protein-row">
+      <span>Protein</span>
+      <span class="protein-value">50g</span>
+    </div>
+    <div class="rule"></div>
+    <p class="macro">Total Fat 8g</p>
+    <p class="macro">Carbohydrate 12g</p>
+    <p class="macro">Calories 280</p>
+    <div class="product">
+      <h2>HIGH PROTEIN SHAKE</h2>
+      <p>Test label — expect 50g protein</p>
+    </div>
+  </div>
+</body>
+</html>
