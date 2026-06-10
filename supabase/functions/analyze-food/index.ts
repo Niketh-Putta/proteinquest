@@ -1,12 +1,18 @@
 // Protein analysis via server Gemini key (primary) or OpenAI fallback.
 
+import {
+  lookupProteinDensity,
+  proteinFromDensity,
+} from "../_shared/protein-density.ts";
+
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
 const OPENAI_MODEL = Deno.env.get("OPENAI_MODEL") ?? "gpt-4o";
 const GEMINI_MODELS = [
-  Deno.env.get("GEMINI_MODEL") ?? "gemini-2.0-flash",
+  Deno.env.get("GEMINI_MODEL") ?? "gemini-2.5-flash",
+  "gemini-2.5-pro",
+  "gemini-2.0-flash",
   "gemini-2.0-flash-lite",
-  "gemini-2.5-flash",
 ];
 
 const corsHeaders = {
@@ -18,20 +24,37 @@ const corsHeaders = {
 
 const SYSTEM_PROMPT = `You are an expert sports nutritionist who estimates PROTEIN ONLY from food photos.
 
-CRITICAL — SIZE DRIVES PROTEIN, NOT JUST FOOD TYPE:
-- First estimate how much of each food is on the plate using visual cues: area on plate, thickness/height, stack depth, relative size vs utensils (fork ~19cm), hands, standard dinner plate (~26cm), bowl rim, packaging labels if visible.
-- For each item set estimated_grams (cooked/edible weight). protein_g MUST be calculated from that weight × protein density for that food — NOT a generic "standard serving".
-- Examples: a thin palm-sized chicken breast (~90g) ≈ 27g protein; a large double breast (~200g) ≈ 60g. A small yogurt cup (125g) ≠ a large tub (500g). Two eggs ≠ four eggs.
-- If size is ambiguous, use conservative (lower) gram estimates and set confidence to low or medium.
+WORK IN 4 STEPS (reason internally, output final JSON only):
+1. IDENTIFY every visible food component. Separate visible items from likely hidden ingredients (sauce, oil, cheese dust, marinade). Note cooking method (grilled, fried, baked) — affects weight more than protein density.
+2. ESTIMATE PORTION SIZE for each item using visual anchors:
+   - Standard dinner plate ~26cm; fork ~19cm; palm ~10cm wide
+   - Palm-sized chicken breast (cooked) ~120g; large breast ~160-180g
+   - Sliced/strip chicken: count strips × ~18-22g each (7 strips ≈130-150g, NOT full plate weight)
+   - 1 large egg ~50g (~6g protein); 2 eggs ~100g (~13g protein)
+   - Deck-of-cards meat portion ~85g; fist-sized rice/pasta ~150g cooked
+   - Greens/kale bed under protein: ~60-100g (shares plate with protein above)
+   - Protein bar ~60g; yogurt cup small ~125g, large ~170g
+3. CALCULATE protein_g = estimated_grams × (protein per 100g for that food) / 100
+   Densities: chicken breast 31, ground beef 26, salmon 25, egg 13, greek yogurt 10, tofu 17, kale/spinach 3, rice 2.7, cheese 25, protein bar 30
+4. SUM all item protein_g → total_protein_g (must match within 0.5g)
 
 Rules:
-1. If NOT food: is_food=false, empty food_name, empty items, zeros, explain in notes.
-2. If food: list every visible component. portion must describe size ("~120g, palm-sized", "half plate", "2 large slices").
-3. Handle ANY food: cake, pizza, curry, shakes, snacks, restaurant meals, mixed plates, etc.
-4. Per-item confidence: low, medium, or high.
-5. total_protein_g must equal sum of item protein_g (1 decimal).
-6. Never hallucinate food not visible.
-7. Keep notes under 100 characters. No double quotes, backslashes, or line breaks inside any string field.`;
+- If NOT food: is_food=false, empty food_name, empty items, zeros, explain in notes.
+- If food: list protein-bearing components only (chicken, eggs, meat, fish, tofu, beans, cheese, yogurt). Skip zero-protein garnishes (lemon wedge, herbs, pickles).
+- LAYERED PLATES: items share plate space — do NOT assign full plate area to each item. Greens under chicken are typically 60-120g, not equal to the protein portion.
+- portion must describe size AND method ("~150g grilled, 6 strips", "~80g sautéed bed under chicken").
+- estimated_grams = cooked edible weight only. Typical dinner plate total food ~250-450g.
+- Per-item confidence: low (ambiguous size), medium (reasonable estimate), high (clear size + familiar food).
+- Never hallucinate food not visible. Hidden ingredients only if strongly implied (curry sauce, burger patty under bun).
+- Keep notes under 100 characters. No double quotes, backslashes, or line breaks inside strings.
+
+Few-shot calibration examples (do NOT copy blindly — adapt to the photo):
+A) Grilled chicken strips (7 strips ~140g) + sautéed kale (~80g) + parmesan dust (~5g):
+   chicken 140g×31%=43.4g, kale 80g×3%=2.4g, cheese 5g×25%=1.3g → total ~47g, confidence medium-high
+B) 2 scrambled eggs (~100g) + toast (~30g):
+   eggs 13g, toast 2.7g → total ~16g
+C) Chicken curry bowl: visible chicken ~120g (37g) + sauce/veg ~200g (6g) → total ~43g
+D) Empty plate or non-food → is_food=false`;
 
 const OPENAI_SCHEMA = {
   type: "object",
@@ -160,6 +183,10 @@ function isRetryableGeminiError(message: string, status?: number): boolean {
   );
 }
 
+function supportsThinking(model: string): boolean {
+  return /gemini-2\.5-(flash|pro)/i.test(model);
+}
+
 async function callGeminiWithRetry(
   apiKey: string,
   imageBase64: string,
@@ -198,6 +225,18 @@ async function callGemini(
   attempt = 0,
 ): Promise<Record<string, unknown>> {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
+
+  const generationConfig: Record<string, unknown> = {
+    temperature: attempt === 0 ? 0.15 : 0.1,
+    maxOutputTokens: 2048,
+    responseMimeType: "application/json",
+    responseSchema: GEMINI_SCHEMA,
+  };
+
+  if (attempt === 0 && supportsThinking(model)) {
+    generationConfig.thinkingConfig = { thinkingBudget: 768 };
+  }
+
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -209,19 +248,14 @@ async function callGemini(
             {
               text:
                 attempt === 0
-                  ? "Analyze this image. Estimate each food's size/weight from the photo first, then calculate protein from that weight. Return valid JSON only. Do not use double quotes inside string values."
+                  ? "Analyze this meal photo. Step 1: list all foods. Step 2: estimate grams per item using plate/fork scale. Step 3: multiply grams by protein density. Step 4: sum totals. Return valid JSON only."
                   : "Analyze this image for protein. Return ONLY compact valid JSON matching the schema. Keep notes under 80 characters. No quotes or newlines inside strings.",
             },
             { inline_data: { mime_type: mimeType, data: imageBase64 } },
           ],
         },
       ],
-      generationConfig: {
-        temperature: attempt === 0 ? 0.2 : 0.1,
-        maxOutputTokens: 2048,
-        responseMimeType: "application/json",
-        responseSchema: GEMINI_SCHEMA,
-      },
+      generationConfig,
     }),
   });
 
@@ -301,7 +335,7 @@ async function callOpenAI(
     body: JSON.stringify({
       model: OPENAI_MODEL,
       max_tokens: 1200,
-      temperature: 0.2,
+      temperature: 0.15,
       response_format: {
         type: "json_schema",
         json_schema: {
@@ -317,7 +351,7 @@ async function callOpenAI(
           content: [
             {
               type: "text",
-              text: "Analyze this image. Estimate each food's size/weight from the photo first, then calculate protein from that weight. Return JSON only.",
+              text: "Analyze this meal photo. Identify foods, estimate grams from visual scale, calculate protein from density, sum total. Return JSON only.",
             },
             {
               type: "image_url",
@@ -361,6 +395,49 @@ function sanitizeField(value: unknown, maxLen = 120): string {
     .slice(0, maxLen);
 }
 
+type NormalizedItem = {
+  name: string;
+  portion: string;
+  estimated_grams?: number;
+  protein_g: number;
+  confidence: string;
+};
+
+function calibrateItem(item: NormalizedItem): NormalizedItem {
+  const grams = item.estimated_grams;
+  if (!grams || grams <= 0) return item;
+
+  const density = lookupProteinDensity(item.name);
+  if (!density) return item;
+
+  const fromDensity = proteinFromDensity(grams, density);
+  const llmProtein = item.protein_g;
+
+  // Stronger trust in density table when LLM estimate diverges wildly (>40% off).
+  const divergence = llmProtein > 0
+    ? Math.abs(fromDensity - llmProtein) / llmProtein
+    : 1;
+  const densityWeight = divergence > 0.4 ? 0.75 : 0.55;
+  const blended = round1(fromDensity * densityWeight + llmProtein * (1 - densityWeight));
+
+  return {
+    ...item,
+    protein_g: blended,
+    confidence: divergence > 0.5 ? "medium" : item.confidence,
+  };
+}
+
+function deriveOverallConfidence(items: NormalizedItem[]): string {
+  if (items.length === 0) return "low";
+  const ranks = { low: 0, medium: 1, high: 2 };
+  const minRank = Math.min(
+    ...items.map((i) => ranks[i.confidence as keyof typeof ranks] ?? 1),
+  );
+  if (minRank === 0) return "low";
+  if (minRank === 1) return "medium";
+  return "high";
+}
+
 function normalize(raw: Record<string, unknown>) {
   if (!raw.is_food) {
     return {
@@ -374,25 +451,54 @@ function normalize(raw: Record<string, unknown>) {
     };
   }
 
-  const items = ((raw.items as Record<string, unknown>[]) ?? []).map((item) => ({
-    name: sanitizeField(item.name, 60) || 'Unknown',
-    portion: sanitizeField(item.portion, 80),
-    estimated_grams: Math.round(Number(item.estimated_grams) || 0) || undefined,
-    protein_g: round1(Number(item.protein_g) || 0),
-    confidence: item.confidence ?? 'medium',
-  }));
+  const items = ((raw.items as Record<string, unknown>[]) ?? [])
+    .map((item) => {
+      const base: NormalizedItem = {
+        name: sanitizeField(item.name, 60) || 'Unknown',
+        portion: sanitizeField(item.portion, 80),
+        estimated_grams: Math.round(Number(item.estimated_grams) || 0) || undefined,
+        protein_g: round1(Number(item.protein_g) || 0),
+        confidence: String(item.confidence ?? 'medium'),
+      };
+      return calibrateItem(base);
+    })
+    .filter((item) => item.protein_g >= 0.5);
 
-  const sum = round1(items.reduce((s, i) => s + i.protein_g, 0));
-  const total = round1(Number(raw.total_protein_g) || sum);
+  let sum = round1(items.reduce((s, i) => s + i.protein_g, 0));
+  let total = round1(Number(raw.total_protein_g) || sum);
+
+  // Reconcile breakdown vs total
+  if (Math.abs(total - sum) > 1) {
+    total = sum;
+  }
+
+  // Sanity bounds for a single meal
+  if (total > 200) {
+    total = 200;
+    sum = 200;
+  }
+  if (total < 0) total = 0;
+
+  let confidence = String(raw.confidence ?? deriveOverallConfidence(items));
+  let notes = sanitizeField(raw.notes, 100);
+
+  if (total >= 150) {
+    confidence = confidence === "high" ? "medium" : confidence;
+    if (!notes) notes = "Very high protein estimate — double-check portion size";
+  }
+  if (items.some((i) => i.confidence === "low")) {
+    confidence = "low";
+    if (!notes) notes = "Portion size unclear — adjust total if needed";
+  }
 
   return {
     is_food: true,
     food_name: sanitizeField(raw.food_name, 80) || 'Meal',
     items,
-    total_protein_g: Math.abs(total - sum) > 2 ? sum : total,
+    total_protein_g: total,
     calories: Math.round(Number(raw.calories) || 0),
-    confidence: raw.confidence ?? 'medium',
-    notes: sanitizeField(raw.notes, 100),
+    confidence,
+    notes,
   };
 }
 
