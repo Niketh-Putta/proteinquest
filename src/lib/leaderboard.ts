@@ -7,16 +7,19 @@ export interface LeaderboardEntry {
   id: string;
   handle: string;
   displayName: string;
+  avatarUrl: string | null;
   xp: number;
   level: number;
   rank: Rank;
   position: number;
   isYou: boolean;
+  isBot?: boolean;
 }
 
 export interface FriendLeaderboardRow {
   user_id: string;
   display_name: string | null;
+  avatar_url: string | null;
   invite_code: string | null;
   xp: number;
   dragon_progress: Partial<Record<DragonId, DragonProgress>> | null;
@@ -60,10 +63,36 @@ function toEntry(
     id: row.user_id,
     handle: isYou ? 'you' : handleFromName(displayName, row.user_id.slice(0, 6)),
     displayName,
+    avatarUrl: row.avatar_url?.trim() || null,
     xp,
     level,
     rank: rankForLevel(level),
     isYou,
+  };
+}
+
+function botEntry({
+  id,
+  handle,
+  displayName,
+  xp,
+}: {
+  id: string;
+  handle: string;
+  displayName: string;
+  xp: number;
+}): Omit<LeaderboardEntry, 'position'> {
+  const level = levelForXp(xp);
+  return {
+    id,
+    handle,
+    displayName,
+    avatarUrl: null,
+    xp,
+    level,
+    rank: rankForLevel(level),
+    isYou: false,
+    isBot: true,
   };
 }
 
@@ -79,6 +108,7 @@ export function buildLeaderboard(
         {
           user_id: currentUserId,
           display_name: 'You',
+          avatar_url: null,
           invite_code: null,
           xp: 0,
           dragon_progress: {},
@@ -90,6 +120,23 @@ export function buildLeaderboard(
       ),
     );
   }
+  const youXp = entries.find((entry) => entry.isYou)?.xp ?? 0;
+  const floor = Math.max(900, youXp);
+  entries.push(
+    botEntry({
+      id: 'bot-ember',
+      handle: 'ember.ai',
+      displayName: 'Ember AI',
+      xp: Math.max(63000, floor + 1800),
+    }),
+    botEntry({
+      id: 'bot-onyx',
+      handle: 'onyx.ai',
+      displayName: 'Onyx AI',
+      xp: Math.max(57000, floor + 900),
+    }),
+  );
+
   const rowsSorted = entries;
   rowsSorted.sort((a, b) => b.xp - a.xp);
   return rowsSorted.map((r, i) => ({ ...r, position: i + 1 }));

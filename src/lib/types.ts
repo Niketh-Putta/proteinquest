@@ -17,6 +17,7 @@ export interface DragonProgress {
 export interface Profile {
   id: string;
   display_name: string | null;
+  avatar_url: string | null;
   invite_code: string | null;
   age: number | null;
   weight_kg: number | null;

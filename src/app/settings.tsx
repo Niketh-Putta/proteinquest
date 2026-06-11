@@ -1,7 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
+import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
+import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -13,6 +17,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { uploadAvatar } from '@/lib/api';
 import { DragonEvolutionGallery } from '@/components/DragonEvolutionGallery';
 import { GoalEditor } from '@/components/GoalEditor';
 import { dragonById, displayDragonId, isDailyDragonLockedForToday } from '@/lib/character';
@@ -20,7 +25,7 @@ import { useLayout } from '@/lib/layout';
 import { todayISODate } from '@/lib/protein';
 import { useSession } from '@/lib/session';
 import type { Profile } from '@/lib/types';
-import { getPreferredName, setPreferredName } from '@/lib/xp';
+import { setPreferredName } from '@/lib/xp';
 import { colors, fonts, noTextCaret, spacing } from '@/theme';
 
 function goHome() {
@@ -29,16 +34,74 @@ function goHome() {
 }
 
 export default function SettingsScreen() {
-  const { profile, saveProfile } = useSession();
+  const { profile, session, saveProfile } = useSession();
   const { contentMaxWidth, horizontalPad, isNarrow } = useLayout();
   const [saving, setSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [leagueName, setLeagueName] = useState('');
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   useEffect(() => {
-    getPreferredName().then((n) => setLeagueName(n ?? '')).catch(() => {});
-  }, []);
+    if (profile?.display_name) setLeagueName(profile.display_name);
+    setAvatarUrl(profile?.avatar_url ?? null);
+  }, [profile?.display_name, profile?.avatar_url]);
+
+  async function commitName() {
+    const next = leagueName.trim().slice(0, 24);
+    setPreferredName(next).catch(() => {});
+    if (next && next !== (profile?.display_name ?? '')) {
+      try {
+        await saveProfile({ display_name: next });
+      } catch {
+        /* name is cosmetic; ignore transient save errors */
+      }
+    }
+  }
+
+  async function changePhoto() {
+    if (uploadingAvatar) return;
+    setError(null);
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        setError('Photo library access is needed to set a profile picture.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.9,
+      });
+      if (result.canceled || !result.assets[0]) return;
+
+      const userId = session?.user.id;
+      if (!userId) {
+        setError('Sign in to save a profile picture.');
+        return;
+      }
+
+      setUploadingAvatar(true);
+      const ctx = ImageManipulator.manipulate(result.assets[0].uri).resize({ width: 512 });
+      const rendered = await ctx.renderAsync();
+      const saved = await rendered.saveAsync({ format: SaveFormat.JPEG, compress: 0.8, base64: true });
+      if (!saved.base64) throw new Error('Could not read that image. Try a JPEG or PNG.');
+
+      const url = await uploadAvatar(userId, saved.base64);
+      if (!url) throw new Error('Upload failed. Please try again.');
+
+      setAvatarUrl(url);
+      await saveProfile({ avatar_url: url });
+    } catch (e: any) {
+      setError(e?.message ?? 'Could not update your photo. Please try again.');
+    } finally {
+      setUploadingAvatar(false);
+    }
+  }
+
+  const photoInitial = (leagueName.trim() || profile?.display_name || 'You').slice(0, 1).toUpperCase();
 
   async function handleSubmit(updates: Partial<Profile>) {
     setSaving(true);
@@ -84,11 +147,49 @@ export default function SettingsScreen() {
           </Text>
 
           <View style={styles.section}>
+            <Text style={styles.sectionLabel}>PROFILE PHOTO</Text>
+            <View style={styles.photoRow}>
+              <Pressable
+                onPress={changePhoto}
+                disabled={uploadingAvatar}
+                accessibilityRole="button"
+                accessibilityLabel="Change profile picture"
+                style={styles.photoTap}>
+                <View style={styles.photoCircle}>
+                  {avatarUrl ? (
+                    <Image source={{ uri: avatarUrl }} style={styles.photoImage} contentFit="cover" />
+                  ) : (
+                    <Text style={styles.photoInitial}>{photoInitial}</Text>
+                  )}
+                  {uploadingAvatar ? (
+                    <View style={styles.photoOverlay}>
+                      <ActivityIndicator color={colors.text} />
+                    </View>
+                  ) : null}
+                </View>
+                <View style={styles.photoBadge}>
+                  <Ionicons name="camera" size={13} color={colors.text} />
+                </View>
+              </Pressable>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.photoTitle}>
+                  {avatarUrl ? 'Looking sharp.' : 'Add a profile picture'}
+                </Text>
+                <Text style={styles.photoHint}>
+                  Shown on the leaderboard. Tap the circle to {avatarUrl ? 'change' : 'upload'}.
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.section}>
             <Text style={styles.sectionLabel}>LEAGUE NAME</Text>
             <TextInput
               value={leagueName}
               onChangeText={setLeagueName}
-              onBlur={() => setPreferredName(leagueName).catch(() => {})}
+              onBlur={commitName}
+              onSubmitEditing={commitName}
+              returnKeyType="done"
               placeholder="How you appear on the board"
               placeholderTextColor={colors.textTertiary}
               maxLength={24}
@@ -200,6 +301,70 @@ const styles = StyleSheet.create({
     fontSize: 9,
     letterSpacing: 2,
     color: colors.accent,
+  },
+  photoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  photoTap: {
+    width: 72,
+    height: 72,
+  },
+  photoCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: colors.accentSurface,
+    borderWidth: 1.5,
+    borderColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  photoImage: {
+    width: '100%',
+    height: '100%',
+  },
+  photoInitial: {
+    fontFamily: fonts.displayHeavy,
+    fontSize: 28,
+    color: colors.accent,
+  },
+  photoOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  photoBadge: {
+    position: 'absolute',
+    right: -2,
+    bottom: -2,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: colors.accent,
+    borderWidth: 2,
+    borderColor: colors.bg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  photoTitle: {
+    fontFamily: fonts.displayMedium,
+    fontSize: 15,
+    color: colors.text,
+  },
+  photoHint: {
+    fontFamily: fonts.body,
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginTop: 3,
+    lineHeight: 17,
   },
   nameInput: {
     fontFamily: fonts.displayMedium,

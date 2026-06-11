@@ -37,6 +37,19 @@ import { colors, fonts, pressableWeb, radius, spacing } from '@/theme';
 
 const AVATAR_HUES = ['#FF7A59', '#9B8CFF', '#5BC8F5', '#5AD67A', '#FFB454', '#FF6B7A'];
 
+/** Red + black podium palette (per design reference). */
+const RED = {
+  bright: '#FF3B30',
+  deep: '#C41E1E',
+  glow: 'rgba(255, 59, 48, 0.30)',
+  glowEdge: 'rgba(255, 59, 48, 0.45)',
+  edge: 'rgba(255, 59, 48, 0.35)',
+  blockTop: '#241013',
+  blockTopChamp: '#3A1216',
+  blockFace: '#120C0E',
+  blockFaceChamp: '#1C0D10',
+} as const;
+
 function avatarColor(handle: string): string {
   let h = 0;
   for (let i = 0; i < handle.length; i++) h = (h * 31 + handle.charCodeAt(i)) % 9973;
@@ -58,10 +71,30 @@ function Avatar({
   dragonArt?: ImageSourcePropType;
   ring?: boolean;
 }) {
-  const tint = entry.isYou ? colors.accent : avatarColor(entry.handle);
+  const tint = entry.isYou ? RED.bright : avatarColor(entry.handle);
   const ringStyle = ring
-    ? { borderWidth: 2, borderColor: entry.isYou ? colors.accent : colors.accentLight }
+    ? { borderWidth: 2, borderColor: entry.isYou ? RED.bright : RED.glowEdge }
     : { borderWidth: StyleSheet.hairlineWidth, borderColor: `${tint}55` };
+
+  if (entry.avatarUrl) {
+    return (
+      <View
+        style={[
+          {
+            width: size,
+            height: size,
+            borderRadius: size / 2,
+            backgroundColor: colors.surface,
+            overflow: 'hidden',
+          },
+          ring
+            ? { borderWidth: 2, borderColor: RED.bright }
+            : { borderWidth: 1.5, borderColor: RED.edge },
+        ]}>
+        <Image source={{ uri: entry.avatarUrl }} style={{ width: '100%', height: '100%' }} contentFit="cover" />
+      </View>
+    );
+  }
 
   if (dragonArt) {
     return (
@@ -76,7 +109,7 @@ function Avatar({
             alignItems: 'center',
             justifyContent: 'center',
           },
-          ring ? { borderWidth: 2, borderColor: colors.accent } : { borderWidth: 1.5, borderColor: colors.accent },
+          ring ? { borderWidth: 2, borderColor: RED.bright } : { borderWidth: 1.5, borderColor: RED.edge },
         ]}>
         <Image source={dragonArt} style={{ width: size * 1.1, height: size * 1.1 }} contentFit="contain" />
       </View>
@@ -120,6 +153,25 @@ function ChampionWings() {
   );
 }
 
+function PodiumBlock({
+  height,
+  champion,
+  children,
+}: {
+  height: number;
+  champion: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <View style={styles.pedestalWrap}>
+      <View style={[styles.pedestalTop, champion && styles.pedestalTopChamp]} />
+      <View style={[styles.pedestalFace, { height }, champion && styles.pedestalFaceChamp]}>
+        {children}
+      </View>
+    </View>
+  );
+}
+
 /** One stepped pedestal column. Champion (place 1) is tallest, crowned and glowing. */
 function PodiumColumn({
   entry,
@@ -133,7 +185,7 @@ function PodiumColumn({
   if (!entry) return <View style={styles.podCol} />;
 
   const isChamp = place === 1;
-  const pedestalHeight = place === 1 ? 104 : place === 2 ? 78 : 60;
+  const pedestalHeight = place === 1 ? 108 : place === 2 ? 78 : 58;
   const avatarSize = isChamp ? 68 : 50;
 
   return (
@@ -159,22 +211,17 @@ function PodiumColumn({
             ring={isChamp}
           />
         </View>
-        <Text style={[styles.podHandle, entry.isYou && { color: colors.accent }]} numberOfLines={1}>
+        <Text style={[styles.podHandle, entry.isYou && { color: RED.bright }]} numberOfLines={1}>
           {handleLabel(entry)}
         </Text>
       </View>
 
-      <View
-        style={[
-          styles.pedestal,
-          { height: pedestalHeight },
-          isChamp && styles.pedestalChamp,
-        ]}>
+      <PodiumBlock height={pedestalHeight} champion={isChamp}>
         <Text style={styles.pedXp}>
           {formatXp(entry.xp)} <Text style={styles.pedXpUnit}>XP</Text>
         </Text>
         <Text style={styles.pedLevel}>lvl {entry.level}</Text>
-      </View>
+      </PodiumBlock>
     </Animated.View>
   );
 }
@@ -212,7 +259,7 @@ export default function LeagueTab() {
   const entries = buildLeaderboard(rows, session?.user.id);
   const podium = entries.slice(0, 3);
   const rest = entries.slice(3);
-  const friendCount = Math.max(entries.length - 1, 0);
+  const friendCount = entries.filter((entry) => !entry.isYou && !entry.isBot).length;
   const todayISO = todayISODate();
   const youDragonArt: ImageSourcePropType | undefined = profile
     ? stageForXpLevel(effectiveLevel(displayProgress(profile, todayISO)), displayDragonId(profile, todayISO)).art
@@ -271,7 +318,11 @@ export default function LeagueTab() {
               <Text style={styles.eyebrow}>PROTEINQUEST</Text>
               <Text style={styles.title}>Leaderboard</Text>
               <Text style={styles.subtitle}>
-                {loading ? 'Loading your league…' : `${friendCount} friends added`}
+                {loading
+                  ? 'Loading your league…'
+                  : friendCount > 0
+                    ? `${friendCount} friends added`
+                    : '2 bot rivals active'}
               </Text>
             </View>
             <Pressable
@@ -297,11 +348,10 @@ export default function LeagueTab() {
           </View>
 
           {!loading && friendCount === 0 ? (
-            <View style={styles.emptyCard}>
-              <Text style={styles.emptyTitle}>Invite friends to unlock the league.</Text>
-              <Text style={styles.emptyText}>
-                Your board is real now — only accepted friends appear here.
-              </Text>
+            <View style={styles.emptyState}>
+              <View style={styles.emptyRule} />
+              <Text style={styles.emptyTitle}>Bot rivals are holding the board.</Text>
+              <Text style={styles.emptyText}>Invite friends to replace them with real competition.</Text>
             </View>
           ) : null}
 
@@ -311,13 +361,13 @@ export default function LeagueTab() {
                 key={entry.id}
                 entering={FadeInDown.delay(40 * Math.min(i, 8)).duration(260)}
                 style={[styles.row, entry.isYou && styles.rowYou]}>
-                <Text style={[styles.rowRank, entry.isYou && { color: colors.accent }]}>
+                <Text style={[styles.rowRank, entry.isYou && { color: RED.bright }]}>
                   {entry.position}
                 </Text>
                 <Avatar entry={entry} size={36} dragonArt={entry.isYou ? youDragonArt : undefined} />
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text
-                    style={[styles.rowName, entry.isYou && { color: colors.accent }]}
+                    style={[styles.rowName, entry.isYou && { color: RED.bright }]}
                     numberOfLines={1}>
                     {handleLabel(entry)}
                   </Text>
@@ -347,13 +397,13 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: spacing.lg,
+    marginBottom: spacing.xxl,
   },
   eyebrow: {
     fontFamily: fonts.mono,
     fontSize: 10,
     letterSpacing: 3,
-    color: colors.accent,
+    color: RED.bright,
     marginBottom: 5,
   },
   title: {
@@ -398,9 +448,10 @@ const styles = StyleSheet.create({
   podium: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    gap: spacing.sm,
-    marginTop: spacing.md,
-    marginBottom: spacing.xl,
+    gap: 0,
+    marginTop: spacing.sm,
+    marginBottom: spacing.xxl,
+    paddingHorizontal: 10,
   },
   podCol: {
     flex: 1,
@@ -409,7 +460,7 @@ const styles = StyleSheet.create({
   podTop: {
     alignItems: 'center',
     gap: 6,
-    marginBottom: spacing.sm,
+    marginBottom: 10,
   },
   crown: {
     marginBottom: -2,
@@ -446,7 +497,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: 0,
     borderTopWidth: 2,
-    borderTopColor: 'rgba(255, 122, 89, 0.55)',
+    borderTopColor: RED.glowEdge,
     borderTopLeftRadius: 40,
     width: 66,
   },
@@ -472,8 +523,8 @@ const styles = StyleSheet.create({
     width: 96,
     height: 96,
     borderRadius: 48,
-    backgroundColor: colors.accent,
-    opacity: 0.22,
+    backgroundColor: RED.bright,
+    opacity: 0.26,
     ...(Platform.OS === 'web' ? { filter: 'blur(26px)' } : {}),
   } as unknown as object,
   podHandle: {
@@ -482,23 +533,42 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     maxWidth: '96%',
   },
-  pedestal: {
+  pedestalWrap: {
     width: '100%',
-    borderTopLeftRadius: radius.sm,
-    borderTopRightRadius: radius.sm,
-    backgroundColor: '#18171E',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderBottomWidth: 0,
-    borderColor: colors.hairline,
+    alignItems: 'stretch',
+  },
+  pedestalTop: {
+    height: 18,
+    marginHorizontal: 6,
+    backgroundColor: RED.blockTop,
+    borderTopWidth: 1,
+    borderLeftWidth: StyleSheet.hairlineWidth,
+    borderRightWidth: StyleSheet.hairlineWidth,
+    borderColor: RED.edge,
+    transform: [{ skewX: '-20deg' }],
+  },
+  pedestalTopChamp: {
+    backgroundColor: RED.blockTopChamp,
+    borderColor: RED.glowEdge,
+  },
+  pedestalFace: {
+    marginTop: -1,
+    backgroundColor: RED.blockFace,
+    borderTopWidth: 1,
+    borderLeftWidth: StyleSheet.hairlineWidth,
+    borderRightWidth: StyleSheet.hairlineWidth,
+    borderTopColor: RED.edge,
+    borderLeftColor: 'rgba(255,59,48,0.12)',
+    borderRightColor: 'rgba(0,0,0,0.5)',
     alignItems: 'center',
     justifyContent: 'flex-start',
-    paddingTop: spacing.md,
+    paddingTop: spacing.lg,
     gap: 3,
   },
-  pedestalChamp: {
-    backgroundColor: '#241611',
-    borderColor: colors.accent,
-    borderTopWidth: 2,
+  pedestalFaceChamp: {
+    backgroundColor: RED.blockFaceChamp,
+    borderTopColor: RED.bright,
+    borderLeftColor: 'rgba(255,59,48,0.22)',
   },
   pedXp: {
     fontFamily: fonts.display,
@@ -510,7 +580,7 @@ const styles = StyleSheet.create({
     fontFamily: fonts.mono,
     fontSize: 9,
     letterSpacing: 0.5,
-    color: colors.accent,
+    color: RED.bright,
   },
   pedLevel: {
     fontFamily: fonts.mono,
@@ -520,18 +590,22 @@ const styles = StyleSheet.create({
   },
 
   // Ranked list
-  emptyCard: {
-    backgroundColor: colors.surface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.hairlineBright,
-    borderRadius: radius.md,
-    padding: spacing.md,
+  emptyState: {
+    alignItems: 'center',
+    marginTop: -spacing.md,
+    marginBottom: spacing.xl,
+  },
+  emptyRule: {
+    height: StyleSheet.hairlineWidth,
+    width: '100%',
+    backgroundColor: colors.hairline,
     marginBottom: spacing.lg,
   },
   emptyTitle: {
     fontFamily: fonts.displayMedium,
-    fontSize: 15,
+    fontSize: 14,
     color: colors.text,
+    textAlign: 'center',
   },
   emptyText: {
     fontFamily: fonts.body,
@@ -554,11 +628,9 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.hairline,
   },
   rowYou: {
-    backgroundColor: colors.accentSurface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.accent,
-    borderRadius: radius.sm,
-    marginVertical: 3,
+    backgroundColor: 'rgba(255, 59, 48, 0.08)',
+    borderLeftWidth: 2,
+    borderLeftColor: RED.bright,
   },
   rowRank: {
     fontFamily: fonts.mono,
@@ -600,7 +672,7 @@ const styles = StyleSheet.create({
     fontFamily: fonts.mono,
     fontSize: 9,
     letterSpacing: 0.5,
-    color: colors.accent,
+    color: RED.bright,
   },
   footnote: {
     fontFamily: fonts.mono,

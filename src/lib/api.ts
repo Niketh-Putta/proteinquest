@@ -93,6 +93,29 @@ export async function uploadFoodPhoto(userId: string, imageBase64: string): Prom
   }
 }
 
+/**
+ * Uploads a square avatar to the public `avatars` bucket under the user's own
+ * folder and returns a cache-busted public URL. Returns null on failure so the
+ * caller can keep the existing picture.
+ */
+export async function uploadAvatar(userId: string, imageBase64: string): Promise<string | null> {
+  try {
+    const path = `${userId}/avatar.jpg`;
+    const { error } = await supabase.storage
+      .from('avatars')
+      .upload(path, decode(cleanBase64(imageBase64)), {
+        contentType: 'image/jpeg',
+        upsert: true,
+      });
+    if (error) return null;
+    const { data } = supabase.storage.from('avatars').getPublicUrl(path);
+    if (!data?.publicUrl) return null;
+    return `${data.publicUrl}?v=${Date.now()}`;
+  } catch {
+    return null;
+  }
+}
+
 export async function insertLog(params: {
   userId: string;
   foodName: string;
