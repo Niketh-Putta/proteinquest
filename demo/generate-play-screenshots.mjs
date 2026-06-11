@@ -11,7 +11,7 @@ import { chromium } from 'playwright';
 import { createClient } from '@supabase/supabase-js';
 
 const APP = process.env.APP_URL ?? 'https://proteinquest.vercel.app';
-const OUT_DIR = process.env.OUT_DIR ?? 'demo/play-store-screenshots';
+const OUT_DIR = process.env.OUT_DIR ?? 'store/screenshots';
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL ?? 'https://csxdkvpvcasuknhnprxp.supabase.co';
 const SUPABASE_KEY =
   process.env.EXPO_PUBLIC_SUPABASE_KEY ?? 'sb_publishable_Zg6Jj70nqJcd7OGof5iP6w_9My7yS9F';

@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -8,6 +8,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -19,7 +20,8 @@ import { useLayout } from '@/lib/layout';
 import { todayISODate } from '@/lib/protein';
 import { useSession } from '@/lib/session';
 import type { Profile } from '@/lib/types';
-import { colors, fonts, spacing } from '@/theme';
+import { getPreferredName, setPreferredName } from '@/lib/xp';
+import { colors, fonts, noTextCaret, spacing } from '@/theme';
 
 function goHome() {
   if (router.canGoBack()) router.back();
@@ -32,6 +34,11 @@ export default function SettingsScreen() {
   const [saving, setSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [leagueName, setLeagueName] = useState('');
+
+  useEffect(() => {
+    getPreferredName().then((n) => setLeagueName(n ?? '')).catch(() => {});
+  }, []);
 
   async function handleSubmit(updates: Partial<Profile>) {
     setSaving(true);
@@ -75,6 +82,28 @@ export default function SettingsScreen() {
           <Text style={styles.subtitle}>
             Adjust your stats and the target recalculates with full reasoning.
           </Text>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>LEAGUE NAME</Text>
+            <TextInput
+              value={leagueName}
+              onChangeText={setLeagueName}
+              onBlur={() => setPreferredName(leagueName).catch(() => {})}
+              placeholder="How you appear on the board"
+              placeholderTextColor={colors.textTertiary}
+              maxLength={24}
+              autoCapitalize="words"
+              autoCorrect={false}
+              style={[styles.nameInput, noTextCaret]}
+            />
+            <Pressable onPress={() => router.push('/league')} style={styles.leagueLink}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.leagueLinkTitle}>Protein League</Text>
+                <Text style={styles.leagueLinkHint}>See your rank and who&apos;s ahead</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+            </Pressable>
+          </View>
 
           {profile && isDailyDragonLockedForToday(profile, todayISODate()) ? (
             <View style={styles.lockedDragon}>
@@ -161,5 +190,46 @@ const styles = StyleSheet.create({
     fontFamily: fonts.body,
     fontSize: 12,
     color: colors.textSecondary,
+  },
+  section: {
+    marginBottom: spacing.lg,
+    gap: spacing.sm,
+  },
+  sectionLabel: {
+    fontFamily: fonts.mono,
+    fontSize: 9,
+    letterSpacing: 2,
+    color: colors.accent,
+  },
+  nameInput: {
+    fontFamily: fonts.displayMedium,
+    fontSize: 16,
+    color: colors.text,
+    backgroundColor: colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.hairlineBright,
+    borderRadius: 10,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 12,
+  },
+  leagueLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.hairline,
+    marginTop: spacing.xs,
+  },
+  leagueLinkTitle: {
+    fontFamily: fonts.displayMedium,
+    fontSize: 15,
+    color: colors.text,
+  },
+  leagueLinkHint: {
+    fontFamily: fonts.body,
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginTop: 2,
   },
 });

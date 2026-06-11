@@ -35,6 +35,13 @@
         "serviceAccountKeyPath": "./store/google-play-service-account.json",
         "track": "internal"
       }
+    },
+    "production-review": {
+      "extends": "production",
+      "android": {
+        "serviceAccountKeyPath": "./store/google-play-service-account.json",
+        "track": "production"
+      }
     }
   }
 }

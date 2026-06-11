@@ -22,8 +22,10 @@ const PERKS = [
 ];
 
 const PRIVACY_URL = 'https://proteinquest.vercel.app/privacy';
-// Apple's standard EULA — required link for auto-renewable subscriptions (App Review 3.1.2).
-const TERMS_URL = 'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/';
+const TERMS_URL =
+  Platform.OS === 'ios'
+    ? 'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/'
+    : 'https://proteinquest.vercel.app/terms';
 
 function goBack() {
   if (router.canGoBack()) router.back();

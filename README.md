@@ -42,10 +42,11 @@ camera viewfinder (getUserMedia) plus a library upload button.
 
 ## Freemium
 
-Free tier: **3 AI scans/day**. The paywall and gating are live; payments are a
-stubbed provider (`src/lib/payments.ts`) ready for RevenueCat (native) or
-Stripe Checkout (web). The "Unlock Pro" button currently grants premium in
-test mode so you can feel the full experience.
+Free tier: **3 AI scans/day**. Paywall and gating are live. Native IAP uses
+**RevenueCat** (`src/lib/revenuecat.ts`); web uses **Stripe Checkout**
+(`src/lib/payments.ts`). Without store keys configured, the paywall runs in
+test mode. See [`store/PAYMENTS.md`](store/PAYMENTS.md) for the full iOS /
+Android / web schematic.
 
 ## ⚠️ Activate OpenAI billing
 

@@ -1,13 +1,26 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import React, { useCallback, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { PageCanvas } from '@/components/PageCanvas';
+import {
+  displayDragonId,
+  displayProgress,
+  effectiveLevel,
+  stageForXpLevel,
+} from '@/lib/character';
 import { flexFill, flexScroll, useLayout } from '@/lib/layout';
-import { buildLeaderboard, formatXp, type LeaderboardEntry } from '@/lib/leaderboard';
+import {
+  buildLeaderboard,
+  climbTarget,
+  formatProteinGrams,
+  formatXp,
+  type LeaderboardEntry,
+} from '@/lib/leaderboard';
+import { todayISODate } from '@/lib/protein';
 import { useSession } from '@/lib/session';
 import { getPreferredName, xpSnapshot } from '@/lib/xp';
 import { colors, fonts, pressableWeb, radius, spacing } from '@/theme';
@@ -20,7 +33,34 @@ function avatarColor(handle: string): string {
   return AVATAR_HUES[h % AVATAR_HUES.length];
 }
 
-function Avatar({ entry, size }: { entry: LeaderboardEntry; size: number }) {
+function Avatar({
+  entry,
+  size,
+  dragonArt,
+}: {
+  entry: LeaderboardEntry;
+  size: number;
+  dragonArt?: number;
+}) {
+  if (dragonArt) {
+    return (
+      <View
+        style={{
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+          backgroundColor: colors.accentSurface,
+          borderWidth: 1.5,
+          borderColor: colors.accent,
+          overflow: 'hidden',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}>
+        <Image source={dragonArt} style={{ width: size * 1.1, height: size * 1.1 }} resizeMode="contain" />
+      </View>
+    );
+  }
+
   const tint = entry.isYou ? colors.accent : avatarColor(entry.handle);
   return (
     <View
@@ -28,16 +68,16 @@ function Avatar({ entry, size }: { entry: LeaderboardEntry; size: number }) {
         width: size,
         height: size,
         borderRadius: size / 2,
-        backgroundColor: `${tint}22`,
-        borderWidth: 1.5,
-        borderColor: tint,
+        backgroundColor: `${tint}18`,
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: `${tint}55`,
         alignItems: 'center',
         justifyContent: 'center',
       }}>
       <Text
         style={{
-          fontFamily: fonts.displayHeavy,
-          fontSize: size * 0.38,
+          fontFamily: fonts.displayMedium,
+          fontSize: size * 0.36,
           color: tint,
         }}>
         {entry.displayName.slice(0, 1).toUpperCase()}
@@ -46,26 +86,32 @@ function Avatar({ entry, size }: { entry: LeaderboardEntry; size: number }) {
   );
 }
 
-function PodiumSlot({ entry, champion }: { entry?: LeaderboardEntry; champion?: boolean }) {
+function PodiumSlot({
+  entry,
+  champion,
+  youArt,
+}: {
+  entry?: LeaderboardEntry;
+  champion?: boolean;
+  youArt?: number;
+}) {
   if (!entry) return <View style={styles.podiumSlot} />;
   return (
-    <Animated.View
-      entering={FadeInUp.delay(champion ? 100 : 220).springify().damping(16)}
-      style={[styles.podiumSlot, champion && styles.podiumChampion]}>
+    <View style={[styles.podiumSlot, champion && styles.podiumChampion]}>
       {champion ? (
         <Ionicons name="trophy" size={16} color={colors.warning} style={{ marginBottom: 6 }} />
       ) : (
         <Text style={styles.podiumRank}>{entry.position}</Text>
       )}
-      <Avatar entry={entry} size={champion ? 64 : 48} />
+      <Avatar entry={entry} size={champion ? 64 : 48} dragonArt={entry.isYou ? youArt : undefined} />
       <Text style={styles.podiumName} numberOfLines={1}>
-        {entry.isYou ? 'You' : `@${entry.handle}`}
+        {entry.isYou ? 'You' : entry.displayName}
       </Text>
       <Text style={styles.podiumXp}>
         {formatXp(entry.xp)} <Text style={styles.xpUnit}>XP</Text>
       </Text>
       <Text style={styles.podiumLevel}>LV {entry.level}</Text>
-    </Animated.View>
+    </View>
   );
 }
 
@@ -85,6 +131,12 @@ export default function LeagueScreen() {
   const rest = entries.slice(3);
   const you = entries.find((e) => e.isYou);
   const snapshot = xpSnapshot(profile);
+  const climb = climbTarget(entries);
+  const todayISO = todayISODate();
+  const youDragonArt = profile
+    ? stageForXpLevel(effectiveLevel(displayProgress(profile, todayISO)), displayDragonId(profile, todayISO))
+        .art
+    : undefined;
 
   return (
     <PageCanvas>
@@ -105,6 +157,7 @@ export default function LeagueScreen() {
             <View style={{ flex: 1 }}>
               <Text style={styles.eyebrow}>PROTEIN LEAGUE</Text>
               <Text style={styles.title}>Leaderboard</Text>
+              <Text style={styles.subtitle}>Ranked by lifetime protein logged</Text>
             </View>
             <Pressable
               onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)/today'))}
@@ -134,10 +187,30 @@ export default function LeagueScreen() {
             </Animated.View>
           ) : null}
 
+          {climb ? (
+            <View style={styles.climbCard}>
+              <Text style={styles.climbLabel}>NEXT UP</Text>
+              <Text style={styles.climbLine}>
+                {formatXp(climb.xpGap)} XP to pass{' '}
+                <Text style={styles.climbName}>
+                  {climb.target.isYou ? 'you' : climb.target.displayName}
+                </Text>
+              </Text>
+              <Text style={styles.climbMeta}>
+                They&apos;re at {formatProteinGrams(climb.target.xp)} · {climb.target.rank.label}
+              </Text>
+            </View>
+          ) : you?.position === 1 ? (
+            <View style={styles.climbCard}>
+              <Text style={styles.climbLabel}>TOP SPOT</Text>
+              <Text style={styles.climbLine}>You&apos;re leading the league.</Text>
+            </View>
+          ) : null}
+
           <View style={styles.podiumRow}>
-            <PodiumSlot entry={podium[1]} />
-            <PodiumSlot entry={podium[0]} champion />
-            <PodiumSlot entry={podium[2]} />
+            <PodiumSlot entry={podium[1]} youArt={youDragonArt} />
+            <PodiumSlot entry={podium[0]} champion youArt={youDragonArt} />
+            <PodiumSlot entry={podium[2]} youArt={youDragonArt} />
           </View>
 
           <View style={styles.list}>
@@ -149,12 +222,18 @@ export default function LeagueScreen() {
                 <Text style={[styles.rowRank, entry.isYou && { color: colors.accent }]}>
                   {entry.position}
                 </Text>
-                <Avatar entry={entry} size={34} />
+                <Avatar
+                  entry={entry}
+                  size={34}
+                  dragonArt={entry.isYou ? youDragonArt : undefined}
+                />
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={[styles.rowName, entry.isYou && { color: colors.accent }]} numberOfLines={1}>
-                    {entry.isYou ? `${entry.displayName} (you)` : `@${entry.handle}`}
+                    {entry.isYou ? `${entry.displayName} (you)` : entry.displayName}
                   </Text>
-                  <Text style={styles.rowRankName}>{entry.rank.label}</Text>
+                  <Text style={styles.rowRankName}>
+                    {entry.rank.label} · {formatProteinGrams(entry.xp)} logged
+                  </Text>
                 </View>
                 <View style={styles.rowRight}>
                   <Text style={styles.rowXp}>
@@ -167,7 +246,9 @@ export default function LeagueScreen() {
             ))}
           </View>
 
-          <Text style={styles.footnote}>Every gram you log moves you up the board.</Text>
+          <Text style={styles.footnote}>
+            1 XP per gram logged. Hit your daily goal for +100 bonus XP.
+          </Text>
         </ScrollView>
       </SafeAreaView>
     </PageCanvas>
@@ -193,6 +274,43 @@ const styles = StyleSheet.create({
     fontSize: 34,
     color: colors.text,
     letterSpacing: -1,
+  },
+  subtitle: {
+    fontFamily: fonts.body,
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginTop: 4,
+  },
+  climbCard: {
+    backgroundColor: colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.hairlineBright,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.lg,
+    gap: 4,
+  },
+  climbLabel: {
+    fontFamily: fonts.mono,
+    fontSize: 9,
+    letterSpacing: 2,
+    color: colors.accent,
+  },
+  climbLine: {
+    fontFamily: fonts.displayMedium,
+    fontSize: 16,
+    color: colors.text,
+    marginTop: 2,
+  },
+  climbName: {
+    fontFamily: fonts.displayHeavy,
+    color: colors.text,
+  },
+  climbMeta: {
+    fontFamily: fonts.body,
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginTop: 2,
   },
   closeBtn: {
     width: 40,

@@ -22,6 +22,21 @@
 - **Intro**: `profiles.intro_completed` — shown once on first visit; existing onboarded users were backfilled to skip it.
 - **Payments**: Stripe Checkout edge function ready; test-mode stub active until keys are set
 
+## Status (2026-06-11)
+
+| Track | Status |
+|-------|--------|
+| Web | Live at https://proteinquest.vercel.app — redeploy with `npm run deploy:prod` after code changes |
+| AI scanning | Gemini 2.5 Flash on Supabase edge function (verify: `node demo/test-analyze.mjs`) |
+| Android EAS build | Production build `a6331091` **FINISHED** today — download with `npx eas build:download --platform android --latest` |
+| iOS EAS build | Not confirmed finished — run `npx eas build --platform ios --profile production` |
+| Play Store listing | Copy in `store/play-store-listing.json`; 5 screenshots + feature graphic ready |
+| App Store listing | Copy in `store/app-store-listing.json`; `eas.json` submit IDs still placeholders |
+| RevenueCat / IAP | Code complete — **no SDK keys in `.env` yet**; spec in `store/google-play-subscriptions.json` |
+| One-command ship | `npm run ship:all` · Play submit: `npm run play-store:submit` |
+
+**Blockers for store review:** RevenueCat dashboard + store subscriptions, Google Play service account JSON, App Store Connect app + `eas.json` Apple IDs.
+
 ## Manual steps (priority order)
 
 ### 1. AI food scanning — **working**
@@ -77,9 +92,16 @@ echo 'EXPO_PUBLIC_STRIPE_ENABLED=true' >> .env
 
 Until then, paywall **Unlock Pro (test mode)** grants premium locally.
 
-### 5. Native payments (App Store / Play)
+### 5. Native payments (App Store / Play) — **code complete, dashboard pending**
 
-Use **RevenueCat** + `react-native-purchases`. Implement a provider in `src/lib/payments.ts` (stub is RevenueCat-ready).
+RevenueCat + `react-native-purchases` is wired end-to-end in the app. Full schematic: [`store/PAYMENTS.md`](store/PAYMENTS.md).
+
+**Still manual:**
+1. Create `pro_weekly` / `pro_yearly` in App Store Connect + Google Play (see `store/revenuecat-setup.json`).
+2. Configure RevenueCat project (entitlement `pro`, offering `default`, link both stores).
+3. Set `EXPO_PUBLIC_REVENUECAT_IOS_KEY` + `EXPO_PUBLIC_REVENUECAT_ANDROID_KEY` in EAS secrets and `.env`.
+4. Deploy webhook: `supabase functions deploy revenuecat-webhook` and register URL in RevenueCat.
+5. EAS production build (`npm run build:all`) — Expo Go cannot run real IAP.
 
 ### 6. App Store / Play Store
 

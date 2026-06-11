@@ -15,7 +15,7 @@ import {
 } from './auth';
 import { fetchProfile, isStaleProfileSaveError, upsertProfile } from './api';
 import { syncPremiumFromRevenueCat } from './payments';
-import { initRevenueCat } from './revenuecat';
+import { initRevenueCat, subscribeToProEntitlementChanges } from './revenuecat';
 import { supabase } from './supabase';
 import type { Profile } from './types';
 
@@ -133,24 +133,40 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const userId = session?.user.id;
     if (!userId) return;
+    const uid = userId;
 
     let cancelled = false;
+
+    async function syncPremiumFlag(isPro: boolean) {
+      const current = await loadProfile(uid);
+      if (cancelled || current?.is_premium === isPro) return;
+      await upsertProfile({
+        id: uid,
+        is_premium: isPro,
+        ...(isPro ? { paywall_dismissed: true } : {}),
+      });
+      if (!cancelled) await refreshProfile(uid);
+    }
+
     (async () => {
       try {
-        await initRevenueCat(userId);
+        await initRevenueCat(uid);
         const isPro = await syncPremiumFromRevenueCat();
-        if (cancelled || !isPro) return;
-        const current = await loadProfile(userId);
-        if (cancelled || current?.is_premium) return;
-        await upsertProfile({ id: userId, is_premium: true, paywall_dismissed: true });
-        if (!cancelled) await refreshProfile(userId);
+        if (!cancelled && isPro) await syncPremiumFlag(true);
       } catch (e) {
         console.warn('[RevenueCat] init/sync skipped:', e);
       }
     })();
 
+    const unsubscribe = subscribeToProEntitlementChanges((isPro) => {
+      syncPremiumFlag(isPro).catch((e) => {
+        console.warn('[RevenueCat] entitlement sync failed:', e);
+      });
+    });
+
     return () => {
       cancelled = true;
+      unsubscribe();
     };
   }, [session?.user.id, refreshProfile]);
 

@@ -1,0 +1,66 @@
+{
+  "packageName": "com.proteinquest.app",
+  "currency": "GBP",
+  "subscriptions": [
+    {
+      "productId": "pro_weekly",
+      "name": "ProteinQuest Pro Weekly",
+      "description": "Unlimited AI meal scans and full trends. Billed weekly.",
+      "benefits": [
+        "Unlimited AI meal scans every day",
+        "Full trends and history",
+        "Priority analysis speed"
+      ],
+      "basePlans": [
+        {
+          "basePlanId": "weekly",
+          "billingPeriod": "P1W",
+          "price": "6.99",
+          "renewalType": "AUTO_RENEWING",
+          "gracePeriodDays": 3,
+          "accountHoldDays": 30
+        }
+      ],
+      "playConsolePath": "Monetize → Products → Subscriptions → Create subscription",
+      "revenueCatPackage": "$rc_weekly"
+    },
+    {
+      "productId": "pro_yearly",
+      "name": "ProteinQuest Pro Yearly",
+      "description": "Unlimited AI meal scans and full trends. Best value — billed yearly.",
+      "benefits": [
+        "Unlimited AI meal scans every day",
+        "Full trends and history",
+        "Priority analysis speed"
+      ],
+      "basePlans": [
+        {
+          "basePlanId": "yearly",
+          "billingPeriod": "P1Y",
+          "price": "29.99",
+          "renewalType": "AUTO_RENEWING",
+          "gracePeriodDays": 3,
+          "accountHoldDays": 30
+        }
+      ],
+      "playConsolePath": "Monetize → Products → Subscriptions → Create subscription",
+      "revenueCatPackage": "$rc_annual"
+    }
+  ],
+  "revenueCatLinking": {
+    "entitlementId": "pro",
+    "offeringId": "default",
+    "androidAppPackage": "com.proteinquest.app",
+    "notes": [
+      "Create Play subscriptions BEFORE linking in RevenueCat.",
+      "RevenueCat Android app needs Google Play service account JSON with Financial data permissions.",
+      "After linking, copy goog_ public SDK key to EXPO_PUBLIC_REVENUECAT_ANDROID_KEY and rebuild AAB."
+    ]
+  },
+  "reviewNotes": {
+    "licenseTesters": "Add Google account emails under Setup → License testing before sandbox purchases.",
+    "testInstructions": "Open app → complete onboarding → paywall shows Weekly £6.99 and Yearly £29.99. Use license tester account to purchase. Free tier allows 3 AI scans/day without subscription.",
+    "privacyPolicyUrl": "https://proteinquest.vercel.app/privacy",
+    "termsUrl": "https://proteinquest.vercel.app/terms"
+  }
+}

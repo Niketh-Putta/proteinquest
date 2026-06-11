@@ -21,7 +21,7 @@ import { deleteLog, fetchLogsForDate, countTodayPhotoScans } from '@/lib/api';
 import { applyDeleteLogToCharacter, dragonById, isDailyDragonLockedForToday } from '@/lib/character';
 import { confirmDestructive } from '@/lib/confirm';
 import { flexFill, flexScroll, useLayout, useTabBarScrollInset } from '@/lib/layout';
-import { isPro, remainingFreeScans } from '@/lib/paywall-gate';
+import { isPro, remainingFreeScans, shouldShowDelayedPaywall } from '@/lib/paywall-gate';
 import { todayISODate } from '@/lib/protein';
 import { useSession } from '@/lib/session';
 import type { ProteinLog } from '@/lib/types';
@@ -70,6 +70,14 @@ export default function TodayScreen() {
         .then((used) => setScansLeft(remainingFreeScans(used)))
         .catch(() => setScansLeft(null));
     }, [profile?.is_premium]),
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      if (shouldShowDelayedPaywall(profile)) {
+        router.push('/paywall');
+      }
+    }, [profile?.paywall_dismissed, profile?.is_premium, profile?.onboarded, profile]),
   );
 
   const consumed = logs.reduce((sum, l) => sum + Number(l.protein_g), 0);

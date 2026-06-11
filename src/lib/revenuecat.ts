@@ -178,3 +178,28 @@ export async function restorePurchases(): Promise<boolean> {
   const info = await Purchases.restorePurchases();
   return hasProEntitlement(info);
 }
+
+/** Subscribe to entitlement changes (renewal, expiry, restore). Returns unsubscribe fn. */
+export function subscribeToProEntitlementChanges(
+  onChange: (isPro: boolean) => void,
+): () => void {
+  if (!isRevenueCatConfigured()) return () => {};
+
+  let PurchasesModule: typeof import('react-native-purchases').default | null = null;
+  const listener = (info: { entitlements: { active: Record<string, unknown> } }) => {
+    onChange(hasProEntitlement(info));
+  };
+
+  void (async () => {
+    try {
+      PurchasesModule = (await import('react-native-purchases')).default;
+      PurchasesModule.addCustomerInfoUpdateListener(listener);
+    } catch (e) {
+      console.warn('[RevenueCat] entitlement listener skipped:', e);
+    }
+  })();
+
+  return () => {
+    if (PurchasesModule) PurchasesModule.removeCustomerInfoUpdateListener(listener);
+  };
+}

@@ -34,24 +34,27 @@
     "required": {
       "appIcon": {
         "size": "512x512",
-        "path": "assets/images/icon.png",
+        "path": "store/icon-512.png",
         "status": "ready"
       },
       "featureGraphic": {
         "size": "1024x500",
-        "status": "needed",
-        "notes": "Create a banner with app name, tagline, and dragon artwork"
+        "path": "store/play-feature-graphic.png",
+        "status": "ready",
+        "notes": "Generate with: node demo/generate-feature-graphic.mjs"
       },
       "phoneScreenshots": {
         "count": "2-8",
         "aspectRatio": "9:16 recommended (1080x1920 or 1440x2560)",
-        "status": "partial",
-        "existing": [
-          "demo/today-scroll-mobile-390.png",
-          "demo/today-scroll-wide-960.png",
-          "demo/today-scroll-desktop-1280.png"
+        "status": "ready",
+        "files": [
+          "store/screenshots/01-today.png",
+          "store/screenshots/02-trends.png",
+          "store/screenshots/03-intro.png",
+          "store/screenshots/04-paywall.png",
+          "store/screenshots/05-scan.png"
         ],
-        "notes": "Run: node demo/generate-play-screenshots.mjs for Play Store-sized captures"
+        "notes": "Run: OUT_DIR=store/screenshots node demo/generate-play-screenshots.mjs"
       }
     }
   },
@@ -66,7 +69,9 @@
     "Upload AAB from: eas build --platform android --profile production",
     "Create internal testing track first, then promote to production",
     "Fill in target countries, pricing (free app + subscriptions), and app access declarations",
-    "Create subscriptions pro_weekly (£6.99/week) and pro_yearly (£29.99/year) in Monetize → Subscriptions",
-    "Link products in RevenueCat (see store/revenuecat-setup.json)"
+    "Create subscriptions pro_weekly (£6.99/week) and pro_yearly (£29.99/year) — see store/google-play-subscriptions.json",
+    "Set terms URL https://proteinquest.vercel.app/terms and privacy URL in store listing",
+    "Link products in RevenueCat (see store/revenuecat-setup.json)",
+    "Submit for review: npm run play-store:submit (needs store/google-play-service-account.json)"
   ]
 }

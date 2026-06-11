@@ -1,4 +1,5 @@
 import type { Profile } from './types';
+import { totalXp } from './xp';
 
 /** Free tier: AI photo scans per calendar day (UTC date on server). */
 export const FREE_DAILY_SCANS = 3;
@@ -7,11 +8,15 @@ export function isPro(profile: Profile | null | undefined): boolean {
   return profile?.is_premium === true;
 }
 
-/** Cal AI-style soft gate: show once after onboarding; dismissible. */
-export function shouldShowPostOnboardingPaywall(profile: Profile | null | undefined): boolean {
+/**
+ * Cal AI-style soft gate: show after the user has logged protein once —
+ * not on first landing after onboarding. Dismissible via paywall_dismissed.
+ */
+export function shouldShowDelayedPaywall(profile: Profile | null | undefined): boolean {
   if (!profile?.onboarded) return false;
   if (isPro(profile)) return false;
-  return !profile.paywall_dismissed;
+  if (profile.paywall_dismissed) return false;
+  return totalXp(profile) > 0;
 }
 
 export function canAccessTrends(profile: Profile | null | undefined): boolean {
