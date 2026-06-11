@@ -6,6 +6,8 @@ import { join } from 'node:path';
 
 const PRODUCTION_DOMAIN = 'proteinquest.vercel.app';
 const VERCEL_SCOPE = 'team_RHLmvpeNG6AR3YddwMwPy6mq';
+const VERCEL_ORG_ID = VERCEL_SCOPE;
+const VERCEL_PROJECT_ID = 'prj_rTOSsuDcEPLN4UlIGo0OFuzvCJCt';
 
 function run(command, options = {}) {
   console.log(`\n> ${command}`);
@@ -54,9 +56,9 @@ function vercelDeploy(distDir) {
 
   const args = [
     'deploy',
-    distDir,
     '--prod',
     '--yes',
+    '--prebuilt',
     '--json',
     '--token',
     token,
@@ -67,6 +69,11 @@ function vercelDeploy(distDir) {
   const result = spawnSync('vercel', args, {
     encoding: 'utf8',
     maxBuffer: 20 * 1024 * 1024,
+    env: {
+      ...process.env,
+      VERCEL_ORG_ID,
+      VERCEL_PROJECT_ID,
+    },
   });
 
   const combined = `${result.stdout ?? ''}\n${result.stderr ?? ''}`.trim();
@@ -90,6 +97,7 @@ const deployOnly = process.argv.includes('--deploy-only');
 if (!deployOnly) {
   run('npx expo export --platform web', { inherit: true });
   run('node scripts/prepare-web-export.mjs', { inherit: true });
+  run('node scripts/prepare-vercel-output.mjs', { inherit: true });
 }
 
 const deploymentUrl = vercelDeploy('dist');
