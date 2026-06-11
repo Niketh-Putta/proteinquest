@@ -1,0 +1,51 @@
+name: Deploy to Vercel
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: vercel-production
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_ORG_ID: team_RHLmvpeNG6AR3YddwMwPy6mq
+      VERCEL_PROJECT_ID: prj_rTOSsuDcEPLN4UlIGo0OFuzvCJCt
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build web export
+        run: |
+          npx expo export --platform web
+          node scripts/prepare-web-export.mjs
+        env:
+          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+          EXPO_PUBLIC_SUPABASE_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_KEY }}
+          EXPO_PUBLIC_STRIPE_ENABLED: ${{ secrets.EXPO_PUBLIC_STRIPE_ENABLED }}
+          EXPO_PUBLIC_REVENUECAT_IOS_KEY: ${{ secrets.EXPO_PUBLIC_REVENUECAT_IOS_KEY }}
+          EXPO_PUBLIC_REVENUECAT_ANDROID_KEY: ${{ secrets.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY }}
+
+      - name: Deploy to Vercel production
+        run: |
+          set -euo pipefail
+          DEPLOY_JSON="$(npx vercel deploy dist --prod --yes --token "${{ secrets.VERCEL_TOKEN }}" --json | tail -1)"
+          DEPLOY_URL="$(node -e "const j=JSON.parse(process.argv[1]); console.log(j.url || j.preview?.url || '')" "$DEPLOY_JSON")"
+          if [ -z "$DEPLOY_URL" ]; then
+            echo "Could not parse deployment URL from Vercel output"
+            exit 1
+          fi
+          echo "Deployed to $DEPLOY_URL"
+          npx vercel alias set "$DEPLOY_URL" proteinquest.vercel.app --token "${{ secrets.VERCEL_TOKEN }}" --scope team_RHLmvpeNG6AR3YddwMwPy6mq
+          echo "Production: https://proteinquest.vercel.app"
