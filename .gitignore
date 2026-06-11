@@ -31,7 +31,12 @@ yarn-error.*
 *.pem
 
 # local env files
+.env
 .env*.local
+
+# store credentials (never commit)
+store/google-play-service-account.json
+store/SubscriptionKey_*.p8
 
 # typescript
 *.tsbuildinfo
@@ -43,3 +48,6 @@ example
 /android
 .vercel
 demo/video-raw/
+
+# Play Store build artifacts (upload to Play Console, not git)
+store/*.aab

@@ -1,5 +1,6 @@
+import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -8,7 +9,15 @@ import {
   Text,
   View,
 } from 'react-native';
-import Animated, { FadeInDown } from 'react-native-reanimated';
+import Animated, {
+  FadeIn,
+  FadeInDown,
+  FadeOut,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/Button';
@@ -18,9 +27,93 @@ import { emptyDragonProgress } from '@/lib/character';
 import { useLayout, usePinnedFooterGap } from '@/lib/layout';
 import { useSession } from '@/lib/session';
 import type { DragonId, Profile } from '@/lib/types';
+import { getPreferredName } from '@/lib/xp';
 import { colors, fonts, spacing } from '@/theme';
 
-type Step = 'dragon' | 'goal';
+type Step = 'dragon' | 'goal' | 'forging';
+
+const FORGE_TASKS = [
+  { at: 12, label: 'Analyzing your goal' },
+  { at: 48, label: 'Calibrating your XP curve' },
+  { at: 82, label: 'Waking your dragon' },
+];
+
+/** Fake "building your plan" finale — pure theatre, then routes onward. */
+function ForgingScreen({ onDone }: { onDone: () => void }) {
+  const [pct, setPct] = useState(0);
+  const [name, setName] = useState<string | null>(null);
+  const doneRef = useRef(false);
+  const barW = useSharedValue(0);
+
+  useEffect(() => {
+    getPreferredName().then(setName).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const startedAt = Date.now();
+    const DURATION = 3400;
+    const timer = setInterval(() => {
+      const t = Math.min((Date.now() - startedAt) / DURATION, 1);
+      // Ease-out with a believable mid-progress stall.
+      const eased = t < 0.7 ? t * 1.1 : 0.77 + (t - 0.7) * 0.77;
+      setPct(Math.min(Math.round(eased * 100), 100));
+      barW.value = withTiming(Math.min(eased, 1), { duration: 80 });
+      if (t >= 1 && !doneRef.current) {
+        doneRef.current = true;
+        clearInterval(timer);
+        setTimeout(onDone, 600);
+      }
+    }, 50);
+    return () => clearInterval(timer);
+  }, [onDone, barW]);
+
+  const barStyle = useAnimatedStyle(() => ({ width: `${barW.value * 100}%` }));
+
+  return (
+    <Animated.View entering={FadeIn.duration(400)} style={styles.forgeRoot}>
+      <Text style={styles.forgePct}>{pct}%</Text>
+      <Text style={styles.forgeTitle}>
+        Building {name ? `${name}'s` : 'your'} protein plan…
+      </Text>
+      <View style={styles.forgeBarTrack}>
+        <Animated.View style={[styles.forgeBarFill, barStyle]} />
+      </View>
+      <View style={styles.forgeTasks}>
+        {FORGE_TASKS.map((task) => {
+          const reached = pct >= task.at;
+          return (
+            <View key={task.label} style={styles.forgeTaskRow}>
+              {reached ? (
+                <Animated.View entering={FadeIn.duration(250)}>
+                  <Ionicons name="checkmark-circle" size={16} color={colors.accent} />
+                </Animated.View>
+              ) : (
+                <View style={styles.forgeTaskDot} />
+              )}
+              <Text style={[styles.forgeTaskText, reached && { color: colors.text }]}>
+                {task.label}
+              </Text>
+            </View>
+          );
+        })}
+      </View>
+    </Animated.View>
+  );
+}
+
+/** Two-step progress rail, continuing the intro's visual language. */
+function StepProgress({ index }: { index: number }) {
+  const w = useSharedValue(0);
+  useEffect(() => {
+    w.value = withSpring((index + 1) / 2, { damping: 18, stiffness: 120 });
+  }, [index, w]);
+  const style = useAnimatedStyle(() => ({ width: `${w.value * 100}%` }));
+  return (
+    <View style={styles.stepTrack}>
+      <Animated.View style={[styles.stepFill, style]} />
+    </View>
+  );
+}
 
 export default function Onboarding() {
   const { saveProfile } = useSession();
@@ -52,12 +145,20 @@ export default function Onboarding() {
         last_goal_date: null,
         onboarded: true,
       });
-      router.replace('/(tabs)/today');
+      setStep('forging');
     } catch (e: any) {
       setError(e.message ?? 'Could not save. Please try again.');
     } finally {
       setSaving(false);
     }
+  }
+
+  if (step === 'forging') {
+    return (
+      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+        <ForgingScreen onDone={() => router.replace('/')} />
+      </SafeAreaView>
+    );
   }
 
   return (
@@ -80,8 +181,12 @@ export default function Onboarding() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}>
           <View style={styles.content}>
+            <StepProgress index={step === 'dragon' ? 0 : 1} />
             {step === 'dragon' ? (
-              <Animated.View entering={FadeInDown.springify().damping(16)}>
+              <Animated.View
+                key="dragon"
+                entering={FadeInDown.duration(380)}
+                exiting={FadeOut.duration(160)}>
                 <DragonPicker value={dragonId} onChange={setDragonId} />
                 {error ? <Text style={styles.error}>{error}</Text> : null}
                 <Button
@@ -99,7 +204,10 @@ export default function Onboarding() {
                 />
               </Animated.View>
             ) : (
-              <Animated.View entering={FadeInDown.springify().damping(16)}>
+              <Animated.View
+                key="goal"
+                entering={FadeInDown.duration(380)}
+                exiting={FadeOut.duration(160)}>
                 <Text style={[styles.kicker, isCompact && styles.kickerCompact]}>
                   REACH YOUR POTENTIAL
                 </Text>
@@ -141,6 +249,17 @@ export default function Onboarding() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
+  stepTrack: {
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: colors.ringTrack,
+    overflow: 'hidden',
+    marginBottom: spacing.lg,
+  },
+  stepFill: {
+    height: '100%',
+    backgroundColor: colors.accent,
+  },
   flex: { flex: 1, width: '100%' },
   scroll: { paddingTop: spacing.lg },
   content: { width: '100%', maxWidth: '100%', minWidth: 0 },
@@ -179,4 +298,61 @@ const styles = StyleSheet.create({
   },
   subtitleCompact: { fontSize: 13, lineHeight: 20 },
   error: { fontFamily: fonts.body, fontSize: 13, color: colors.danger, marginTop: spacing.md },
+  forgeRoot: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.xl,
+    gap: spacing.md,
+  },
+  forgePct: {
+    fontFamily: fonts.displayHeavy,
+    fontSize: 64,
+    color: colors.text,
+    letterSpacing: -2,
+    fontVariant: ['tabular-nums'],
+  },
+  forgeTitle: {
+    fontFamily: fonts.displayMedium,
+    fontSize: 16,
+    color: colors.textSecondary,
+    textAlign: 'center',
+  },
+  forgeBarTrack: {
+    width: '100%',
+    maxWidth: 320,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: colors.ringTrack,
+    overflow: 'hidden',
+    marginTop: spacing.sm,
+  },
+  forgeBarFill: {
+    height: '100%',
+    borderRadius: 2,
+    backgroundColor: colors.accent,
+  },
+  forgeTasks: {
+    gap: spacing.md,
+    marginTop: spacing.xl,
+    alignSelf: 'center',
+  },
+  forgeTaskRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    minWidth: 220,
+  },
+  forgeTaskDot: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: colors.hairlineBright,
+  },
+  forgeTaskText: {
+    fontFamily: fonts.body,
+    fontSize: 14,
+    color: colors.textTertiary,
+  },
 });

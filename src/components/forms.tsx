@@ -106,20 +106,18 @@ export function ChoiceRow<T extends string>({
             <View style={styles.choiceBody}>
               <Text
                 selectable={false}
-                pointerEvents="none"
                 style={[styles.choiceTitle, selected && { color: colors.accent }]}
                 numberOfLines={2}>
                 {opt.title}
               </Text>
               {opt.subtitle ? (
-                <Text selectable={false} pointerEvents="none" style={styles.choiceSubtitle} numberOfLines={2}>
+                <Text selectable={false} style={styles.choiceSubtitle} numberOfLines={2}>
                   {opt.subtitle}
                 </Text>
               ) : null}
             </View>
             <Text
               selectable={false}
-              pointerEvents="none"
               style={[
                 styles.choiceMark,
                 selected && { color: colors.accent },
@@ -159,7 +157,6 @@ export function SegmentedRow<T extends string>({
             style={[styles.segment, pressableWeb, selected && styles.segmentSelected]}>
             <Text
               selectable={false}
-              pointerEvents="none"
               style={[
                 styles.segmentLabel,
                 selected && styles.segmentLabelOn,

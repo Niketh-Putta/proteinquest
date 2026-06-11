@@ -6,6 +6,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { isDailyDragonLockedForToday } from '@/lib/character';
 import { useLayout } from '@/lib/layout';
+import { canAccessTrends, canScan } from '@/lib/paywall-gate';
+import { countTodayPhotoScans } from '@/lib/api';
 import { todayISODate } from '@/lib/protein';
 import { useSession } from '@/lib/session';
 import { colors, fonts, noTextCaret, pressableWeb, shadowAccent, spacing } from '@/theme';
@@ -25,7 +27,24 @@ function ScanTabBar({ state, navigation }: TabBarProps) {
       router.push('/(tabs)/today');
       return;
     }
+    if (profile && !profile.is_premium) {
+      countTodayPhotoScans()
+        .then((used) => {
+          if (!canScan(profile, used)) router.push('/paywall');
+          else router.push('/scan');
+        })
+        .catch(() => router.push('/scan'));
+      return;
+    }
     router.push('/scan');
+  }
+
+  function openTrends() {
+    if (profile && !canAccessTrends(profile)) {
+      router.push('/paywall');
+      return;
+    }
+    navigation.navigate('trends');
   }
   const tabs = [
     { name: 'today', label: 'Today', icon: 'flash' as const },
@@ -53,7 +72,7 @@ function ScanTabBar({ state, navigation }: TabBarProps) {
           <View style={styles.scanBtn}>
             <Ionicons name="scan" size={24} color={colors.onAccent} />
           </View>
-          <Text selectable={false} pointerEvents="none" style={styles.scanLabel}>
+          <Text selectable={false} style={styles.scanLabel}>
             Scan
           </Text>
         </Pressable>
@@ -61,7 +80,7 @@ function ScanTabBar({ state, navigation }: TabBarProps) {
         <TabButton
           tab={tabs[1]}
           active={state.index === 1}
-          onPress={() => navigation.navigate('trends')}
+          onPress={openTrends}
         />
       </View>
     </View>
@@ -82,7 +101,6 @@ function TabButton({
       <Ionicons name={tab.icon} size={20} color={active ? colors.text : colors.textTertiary} />
       <Text
         selectable={false}
-        pointerEvents="none"
         style={[styles.tabLabel, active && styles.tabLabelActive]}>
         {tab.label}
       </Text>

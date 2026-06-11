@@ -2,6 +2,13 @@ import type { ActivityLevel, GoalType, Sex } from './types';
 
 export const KG_PER_LB = 0.45359237;
 
+// Must match the `profiles` table check constraints
+// (age between 10 and 120, weight_kg between 25 and 350).
+export const AGE_MIN = 10;
+export const AGE_MAX = 120;
+export const WEIGHT_KG_MIN = 25;
+export const WEIGHT_KG_MAX = 350;
+
 // Evidence-based g/kg baselines by training volume (ISSN / Morton et al. meta-analysis ranges).
 const ACTIVITY_G_PER_KG: Record<ActivityLevel, number> = {
   sedentary: 0.9, // RDA 0.8 + small buffer

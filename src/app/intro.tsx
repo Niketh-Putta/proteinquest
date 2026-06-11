@@ -2,451 +2,260 @@ import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import { VideoView, useVideoPlayer } from 'expo-video';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import Animated, {
   Easing,
   FadeIn,
   FadeInDown,
-  FadeInRight,
-  FadeOutLeft,
+  FadeOut,
+  interpolate,
   useAnimatedStyle,
   useSharedValue,
+  withDelay,
   withRepeat,
   withSequence,
+  withSpring,
   withTiming,
 } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/Button';
-import { DRAGONS, VISUAL_EVOLUTION_LEVELS } from '@/lib/character';
 import { useLayout, usePinnedFooterGap } from '@/lib/layout';
 import { useSession } from '@/lib/session';
-import { colors, fonts, noTextCaret, pressableWeb, radius, spacing } from '@/theme';
+import { setPreferredName } from '@/lib/xp';
+import { colors, fonts, noTextCaret, pressableWeb, spacing } from '@/theme';
 
-/** Reference frame size - all visual internals are proportional to this. */
-const VIS_REF = 280;
+const HERO_ART = require('@/assets/character/dragons/fire-5.png');
+const EMBERS_VIDEO = require('@/assets/video/embers.mp4');
 
-function v(size: number, n: number) {
-  return (size / VIS_REF) * n;
-}
+type Phase = 'hero' | 'name' | 'benefits' | 'manifesto';
 
-const STEPS = [
-  {
-    kicker: 'SCAN',
-    title: 'Snap meals, get protein',
-    body: 'Point your camera at any meal. AI counts the protein in seconds.',
-    visual: 'scan' as const,
-  },
-  {
-    kicker: 'DAILY GOAL',
-    title: 'One target every day',
-    body: 'Set your protein goal once. Hit it consistently - that is the game.',
-    visual: 'goal' as const,
-  },
-  {
-    kicker: 'YOUR DRAGON',
-    title: 'Pick one dragon daily',
-    body: 'Choose Ember, Frost, or Moss each morning. Locked in for the day.',
-    visual: 'pick' as const,
-  },
-  {
-    kicker: 'EVOLVE',
-    title: 'Grow your dragon',
-    body: 'Hit your goal to earn XP. Five forms unlock as you level up.',
-    visual: 'grow' as const,
-  },
-  {
-    kicker: 'START',
-    title: 'Build the habit',
-    body: 'Set your target, pick your dragon, and scan your first meal.',
-    visual: 'start' as const,
-  },
+const PHASES: Phase[] = ['hero', 'name', 'benefits', 'manifesto'];
+
+/** Cinematic opening title sequence: each word holds, then yields to the next. */
+const TITLE_WORDS = ['EAT.', 'TRAIN.', 'EVOLVE.'];
+const WORD_HOLD_MS = 1450;
+
+const BENEFITS = [
+  'Build real muscle',
+  'Recover faster',
+  'Stay full longer',
+  'Hold strength for decades',
 ];
 
-function VisualFrame({
-  size,
-  children,
-  style,
-}: {
-  size: number;
-  children: React.ReactNode;
-  style?: object;
-}) {
+const MANIFESTO = [
+  { lead: 'Protein', rest: ' is your XP.' },
+  { lead: 'Streaks', rest: ' are your skills.' },
+  { lead: 'Your body', rest: ' is your character.' },
+];
+
+/** Slow Ken Burns drift + lateral parallax on the full-bleed hero art. */
+function KenBurnsHero() {
+  const t = useSharedValue(0);
+  useEffect(() => {
+    t.value = withRepeat(
+      withSequence(
+        withTiming(1, { duration: 18000, easing: Easing.inOut(Easing.quad) }),
+        withTiming(0, { duration: 18000, easing: Easing.inOut(Easing.quad) }),
+      ),
+      -1,
+    );
+  }, [t]);
+
+  const style = useAnimatedStyle(() => ({
+    transform: [
+      { scale: interpolate(t.value, [0, 1], [1.08, 1.22]) },
+      { translateX: interpolate(t.value, [0, 1], [0, -18]) },
+      { translateY: interpolate(t.value, [0, 1], [0, -10]) },
+    ],
+  }));
+
   return (
-    <View style={[styles.visualFrame, { width: '100%', maxWidth: size, height: size }, style]}>
-      {children}
+    <Animated.View style={[StyleSheet.absoluteFill, style]}>
+      <Image source={HERO_ART} style={StyleSheet.absoluteFill} contentFit="cover" />
+    </Animated.View>
+  );
+}
+
+/** Looping ember-spark video overlay (black bg blends into the dark scene). */
+function EmberOverlay() {
+  const player = useVideoPlayer(EMBERS_VIDEO, (p) => {
+    p.loop = true;
+    p.muted = true;
+  });
+
+  // Kick playback after mount; a play() inside the setup callback can be
+  // dropped on web before the view attaches (muted, so autoplay is allowed).
+  // Retry briefly because the first play can race the view attaching.
+  useEffect(() => {
+    let tries = 0;
+    const timer = setInterval(() => {
+      tries += 1;
+      try {
+        if (player.playing || tries > 10) {
+          clearInterval(timer);
+          return;
+        }
+        player.play();
+      } catch {
+        clearInterval(timer);
+      }
+    }, 300);
+    return () => clearInterval(timer);
+  }, [player]);
+
+  return (
+    <View style={[StyleSheet.absoluteFill, styles.emberLayer]}>
+      <VideoView
+        player={player}
+        style={StyleSheet.absoluteFill}
+        contentFit="cover"
+        nativeControls={false}
+      />
     </View>
   );
 }
 
-const CHICKEN_CURRY = require('../../assets/intro/chicken-curry.jpg');
-
-function ScanSweepLine({ size }: { size: number }) {
-  const y = useSharedValue(0);
+/** One word of the opening title: tracking-in + rise, then dissolve. */
+function TitleWord({
+  word,
+  compact,
+  sizeStyle,
+}: {
+  word: string;
+  compact: boolean;
+  sizeStyle: { fontSize: number; lineHeight: number };
+}) {
+  const p = useSharedValue(0);
   useEffect(() => {
-    y.value = withRepeat(
-      withSequence(
-        withTiming(1, { duration: 1300, easing: Easing.inOut(Easing.quad) }),
-        withTiming(0, { duration: 1300, easing: Easing.inOut(Easing.quad) }),
-      ),
-      -1,
-    );
-  }, [y]);
+    p.value = withTiming(1, { duration: 900, easing: Easing.out(Easing.cubic) });
+  }, [p]);
+
   const style = useAnimatedStyle(() => ({
-    top: `${8 + y.value * 84}%`,
+    opacity: p.value,
+    letterSpacing: interpolate(p.value, [0, 1], [18, 4]),
+    transform: [
+      { translateY: interpolate(p.value, [0, 1], [26, 0]) },
+      { scale: interpolate(p.value, [0, 1], [1.06, 1]) },
+    ],
   }));
+
+  // Layout animation lives on the wrapper so it never fights the opacity worklet.
   return (
-    <Animated.View
-      style={[
-        styles.scanSweepLine,
-        { height: v(size, 2) },
-        style,
-      ]}
-    />
+    <Animated.View exiting={FadeOut.duration(420)} style={styles.titleWordWrap}>
+      <Animated.Text
+        style={[styles.heroWord, compact && styles.heroWordCompact, sizeStyle, style]}
+        numberOfLines={1}
+        adjustsFontSizeToFit>
+        {word}
+      </Animated.Text>
+    </Animated.View>
   );
 }
 
-function ScanVisual({ size }: { size: number }) {
-  const corner = v(size, 32);
-  const inset = v(size, 24);
-  const frameInset = v(size, 16);
-  const mealSize = size - frameInset * 2;
-  const mealRadius = v(size, 12);
-  const labelPulse = useSharedValue(1);
+/** Brand wordmark that breathes its letter-spacing open. */
+function BrandReveal() {
+  const p = useSharedValue(0);
   useEffect(() => {
-    labelPulse.value = withRepeat(
+    p.value = withDelay(250, withTiming(1, { duration: 1400, easing: Easing.out(Easing.quad) }));
+  }, [p]);
+  const style = useAnimatedStyle(() => ({
+    opacity: interpolate(p.value, [0, 1], [0, 0.9]),
+    letterSpacing: interpolate(p.value, [0, 1], [2, 7]),
+  }));
+  return <Animated.Text style={[styles.brand, style]}>PROTEINQUEST</Animated.Text>;
+}
+
+/** Soft pulsing accent glow anchored low behind the CTA. */
+function PulseGlow() {
+  const p = useSharedValue(0);
+  useEffect(() => {
+    p.value = withRepeat(
       withSequence(
-        withTiming(0.55, { duration: 900, easing: Easing.inOut(Easing.quad) }),
-        withTiming(1, { duration: 900, easing: Easing.inOut(Easing.quad) }),
+        withTiming(1, { duration: 2600, easing: Easing.inOut(Easing.quad) }),
+        withTiming(0, { duration: 2600, easing: Easing.inOut(Easing.quad) }),
       ),
       -1,
     );
-  }, [labelPulse]);
-  const labelStyle = useAnimatedStyle(() => ({ opacity: labelPulse.value }));
-
-  return (
-    <VisualFrame size={size} style={styles.scanFrame}>
-      <View
-        style={[
-          styles.scanMealWrap,
-          {
-            width: mealSize,
-            height: mealSize,
-            borderRadius: mealRadius,
-            margin: frameInset,
-          },
-        ]}>
-        <Image
-          source={CHICKEN_CURRY}
-          style={StyleSheet.absoluteFill}
-          contentFit="cover"
-        />
-        <View style={[styles.scanMealDim, { borderRadius: mealRadius }]} />
-        <ScanSweepLine size={size} />
-        <Animated.View
-          entering={FadeIn.delay(400).duration(500)}
-          style={[
-            styles.scanAnalyzingBadge,
-            {
-              paddingHorizontal: v(size, 10),
-              paddingVertical: v(size, 5),
-              borderRadius: v(size, 16),
-              gap: v(size, 5),
-            },
-          ]}>
-          <Ionicons name="scan" size={v(size, 12)} color={colors.accent} />
-          <Animated.Text
-            style={[
-              styles.scanAnalyzingText,
-              { fontSize: v(size, 9), letterSpacing: v(size, 1.2) },
-              labelStyle,
-            ]}>
-            ANALYZING...
-          </Animated.Text>
-        </Animated.View>
-      </View>
-      <View
-        style={[
-          styles.scanCornerTL,
-          { top: inset, left: inset, width: corner, height: corner, borderTopWidth: v(size, 3), borderLeftWidth: v(size, 3), borderTopLeftRadius: v(size, 8) },
-        ]}
-      />
-      <View
-        style={[
-          styles.scanCornerBR,
-          {
-            bottom: inset,
-            right: inset,
-            width: corner,
-            height: corner,
-            borderBottomWidth: v(size, 3),
-            borderRightWidth: v(size, 3),
-            borderBottomRightRadius: v(size, 8),
-          },
-        ]}
-      />
-      <Animated.View
-        entering={FadeInDown.delay(1200).duration(600)}
-        style={[
-          styles.scanResultPill,
-          styles.scanResultPillOverlay,
-          {
-            bottom: inset + v(size, 8),
-            paddingHorizontal: v(size, 14),
-            paddingVertical: v(size, 6),
-            borderRadius: v(size, 20),
-            gap: v(size, 6),
-          },
-        ]}>
-        <Text style={{ fontFamily: fonts.displayHeavy, fontSize: v(size, 18), color: colors.accent }}>42g</Text>
-        <Text style={{ fontFamily: fonts.mono, fontSize: v(size, 9), letterSpacing: v(size, 1.5), color: colors.textTertiary }}>PROTEIN</Text>
-      </Animated.View>
-    </VisualFrame>
-  );
+  }, [p]);
+  const style = useAnimatedStyle(() => ({
+    opacity: interpolate(p.value, [0, 1], [0.16, 0.34]),
+    transform: [{ scale: interpolate(p.value, [0, 1], [0.94, 1.05]) }],
+  }));
+  return <Animated.View style={[styles.glow, style]} />;
 }
 
-function GoalVisual({ size }: { size: number }) {
-  const ringSize = v(size, 100);
-  const ringBorder = v(size, 9);
+/** Animated progress bar shared across the post-hero phases. */
+function PhaseProgress({ index, total }: { index: number; total: number }) {
+  const w = useSharedValue(0);
+  useEffect(() => {
+    w.value = withSpring(index / (total - 1), { damping: 18, stiffness: 120 });
+  }, [index, total, w]);
+  const style = useAnimatedStyle(() => ({ width: `${w.value * 100}%` }));
   return (
-    <VisualFrame size={size} style={styles.goalFrame}>
-      <Text
-        style={{
-          fontFamily: fonts.displayHeavy,
-          fontSize: v(size, 56),
-          lineHeight: v(size, 60),
-          color: colors.accent,
-          letterSpacing: v(size, -2),
-        }}>
-        120
-      </Text>
-      <Text
-        style={{
-          fontFamily: fonts.mono,
-          fontSize: v(size, 10),
-          letterSpacing: v(size, 2),
-          color: colors.textTertiary,
-        }}>
-        g protein / day
-      </Text>
-      <View
-        style={{
-          width: ringSize,
-          height: ringSize,
-          borderRadius: ringSize / 2,
-          borderWidth: ringBorder,
-          borderColor: colors.ringTrack,
-          marginTop: v(size, 12),
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}>
-        <View
-          style={{
-            position: 'absolute',
-            width: ringSize,
-            height: ringSize,
-            borderRadius: ringSize / 2,
-            borderWidth: ringBorder,
-            borderColor: colors.accent,
-            borderRightColor: 'transparent',
-            borderBottomColor: 'transparent',
-            transform: [{ rotate: '-45deg' }],
-          }}
-        />
-        <Text style={{ fontFamily: fonts.mono, fontSize: v(size, 11), color: colors.textSecondary }}>78%</Text>
-      </View>
-    </VisualFrame>
+    <View style={styles.progressTrack}>
+      <Animated.View style={[styles.progressFill, style]} />
+    </View>
   );
-}
-
-function PickDragonVisual({ size }: { size: number }) {
-  const cardW = v(size, 72);
-  const cardH = v(size, 88);
-  const artSize = v(size, 52);
-  const gap = v(size, 10);
-  const selected = DRAGONS[0];
-
-  return (
-    <VisualFrame size={size}>
-      <View style={{ flexDirection: 'row', gap, alignItems: 'flex-end' }}>
-        {DRAGONS.map((dragon) => {
-          const active = dragon.id === selected.id;
-          return (
-            <View
-              key={dragon.id}
-              style={{
-                width: cardW,
-                height: cardH,
-                borderRadius: v(size, 14),
-                backgroundColor: active ? colors.accentSurface : colors.surface2,
-                borderWidth: active ? v(size, 2) : StyleSheet.hairlineWidth,
-                borderColor: active ? colors.accent : colors.hairline,
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: v(size, 4),
-                opacity: active ? 1 : 0.55,
-              }}>
-              <Image source={dragon.previewArt} style={{ width: artSize, height: artSize }} contentFit="contain" />
-              <Text
-                style={{
-                  fontFamily: fonts.displayMedium,
-                  fontSize: v(size, 10),
-                  color: active ? dragon.accent : colors.textTertiary,
-                }}>
-                {dragon.name}
-              </Text>
-            </View>
-          );
-        })}
-      </View>
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: v(size, 5),
-          marginTop: v(size, 14),
-          paddingHorizontal: v(size, 12),
-          paddingVertical: v(size, 5),
-          borderRadius: v(size, 20),
-          backgroundColor: colors.surface2,
-          borderWidth: StyleSheet.hairlineWidth,
-          borderColor: colors.hairlineBright,
-        }}>
-        <Ionicons name="lock-closed" size={v(size, 11)} color={colors.textTertiary} />
-        <Text
-          style={{
-            fontFamily: fonts.mono,
-            fontSize: v(size, 9),
-            letterSpacing: v(size, 1.2),
-            color: colors.textTertiary,
-          }}>
-          LOCKED FOR TODAY
-        </Text>
-      </View>
-    </VisualFrame>
-  );
-}
-
-function GrowVisual({ size }: { size: number }) {
-  const previewDragon = DRAGONS[0];
-  const artSize = v(size, 100);
-  const dotSize = v(size, 8);
-  const stages = VISUAL_EVOLUTION_LEVELS.length;
-
-  return (
-    <VisualFrame size={size}>
-      <Image source={previewDragon.previewArt} style={{ width: artSize, height: artSize }} contentFit="contain" />
-      <View style={{ flexDirection: 'row', gap: v(size, 6), marginTop: v(size, 10), alignItems: 'center' }}>
-        {VISUAL_EVOLUTION_LEVELS.map((level, i) => (
-          <View key={level} style={{ alignItems: 'center', gap: v(size, 3) }}>
-            <View
-              style={{
-                width: dotSize,
-                height: dotSize,
-                borderRadius: dotSize / 2,
-                backgroundColor: i < 2 ? colors.accent : colors.ringTrack,
-              }}
-            />
-            <Text
-              style={{
-                fontFamily: fonts.mono,
-                fontSize: v(size, 7),
-                color: i < 2 ? colors.accent : colors.textTertiary,
-              }}>
-              Lv{level}
-            </Text>
-          </View>
-        ))}
-      </View>
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: v(size, 5),
-          marginTop: v(size, 10),
-          paddingHorizontal: v(size, 10),
-          paddingVertical: v(size, 4),
-          borderRadius: v(size, 16),
-          backgroundColor: colors.accentSurface,
-        }}>
-        <Ionicons name="arrow-up" size={v(size, 10)} color={colors.accent} />
-        <Text
-          style={{
-            fontFamily: fonts.mono,
-            fontSize: v(size, 9),
-            letterSpacing: v(size, 1),
-            color: colors.accent,
-          }}>
-          {stages} FORMS TO UNLOCK
-        </Text>
-      </View>
-    </VisualFrame>
-  );
-}
-
-function StartVisual({ size }: { size: number }) {
-  const previewDragon = DRAGONS[0];
-  const artSize = v(size, 160);
-  return (
-    <VisualFrame size={size}>
-      <Image source={previewDragon.previewArt} style={{ width: artSize, height: artSize }} contentFit="contain" />
-      <Text
-        style={{
-          fontFamily: fonts.mono,
-          fontSize: v(size, 10),
-          letterSpacing: v(size, 2),
-          color: colors.accentSecondary,
-          marginTop: v(size, 4),
-        }}>
-        YOUR COMPANION AWAITS
-      </Text>
-    </VisualFrame>
-  );
-}
-
-function StepVisual({ kind, size }: { kind: (typeof STEPS)[number]['visual']; size: number }) {
-  switch (kind) {
-    case 'scan':
-      return <ScanVisual size={size} />;
-    case 'goal':
-      return <GoalVisual size={size} />;
-    case 'pick':
-      return <PickDragonVisual size={size} />;
-    case 'grow':
-      return <GrowVisual size={size} />;
-    case 'start':
-      return <StartVisual size={size} />;
-  }
 }
 
 export default function IntroScreen() {
   const { saveProfile, loading: sessionLoading, session } = useSession();
-  const { horizontalPad, contentMaxWidth, isWide, height, width } = useLayout();
-  const [step, setStep] = useState(0);
+  const { horizontalPad, contentMaxWidth, height, width, isDesktop } = useLayout();
+  const isCompact = height < 700 || width < 390;
+  const footerGap = usePinnedFooterGap(isCompact);
+
+  const [phase, setPhase] = useState<Phase>('hero');
+  const [wordIndex, setWordIndex] = useState(0);
+  const [titleDone, setTitleDone] = useState(false);
+  const [name, setName] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const current = STEPS[step];
-  const isLast = step === STEPS.length - 1;
-  const isCompact = height < 700 || width < 390;
-  const visualSize = Math.min(
-    isWide ? 320 : width - horizontalPad * 2,
-    isCompact
-      ? Math.min(width * 0.56, height * 0.2, 176)
-      : height < 720
-        ? Math.max(168, height * 0.28)
-        : 320,
-  );
-  const footerGap = usePinnedFooterGap(isCompact);
+  const phaseIndex = PHASES.indexOf(phase);
+
+  // Opening title sequence: EAT. TRAIN. EVOLVE. → settle on the brand statement.
+  useEffect(() => {
+    if (phase !== 'hero' || titleDone) return;
+    const timer = setTimeout(() => {
+      if (wordIndex < TITLE_WORDS.length - 1) setWordIndex((i) => i + 1);
+      else setTitleDone(true);
+    }, WORD_HOLD_MS);
+    return () => clearTimeout(timer);
+  }, [phase, wordIndex, titleDone]);
+
+  // Scale the title type with viewport width so it never clips on narrow phones.
+  const heroType = useMemo(() => {
+    const base = Math.round(
+      Math.max(44, Math.min(width * 0.165, isDesktop ? 108 : 88)),
+    );
+    return { fontSize: base, lineHeight: Math.round(base * 1.1) };
+  }, [width, isDesktop]);
+
+  function next() {
+    setError(null);
+    setPhase(PHASES[Math.min(phaseIndex + 1, PHASES.length - 1)]);
+  }
+
+  function back() {
+    setError(null);
+    if (phaseIndex > 0) setPhase(PHASES[phaseIndex - 1]);
+  }
+
+  async function submitName() {
+    if (name.trim()) await setPreferredName(name);
+    next();
+  }
 
   async function finish() {
     if (sessionLoading || !session) {
@@ -465,24 +274,79 @@ export default function IntroScreen() {
     }
   }
 
-  function handleNext() {
-    if (isLast) {
-      finish();
-      return;
-    }
-    setStep((s) => s + 1);
+  // --- Phase: cinematic hero ---
+  if (phase === 'hero') {
+    return (
+      <View style={styles.root}>
+        <View style={[StyleSheet.absoluteFill, styles.noPointer]}>
+          <KenBurnsHero />
+          <EmberOverlay />
+          <LinearGradient
+            colors={['rgba(12,11,16,0.86)', 'rgba(12,11,16,0.28)', 'rgba(12,11,16,0.97)']}
+            locations={[0, 0.45, 1]}
+            style={StyleSheet.absoluteFill}
+          />
+          <PulseGlow />
+        </View>
+        <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+          <Pressable
+            style={[
+              styles.inner,
+              { paddingHorizontal: horizontalPad, maxWidth: contentMaxWidth },
+            ]}
+            onPress={() => {
+              // Tap anywhere to skip straight to the settled title.
+              if (!titleDone) {
+                setWordIndex(TITLE_WORDS.length - 1);
+                setTitleDone(true);
+              }
+            }}>
+            <BrandReveal />
+
+            <View style={styles.heroCenter}>
+              {!titleDone ? (
+                <TitleWord
+                  key={TITLE_WORDS[wordIndex]}
+                  word={TITLE_WORDS[wordIndex]}
+                  compact={isCompact}
+                  sizeStyle={heroType}
+                />
+              ) : (
+                <Animated.View entering={FadeIn.duration(700)} style={styles.heroSettled}>
+                  <Text
+                    style={[styles.heroWord, isCompact && styles.heroWordCompact, heroType]}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit>
+                    EVOLVE.
+                  </Text>
+                  <Animated.Text
+                    entering={FadeInDown.delay(250).duration(600)}
+                    style={[styles.heroSub, isCompact && styles.heroSubCompact]}>
+                    Hit your protein. Feed your dragon.{'\n'}Level up for real.
+                  </Animated.Text>
+                </Animated.View>
+              )}
+            </View>
+
+            <Animated.View
+              entering={FadeInDown.delay(900).duration(800)}
+              style={[styles.heroFooter, { paddingBottom: footerGap }]}>
+              <Button title="Get started" onPress={next} />
+              <Text style={styles.heroTagline}>ARE YOU READY TO LEVEL UP?</Text>
+            </Animated.View>
+          </Pressable>
+        </SafeAreaView>
+      </View>
+    );
   }
 
-  function handleBack() {
-    if (step > 0) setStep((s) => s - 1);
-  }
-
+  // --- Phases: name / benefits / manifesto ---
   return (
     <View style={styles.root}>
-      <LinearGradient
-        colors={[colors.bgRaised, colors.bg]}
-        style={StyleSheet.absoluteFill}
-      />
+      <LinearGradient colors={[colors.bgRaised, colors.bg]} style={StyleSheet.absoluteFill} />
+      <View style={[StyleSheet.absoluteFill, styles.noPointer]}>
+        <PulseGlow />
+      </View>
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
         <KeyboardAvoidingView
           style={styles.flex}
@@ -492,97 +356,112 @@ export default function IntroScreen() {
               styles.inner,
               { paddingHorizontal: horizontalPad, maxWidth: contentMaxWidth },
             ]}>
-            <View style={[styles.header, isCompact && styles.headerCompact]}>
-              <View style={[styles.dots, isCompact && styles.dotsCompact]}>
-                {STEPS.map((_, i) => (
-                  <View
-                    key={i}
-                    style={[
-                      styles.dot,
-                      isCompact && styles.dotCompact,
-                      i === step && styles.dotActive,
-                      i === step && isCompact && styles.dotActiveCompact,
-                    ]}
-                  />
-                ))}
-              </View>
-
+            <View style={styles.topBar}>
               <Pressable
                 accessibilityRole="button"
-                onPress={handleBack}
-                disabled={step === 0}
-                style={[styles.backBtn, isCompact && styles.backBtnCompact, step === 0 && { opacity: 0 }]}>
-                <Ionicons
-                  name="chevron-back"
-                  size={isCompact ? 20 : 22}
-                  color={colors.textSecondary}
-                />
+                accessibilityLabel="Back"
+                onPress={back}
+                hitSlop={8}
+                style={[styles.backBtn, pressableWeb]}>
+                <Ionicons name="chevron-back" size={22} color={colors.textSecondary} />
               </Pressable>
+              <PhaseProgress index={phaseIndex} total={PHASES.length} />
+              <View style={styles.backBtn} />
             </View>
 
-            <ScrollView
-              style={styles.flex}
-              contentContainerStyle={[
-                styles.scrollContent,
-                isCompact && styles.scrollContentCompact,
-                { paddingBottom: isCompact ? spacing.md : spacing.lg },
-              ]}
-              keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}
-              bounces>
+            {phase === 'name' ? (
               <Animated.View
-                key={step}
-                entering={FadeInRight.duration(280)}
-                exiting={FadeOutLeft.duration(200)}
-                style={[styles.slide, isWide && styles.slideWide]}>
-                <Animated.View
-                  entering={FadeIn.delay(60)}
-                  style={[styles.visualWrap, isCompact && styles.visualWrapCompact]}>
-                  <StepVisual kind={current.visual} size={visualSize} />
-                </Animated.View>
-
-                <Text style={[styles.kicker, isCompact && styles.kickerCompact]}>{current.kicker}</Text>
-                <Text
-                  style={[
-                    styles.title,
-                    isWide && styles.titleWide,
-                    isCompact ? styles.titleCompact : height < 720 && styles.titleShort,
-                  ]}>
-                  {current.title}
+                key="name"
+                entering={FadeInDown.duration(380)}
+                exiting={FadeOut.duration(160)}
+                style={styles.phaseBody}>
+                <Text style={[styles.question, isCompact && styles.questionCompact]}>
+                  What should{'\n'}we call you?
                 </Text>
-                <Text style={[styles.body, isCompact && styles.bodyCompact]}>{current.body}</Text>
+                <TextInput
+                  style={[styles.nameInput, isCompact && styles.nameInputCompact]}
+                  value={name}
+                  onChangeText={setName}
+                  placeholder="Your name"
+                  placeholderTextColor={colors.textTertiary}
+                  autoCapitalize="words"
+                  autoCorrect={false}
+                  maxLength={24}
+                  returnKeyType="done"
+                  onSubmitEditing={submitName}
+                />
               </Animated.View>
-            </ScrollView>
+            ) : null}
 
-            <View
-              style={[
-                styles.footer,
-                isCompact && styles.footerCompact,
-                { paddingBottom: footerGap, paddingTop: isCompact ? spacing.sm : spacing.md },
-              ]}>
+            {phase === 'benefits' ? (
+              <Animated.View
+                key="benefits"
+                entering={FadeInDown.duration(380)}
+                exiting={FadeOut.duration(160)}
+                style={styles.phaseBody}>
+                <Text style={[styles.question, isCompact && styles.questionCompact]}>
+                  {name.trim() ? `${name.trim()}, protein` : 'Protein'} changes everything.
+                </Text>
+                <View style={styles.benefitList}>
+                  {BENEFITS.map((b, i) => (
+                    <Animated.View
+                      key={b}
+                      entering={FadeInDown.delay(450 + i * 380).duration(420)}
+                      style={styles.benefitRow}>
+                      <Ionicons name="checkmark-circle" size={22} color={colors.accent} />
+                      <Text style={styles.benefitText}>{b}</Text>
+                    </Animated.View>
+                  ))}
+                </View>
+              </Animated.View>
+            ) : null}
+
+            {phase === 'manifesto' ? (
+              <Animated.View
+                key="manifesto"
+                entering={FadeInDown.duration(380)}
+                exiting={FadeOut.duration(160)}
+                style={styles.phaseBody}>
+                <Animated.Text entering={FadeIn.delay(200).duration(700)} style={styles.kicker}>
+                  THE GAME
+                </Animated.Text>
+                <Animated.Text
+                  entering={FadeInDown.delay(350).duration(600)}
+                  style={[styles.question, isCompact && styles.questionCompact, { marginTop: spacing.sm }]}>
+                  Life is a game.
+                </Animated.Text>
+                <View style={styles.manifestoList}>
+                  {MANIFESTO.map((line, i) => (
+                    <Animated.Text
+                      key={line.lead}
+                      entering={FadeInDown.delay(800 + i * 500).duration(500)}
+                      style={styles.manifestoLine}>
+                      <Text style={styles.manifestoLead}>{line.lead}</Text>
+                      {line.rest}
+                    </Animated.Text>
+                  ))}
+                </View>
+              </Animated.View>
+            ) : null}
+
+            <View style={[styles.footer, { paddingBottom: footerGap }]}>
               {error ? <Text style={styles.error}>{error}</Text> : null}
-              <Button
-                title={isLast ? 'Get started' : 'Next'}
-                onPress={handleNext}
-                loading={saving || sessionLoading}
-                disabled={sessionLoading || !session}
-                style={{
-                  alignSelf: 'center',
-                  width: isCompact ? '82%' : '100%',
-                  maxWidth: isCompact ? 272 : undefined,
-                  height: isCompact ? 44 : 52,
-                }}
-              />
-              {!isLast ? (
-                <Pressable
-                  onPress={finish}
-                  disabled={saving}
-                  style={[styles.skipBtn, pressableWeb, isCompact && styles.skipBtnCompact]}>
-                  <Text selectable={false} pointerEvents="none" style={styles.skipText}>
-                    Skip intro
-                  </Text>
-                </Pressable>
-              ) : null}
+              {phase === 'name' ? (
+                <Button title="Continue" onPress={submitName} />
+              ) : phase === 'benefits' ? (
+                <Animated.View entering={FadeIn.delay(450 + BENEFITS.length * 380)}>
+                  <Button title="Continue" onPress={next} />
+                </Animated.View>
+              ) : (
+                <Animated.View entering={FadeIn.delay(800 + MANIFESTO.length * 500)}>
+                  <Button
+                    title="I'm ready"
+                    onPress={finish}
+                    loading={saving || sessionLoading}
+                    disabled={sessionLoading || !session}
+                  />
+                </Animated.View>
+              )}
             </View>
           </View>
         </KeyboardAvoidingView>
@@ -595,193 +474,146 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
   safe: { flex: 1 },
   flex: { flex: 1 },
-  inner: {
-    flex: 1,
-    width: '100%',
+  inner: { flex: 1, width: '100%', alignSelf: 'center' },
+  noPointer: { pointerEvents: 'none' },
+
+  // Hero scene layers
+  emberLayer: { opacity: 0.5 },
+  glow: {
+    position: 'absolute',
+    bottom: -160,
     alignSelf: 'center',
+    width: 480,
+    height: 360,
+    borderRadius: 240,
+    backgroundColor: colors.accent,
+    // Soft-edged glow without native blur support.
+    transform: [{ scaleX: 1.4 }],
+    filter: Platform.OS === 'web' ? 'blur(110px)' : undefined,
+    opacity: 0.2,
   },
-  header: {
+
+  // Hero type
+  brand: {
+    ...noTextCaret,
+    fontFamily: fonts.mono,
+    fontSize: 11,
+    color: colors.text,
+    textAlign: 'center',
+    marginTop: spacing.lg,
+  },
+  heroCenter: { flex: 1, alignItems: 'center', justifyContent: 'center', minWidth: 0 },
+  titleWordWrap: { width: '100%', alignItems: 'center' },
+  heroSettled: { alignItems: 'center', gap: spacing.md, width: '100%' },
+  heroWord: {
+    ...noTextCaret,
+    fontFamily: fonts.displayHeavy,
+    fontSize: 84,
+    letterSpacing: 4,
+    color: colors.text,
+    textAlign: 'center',
+    maxWidth: '100%',
+    ...(Platform.OS === 'web'
+      ? { textShadow: '0 4px 24px rgba(0,0,0,0.6)' }
+      : {
+          textShadowColor: 'rgba(0,0,0,0.6)',
+          textShadowRadius: 24,
+          textShadowOffset: { width: 0, height: 4 },
+        }),
+  },
+  heroWordCompact: { fontSize: 56 },
+  heroSub: {
+    ...noTextCaret,
+    fontFamily: fonts.displayMedium,
+    fontSize: 16,
+    lineHeight: 25,
+    color: colors.textSecondary,
+    textAlign: 'center',
+  },
+  heroSubCompact: { fontSize: 14, lineHeight: 22 },
+  heroFooter: { gap: spacing.md },
+  heroTagline: {
+    ...noTextCaret,
+    fontFamily: fonts.mono,
+    fontSize: 10,
+    letterSpacing: 2.5,
+    color: colors.textSecondary,
+    textAlign: 'center',
+  },
+
+  // Step chrome
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
     paddingTop: spacing.md,
   },
-  headerCompact: {
-    paddingTop: spacing.sm,
-  },
-  scrollContent: {
-    paddingTop: spacing.sm,
-  },
-  scrollContentCompact: {
-    paddingTop: spacing.xs,
-  },
-  dots: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 8,
-    marginBottom: spacing.sm,
-  },
-  dotsCompact: {
-    gap: 5,
-    marginBottom: spacing.xs,
-  },
-  dot: {
-    width: 7,
-    height: 7,
-    borderRadius: radius.full,
-    backgroundColor: colors.hairlineBright,
-  },
-  dotCompact: {
-    width: 5,
-    height: 5,
-  },
-  dotActive: {
-    width: 22,
-    backgroundColor: colors.accent,
-  },
-  dotActiveCompact: {
-    width: 16,
-  },
   backBtn: {
-    alignSelf: 'flex-start',
-    padding: spacing.xs,
-    marginBottom: spacing.xs,
-  },
-  backBtnCompact: {
-    marginBottom: 0,
-  },
-  slide: { width: '100%' },
-  slideWide: { maxWidth: 520, alignSelf: 'center' },
-  visualWrap: { alignItems: 'center', marginBottom: spacing.lg },
-  visualWrapCompact: { marginBottom: spacing.md },
-  visualFrame: {
-    borderRadius: radius.character,
-    backgroundColor: colors.surface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.hairlineBright,
+    width: 36,
+    height: 36,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  progressTrack: {
+    flex: 1,
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: colors.ringTrack,
     overflow: 'hidden',
   },
-  goalFrame: { gap: 0 },
-  scanFrame: {
-    padding: 0,
-  },
-  scanMealWrap: {
-    overflow: 'hidden',
-    alignSelf: 'center',
-    backgroundColor: colors.surface2,
-  },
-  scanMealDim: {
-    ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(12, 11, 16, 0.28)',
-  },
-  scanSweepLine: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
+  progressFill: {
+    height: '100%',
     backgroundColor: colors.accent,
-    shadowColor: colors.accent,
-    shadowOpacity: 0.8,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 0 },
   },
-  scanAnalyzingBadge: {
-    position: 'absolute',
-    top: '38%',
-    alignSelf: 'center',
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(12, 11, 16, 0.72)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.hairlineBright,
-  },
-  scanAnalyzingText: {
-    fontFamily: fonts.mono,
-    color: colors.text,
-  },
-  scanCornerTL: {
-    position: 'absolute',
-    borderColor: colors.accent,
-  },
-  scanCornerBR: {
-    position: 'absolute',
-    borderColor: colors.accent,
-  },
-  scanResultPill: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    backgroundColor: colors.surface2,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.hairlineBright,
-  },
-  scanResultPillOverlay: {
-    position: 'absolute',
-    alignSelf: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.35,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-  },
+
+  // Phase bodies
+  phaseBody: { flex: 1, justifyContent: 'center' },
   kicker: {
     fontFamily: fonts.mono,
     fontSize: 10,
-    letterSpacing: 3,
+    letterSpacing: 3.5,
     color: colors.accentSecondary,
   },
-  kickerCompact: {
-    fontSize: 9,
-    letterSpacing: 2.5,
-  },
-  title: {
+  question: {
     fontFamily: fonts.displayHeavy,
-    fontSize: 32,
-    lineHeight: 38,
+    fontSize: 36,
+    lineHeight: 44,
+    letterSpacing: -1,
     color: colors.text,
-    letterSpacing: -0.8,
-    marginTop: spacing.sm,
   },
-  titleWide: { fontSize: 36, lineHeight: 42 },
-  titleShort: { fontSize: 28, lineHeight: 34 },
-  titleCompact: {
-    fontSize: 24,
-    lineHeight: 30,
-    letterSpacing: -0.5,
-    marginTop: spacing.xs,
+  questionCompact: { fontSize: 28, lineHeight: 35, letterSpacing: -0.5 },
+  nameInput: {
+    fontFamily: fonts.display,
+    fontSize: 32,
+    color: colors.accent,
+    paddingVertical: spacing.sm,
+    marginTop: spacing.xl,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.hairlineBright,
   },
-  body: {
-    fontFamily: fonts.body,
-    fontSize: 15,
-    lineHeight: 23,
+  nameInputCompact: { fontSize: 26 },
+  benefitList: { gap: spacing.lg, marginTop: spacing.xl },
+  benefitRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  benefitText: {
+    fontFamily: fonts.displayMedium,
+    fontSize: 19,
+    color: colors.text,
+  },
+  manifestoList: { gap: spacing.lg, marginTop: spacing.xl },
+  manifestoLine: {
+    ...noTextCaret,
+    fontFamily: fonts.display,
+    fontSize: 21,
+    lineHeight: 28,
     color: colors.textSecondary,
-    marginTop: spacing.md,
-    maxWidth: 400,
   },
-  bodyCompact: {
-    fontSize: 14,
-    lineHeight: 21,
-    marginTop: spacing.sm,
-    maxWidth: 340,
-  },
-  footer: {
-    gap: spacing.sm,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.hairline,
-    backgroundColor: colors.bg,
-  },
-  footerCompact: {
-    gap: spacing.xs,
-  },
+  manifestoLead: { color: colors.accent },
+
+  footer: { gap: spacing.sm, paddingTop: spacing.md },
   error: {
     fontFamily: fonts.body,
     fontSize: 13,
     color: colors.danger,
     textAlign: 'center',
-  },
-  skipBtn: { alignSelf: 'center', paddingVertical: spacing.sm, minHeight: 44, justifyContent: 'center' },
-  skipBtnCompact: { paddingVertical: spacing.xs, minHeight: 36 },
-  skipText: {
-    ...noTextCaret,
-    fontFamily: fonts.mono,
-    fontSize: 11,
-    letterSpacing: 0.5,
-    color: colors.textTertiary,
   },
 });

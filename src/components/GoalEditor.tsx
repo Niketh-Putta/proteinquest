@@ -7,7 +7,12 @@ import { ChoiceRow, FieldLabel, NumberField, SegmentedRow } from '@/components/f
 import { useLayout } from '@/lib/layout';
 import {
   ACTIVITY_LABELS,
+  AGE_MAX,
+  AGE_MIN,
   GOAL_LABELS,
+  KG_PER_LB,
+  WEIGHT_KG_MAX,
+  WEIGHT_KG_MIN,
   calculateProteinGoal,
   kgFromInput,
 } from '@/lib/protein';
@@ -35,24 +40,42 @@ export function GoalEditor({ profile, submitLabel, saving, onSubmit }: Props) {
   const [activity, setActivity] = useState<ActivityLevel | null>(profile?.activity_level ?? null);
   const [goalType, setGoalType] = useState<GoalType | null>(profile?.goal_type ?? null);
 
+  const ageNum = parseInt(age, 10);
+  const weightNum = parseFloat(weight);
+  const weightKg = Number.isFinite(weightNum) ? kgFromInput(weightNum, unit) : NaN;
+
+  // Mirror the profiles table check constraints so invalid values never reach the DB.
+  const ageValid = Number.isFinite(ageNum) && ageNum >= AGE_MIN && ageNum <= AGE_MAX;
+  const weightValid =
+    Number.isFinite(weightKg) && weightKg >= WEIGHT_KG_MIN && weightKg <= WEIGHT_KG_MAX;
+
+  const ageError =
+    age !== '' && Number.isFinite(ageNum) && !ageValid
+      ? `Enter an age between ${AGE_MIN} and ${AGE_MAX}.`
+      : null;
+  const weightError =
+    weight !== '' && Number.isFinite(weightKg) && !weightValid
+      ? unit === 'kg'
+        ? `Enter a weight between ${WEIGHT_KG_MIN} and ${WEIGHT_KG_MAX} kg.`
+        : `Enter a weight between ${Math.ceil(WEIGHT_KG_MIN / KG_PER_LB)} and ${Math.floor(WEIGHT_KG_MAX / KG_PER_LB)} lbs.`
+      : null;
+
   const calc = useMemo(() => {
-    const a = parseInt(age, 10);
-    const w = parseFloat(weight);
-    if (!a || !w || !activity || !goalType) return null;
+    if (!ageValid || !weightValid || !activity || !goalType) return null;
     return calculateProteinGoal({
-      weightKg: kgFromInput(w, unit),
-      age: a,
+      weightKg,
+      age: ageNum,
       sex,
       activityLevel: activity,
       goalType,
     });
-  }, [age, weight, unit, sex, activity, goalType]);
+  }, [ageValid, weightValid, weightKg, ageNum, sex, activity, goalType]);
 
   function handleSubmit() {
-    if (!calc) return;
+    if (!calc || !ageValid || !weightValid) return;
     onSubmit({
-      age: parseInt(age, 10),
-      weight_kg: Math.round(kgFromInput(parseFloat(weight), unit) * 10) / 10,
+      age: ageNum,
+      weight_kg: Math.round(weightKg * 10) / 10,
       weight_unit: unit,
       sex,
       activity_level: activity,
@@ -66,6 +89,7 @@ export function GoalEditor({ profile, submitLabel, saving, onSubmit }: Props) {
     <View style={styles.root}>
       <FieldLabel>Age</FieldLabel>
       <NumberField value={age} onChange={setAge} placeholder="25" suffix="YRS" />
+      {ageError ? <Text style={styles.fieldError}>{ageError}</Text> : null}
 
       <FieldLabel>Weight</FieldLabel>
       {isNarrow ? (
@@ -105,6 +129,7 @@ export function GoalEditor({ profile, submitLabel, saving, onSubmit }: Props) {
           </View>
         </View>
       )}
+      {weightError ? <Text style={styles.fieldError}>{weightError}</Text> : null}
 
       <FieldLabel>Sex</FieldLabel>
       <SegmentedRow
@@ -173,6 +198,13 @@ export function GoalEditor({ profile, submitLabel, saving, onSubmit }: Props) {
 
 const styles = StyleSheet.create({
   root: { width: '100%', maxWidth: '100%' },
+  fieldError: {
+    fontFamily: fonts.body,
+    fontSize: 12.5,
+    lineHeight: 18,
+    color: colors.danger,
+    marginTop: spacing.sm,
+  },
   weightStack: { gap: spacing.sm, marginBottom: spacing.xs },
   weightRow: {
     flexDirection: 'row',

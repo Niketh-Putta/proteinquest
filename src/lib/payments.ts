@@ -1,5 +1,12 @@
 import { Platform } from 'react-native';
 
+import {
+  checkProEntitlement,
+  getRevenueCatPlans,
+  isRevenueCatConfigured,
+  purchasePlan,
+  restorePurchases,
+} from './revenuecat';
 import { supabase } from './supabase';
 
 export interface PaymentPlan {
@@ -17,6 +24,7 @@ export interface PaymentProvider {
     planId: string,
     opts?: { userId?: string; email?: string },
   ): Promise<boolean>;
+  restore?(): Promise<boolean>;
 }
 
 export const PLANS: PaymentPlan[] = [
@@ -24,7 +32,7 @@ export const PLANS: PaymentPlan[] = [
     id: 'pro_weekly',
     title: 'Weekly',
     price: '\u00A36.99/wk',
-    caption: 'Flexible - cancel anytime',
+    caption: 'Flexible — cancel anytime',
   },
   {
     id: 'pro_yearly',
@@ -33,6 +41,8 @@ export const PLANS: PaymentPlan[] = [
     caption: 'Save 92% vs weekly',
   },
 ];
+
+export { FREE_DAILY_SCANS } from './paywall-gate';
 
 const stripeEnabled = process.env.EXPO_PUBLIC_STRIPE_ENABLED === 'true';
 
@@ -65,6 +75,37 @@ const stripeProvider: PaymentProvider = {
   },
 };
 
+const revenueCatProvider: PaymentProvider = {
+  name: 'revenuecat',
+  isConfigured: isRevenueCatConfigured(),
+  plans: PLANS,
+  async purchase(planId: string) {
+    return purchasePlan(planId);
+  },
+  async restore() {
+    return restorePurchases();
+  },
+};
+
+async function loadRevenueCatPlans(): Promise<PaymentPlan[]> {
+  if (!isRevenueCatConfigured()) return PLANS;
+  try {
+    const plans = await getRevenueCatPlans();
+    return plans.map(({ id, title, price, caption }) => ({ id, title, price, caption }));
+  } catch {
+    return PLANS;
+  }
+}
+
+/** Native provider with live store prices when RevenueCat is configured. */
+export async function getNativePaymentProvider(): Promise<PaymentProvider> {
+  if (isRevenueCatConfigured()) {
+    const plans = await loadRevenueCatPlans();
+    return { ...revenueCatProvider, plans };
+  }
+  return stubProvider;
+}
+
 const stubProvider: PaymentProvider = {
   name: 'dev-stub',
   isConfigured: false,
@@ -75,6 +116,16 @@ const stubProvider: PaymentProvider = {
 };
 
 export function getPaymentProvider(): PaymentProvider {
-  if (stripeEnabled) return stripeProvider;
+  if (Platform.OS === 'web') {
+    if (stripeEnabled) return stripeProvider;
+    return stubProvider;
+  }
+  if (isRevenueCatConfigured()) return revenueCatProvider;
   return stubProvider;
+}
+
+/** Sync RevenueCat entitlement → local profile flag (client-side; webhooks are authoritative in prod). */
+export async function syncPremiumFromRevenueCat(): Promise<boolean> {
+  if (!isRevenueCatConfigured()) return false;
+  return checkProEntitlement();
 }

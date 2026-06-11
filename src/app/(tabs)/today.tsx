@@ -17,14 +17,16 @@ import { CharacterCard } from '@/components/CharacterCard';
 import { DailyDragonPicker } from '@/components/DailyDragonPicker';
 import { PageCanvas } from '@/components/PageCanvas';
 import { ProgressRing } from '@/components/ProgressRing';
-import { deleteLog, fetchLogsForDate } from '@/lib/api';
+import { deleteLog, fetchLogsForDate, countTodayPhotoScans } from '@/lib/api';
 import { applyDeleteLogToCharacter, dragonById, isDailyDragonLockedForToday } from '@/lib/character';
 import { confirmDestructive } from '@/lib/confirm';
 import { flexFill, flexScroll, useLayout, useTabBarScrollInset } from '@/lib/layout';
+import { isPro, remainingFreeScans } from '@/lib/paywall-gate';
 import { todayISODate } from '@/lib/protein';
 import { useSession } from '@/lib/session';
 import type { ProteinLog } from '@/lib/types';
-import { colors, fonts, spacing } from '@/theme';
+import { xpSnapshot } from '@/lib/xp';
+import { colors, fonts, noTextCaret, pressableWeb, spacing } from '@/theme';
 
 export default function TodayScreen() {
   const {
@@ -42,6 +44,7 @@ export default function TodayScreen() {
   const [logs, setLogs] = useState<ProteinLog[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [scansLeft, setScansLeft] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -55,6 +58,18 @@ export default function TodayScreen() {
     useCallback(() => {
       load();
     }, [load]),
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      if (isPro(profile)) {
+        setScansLeft(null);
+        return;
+      }
+      countTodayPhotoScans()
+        .then((used) => setScansLeft(remainingFreeScans(used)))
+        .catch(() => setScansLeft(null));
+    }, [profile?.is_premium]),
   );
 
   const consumed = logs.reduce((sum, l) => sum + Number(l.protein_g), 0);
@@ -130,6 +145,7 @@ export default function TodayScreen() {
     .toUpperCase();
 
   function renderHeader() {
+    const snapshot = xpSnapshot(profile);
     return (
       <View>
         <View style={styles.header}>
@@ -138,12 +154,36 @@ export default function TodayScreen() {
             <Text style={[styles.title, { fontSize: titleSize }]}>Today</Text>
           </View>
           <Pressable
+            onPress={() => router.push('/league')}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={`Level ${snapshot.level}, ${snapshot.rank.label}. Open leaderboard`}
+            style={[styles.levelPill, pressableWeb]}>
+            <Text selectable={false} style={styles.levelPillText}>
+              LV {snapshot.level}
+            </Text>
+            <View style={styles.levelPillTrack}>
+              <View style={[styles.levelPillFill, { width: `${snapshot.levelPct * 100}%` }]} />
+            </View>
+          </Pressable>
+          <Pressable
             onPress={() => router.push('/settings')}
             hitSlop={12}
             style={styles.gearBtn}>
             <Ionicons name="options-outline" size={20} color={colors.textSecondary} />
           </Pressable>
         </View>
+
+        {!isPro(profile) && scansLeft !== null ? (
+          <Pressable onPress={() => router.push('/paywall')} style={styles.scansPill}>
+            <Ionicons name="sparkles" size={14} color={colors.accent} />
+            <Text style={styles.scansPillText}>
+              {scansLeft > 0
+                ? `${scansLeft} free scan${scansLeft === 1 ? '' : 's'} left today`
+                : 'Out of free scans — go Pro'}
+            </Text>
+          </Pressable>
+        ) : null}
 
         {todayDragon ? (
           <View style={[styles.dailyBanner, { borderColor: todayDragon.accent }]}>
@@ -344,6 +384,55 @@ const styles = StyleSheet.create({
     height: 44,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  levelPill: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    minHeight: 44,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.hairlineBright,
+    backgroundColor: colors.surface,
+    marginTop: 2,
+  },
+  levelPillText: {
+    ...noTextCaret,
+    fontFamily: fonts.monoBold,
+    fontSize: 10,
+    letterSpacing: 1.2,
+    color: colors.text,
+  },
+  levelPillTrack: {
+    width: 36,
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: colors.ringTrack,
+    overflow: 'hidden',
+  },
+  levelPillFill: {
+    height: '100%',
+    backgroundColor: colors.accent,
+  },
+  scansPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 6,
+    marginTop: spacing.sm,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    backgroundColor: colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.hairlineBright,
+  },
+  scansPillText: {
+    fontFamily: fonts.body,
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.textSecondary,
   },
   dailyBanner: {
     flexDirection: 'row',

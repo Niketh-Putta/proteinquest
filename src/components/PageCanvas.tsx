@@ -17,7 +17,7 @@ export function PageCanvas({ children, style }: Props) {
   return (
     <View style={[styles.root, style]}>
       {showMargins ? (
-        <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+        <View style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]}>
           <View style={styles.marginRow}>
             <View style={styles.marginPanel} />
             <View style={{ width: contentMaxWidth }} />

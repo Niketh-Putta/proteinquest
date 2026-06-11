@@ -31,12 +31,14 @@ import { Button } from '@/components/Button';
 import { Celebration } from '@/components/Celebration';
 import {
   analyzeFoodPhoto,
+  countTodayPhotoScans,
   fetchLogsForDate,
   insertLog,
   uploadFoodPhoto,
 } from '@/lib/api';
 import { applyLogToCharacter, isDailyDragonLockedForToday } from '@/lib/character';
 import { useLayout } from '@/lib/layout';
+import { canScan } from '@/lib/paywall-gate';
 import { todayISODate } from '@/lib/protein';
 import { useSession } from '@/lib/session';
 import type { Analysis } from '@/lib/types';
@@ -172,6 +174,13 @@ export default function ScanScreen() {
     if (profile && !isDailyDragonLockedForToday(profile, todayISODate())) {
       router.replace('/(tabs)/today');
       return;
+    }
+    if (profile && !profile.is_premium) {
+      const used = await countTodayPhotoScans();
+      if (!canScan(profile, used)) {
+        router.push('/paywall');
+        return;
+      }
     }
     setPhase('analyzing');
     setImageUri(uri);
@@ -320,7 +329,7 @@ export default function ScanScreen() {
           )}
 
           {cameraReady ? (
-            <View pointerEvents="none" style={styles.frame}>
+            <View style={[styles.frame, { pointerEvents: 'none' }]}>
               {(['tl', 'tr', 'bl', 'br'] as const).map((corner) => (
                 <View key={corner} style={[styles.corner, styles[corner]]} />
               ))}

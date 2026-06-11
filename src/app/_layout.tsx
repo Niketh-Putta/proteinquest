@@ -55,7 +55,15 @@ export default function RootLayout() {
           <Stack.Screen name="index" />
           <Stack.Screen name="intro" />
           <Stack.Screen name="onboarding" />
+          <Stack.Screen
+            name="paywall"
+            options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+          />
           <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
+          <Stack.Screen
+            name="league"
+            options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+          />
           <Stack.Screen
             name="scan"
             options={{ presentation: 'fullScreenModal', animation: 'slide_from_bottom' }}

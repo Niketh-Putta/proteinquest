@@ -14,6 +14,8 @@ import {
   resetAnonymousSignupAttempt,
 } from './auth';
 import { fetchProfile, isStaleProfileSaveError, upsertProfile } from './api';
+import { syncPremiumFromRevenueCat } from './payments';
+import { initRevenueCat } from './revenuecat';
 import { supabase } from './supabase';
 import type { Profile } from './types';
 
@@ -127,6 +129,30 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     if (params.checkout !== 'success' || !session?.user.id) return;
     refreshProfile(session.user.id).catch(() => {});
   }, [params.checkout, session?.user.id, refreshProfile]);
+
+  useEffect(() => {
+    const userId = session?.user.id;
+    if (!userId) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        await initRevenueCat(userId);
+        const isPro = await syncPremiumFromRevenueCat();
+        if (cancelled || !isPro) return;
+        const current = await loadProfile(userId);
+        if (cancelled || current?.is_premium) return;
+        await upsertProfile({ id: userId, is_premium: true, paywall_dismissed: true });
+        if (!cancelled) await refreshProfile(userId);
+      } catch (e) {
+        console.warn('[RevenueCat] init/sync skipped:', e);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.user.id, refreshProfile]);
 
   const saveProfile = useCallback(async (updates: Partial<Profile>) => {
     const nextSession = await ensureAuthSession();

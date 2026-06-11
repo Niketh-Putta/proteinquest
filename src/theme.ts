@@ -73,25 +73,22 @@ export const type = {
   stat: { fontFamily: fonts.display, fontSize: 24, lineHeight: 30, color: colors.text },
 } as const;
 
-export const shadowAccent = {
-  shadowColor: colors.accent,
-  shadowOpacity: 0.32,
-  shadowRadius: 22,
-  shadowOffset: { width: 0, height: 6 },
+// RN 0.76+ / react-native-web support boxShadow directly; shadow* props are deprecated on web.
+export const shadowAccent: ViewStyle = {
+  boxShadow: '0 6px 22px rgba(255, 122, 89, 0.32)',
   elevation: 12,
-} as const;
+};
 
-export const shadowCard = {
-  shadowColor: '#000',
-  shadowOpacity: 0.35,
-  shadowRadius: 16,
-  shadowOffset: { width: 0, height: 4 },
+export const shadowCard: ViewStyle = {
+  boxShadow: '0 4px 16px rgba(0, 0, 0, 0.35)',
   elevation: 8,
-} as const;
+};
 
-/** Label Text inside Pressables — no web caret or text selection. */
+/** Label Text inside Pressables — no web caret, text selection, or pointer interception. */
 export const noTextCaret: TextStyle =
-  Platform.OS === 'web' ? ({ userSelect: 'none', cursor: 'default' } as TextStyle) : {};
+  Platform.OS === 'web'
+    ? ({ userSelect: 'none', cursor: 'default', pointerEvents: 'none' } as unknown as TextStyle)
+    : {};
 
 /** Tappable control chrome on web — pointer cursor, no focus ring. */
 export const pressableWeb: ViewStyle =

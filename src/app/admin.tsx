@@ -145,12 +145,12 @@ export default function AdminScreen() {
           <>
             <View style={styles.toolbar}>
               <Pressable onPress={() => void loadStats()} disabled={loading} style={pressableWeb}>
-                <Text selectable={false} pointerEvents="none" style={styles.link}>
+                <Text selectable={false} style={styles.link}>
                   {loading ? 'Refreshing…' : 'Refresh'}
                 </Text>
               </Pressable>
               <Pressable onPress={handleSignOut} style={pressableWeb}>
-                <Text selectable={false} pointerEvents="none" style={styles.linkMuted}>
+                <Text selectable={false} style={styles.linkMuted}>
                   Sign out
                 </Text>
               </Pressable>

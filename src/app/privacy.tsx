@@ -103,6 +103,33 @@ export default function PrivacyScreen() {
           </Paragraph>
         </Section>
 
+        <Section title="Subscriptions and payments">
+          <Paragraph>
+            ProteinQuest Pro is an optional subscription that unlocks unlimited AI meal scans and
+            full trends history. Free users receive a limited number of AI scans per day without
+            a subscription.
+          </Paragraph>
+          <Bullet>
+            Mobile (iOS/Android): purchases are processed by Apple or Google via RevenueCat. We
+            receive subscription status and an anonymous app user ID — not your full payment card
+            details.
+          </Bullet>
+          <Bullet>
+            Web: optional Stripe Checkout may be used when enabled. Stripe processes payment; we
+            receive confirmation to unlock Pro on your account.
+          </Bullet>
+          <Bullet>
+            Subscription data stored: whether you have an active Pro entitlement, linked to your
+            anonymous account ID.
+          </Bullet>
+          <Paragraph>
+            Subscriptions auto-renew unless cancelled at least 24 hours before the end of the
+            current billing period. You can manage or cancel anytime in your device subscription
+            settings (App Store or Google Play) or by contacting us. Refunds are handled by Apple
+            or Google according to their policies.
+          </Paragraph>
+        </Section>
+
         <Section title="How we store data">
           <Paragraph>
             Data is stored securely with Supabase (hosted PostgreSQL database and object storage).

@@ -1,0 +1,14 @@
+{
+  "generatedAt": "2026-06-11T06:07:19.212Z",
+  "appUrl": "https://proteinquest.vercel.app",
+  "viewport": {
+    "width": 1080,
+    "height": 1920
+  },
+  "files": [
+    "store/screenshots/01-today.png",
+    "store/screenshots/02-trends.png",
+    "store/screenshots/03-intro.png"
+  ],
+  "notes": "Upload portrait PNGs to Play Console → Store listing → Phone screenshots"
+}

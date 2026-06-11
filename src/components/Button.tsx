@@ -40,7 +40,6 @@ export function Button({ title, onPress, variant = 'primary', disabled, loading,
       ) : (
         <Text
           selectable={false}
-          pointerEvents="none"
           style={[
             styles.label,
             { color: isPrimary ? colors.onAccent : variant === 'ghost' ? colors.textSecondary : colors.text },

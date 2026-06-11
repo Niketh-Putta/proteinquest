@@ -2,6 +2,7 @@ import { Redirect } from 'expo-router';
 import React from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
 
+import { shouldShowPostOnboardingPaywall } from '@/lib/paywall-gate';
 import { useSession } from '@/lib/session';
 import { colors, fonts, spacing } from '@/theme';
 
@@ -37,6 +38,10 @@ export default function Index() {
 
   if (!profile?.onboarded) {
     return <Redirect href="/onboarding" />;
+  }
+
+  if (shouldShowPostOnboardingPaywall(profile)) {
+    return <Redirect href="/paywall" />;
   }
 
   return <Redirect href="/(tabs)/today" />;
