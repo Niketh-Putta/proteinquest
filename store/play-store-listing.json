@@ -1,0 +1,70 @@
+{
+  "appName": "ProteinQuest",
+  "packageName": "com.proteinquest.app",
+  "category": "Health & Fitness",
+  "privacyPolicyUrl": "https://proteinquest.vercel.app/privacy",
+  "contactEmail": "hello@proteinquest.app",
+  "shortDescription": "Snap meals, track protein, evolve your dragon. AI-powered daily protein goals.",
+  "fullDescription": "ProteinQuest turns hitting your protein goal into a daily game you actually want to play.\n\nSnap any meal with your camera. AI estimates the protein in seconds — no manual logging, no barcode hunting, no guesswork. Set your personalized daily target once, then build the habit one scan at a time.\n\nHOW IT WORKS\n• Scan meals with your camera or photo library\n• Get instant AI protein estimates for each dish\n• Track your progress toward one clear daily goal\n• Review your food log and trends over time\n\nYOUR DAILY DRAGON\nEvery morning, pick Ember, Frost, or Moss — your dragon for the day. Hit your protein goal to earn XP and evolve through five forms. Streaks, levels, and unlocks keep you coming back without feeling like a chore.\n\nBUILT FOR REAL LIFE\nWhether you're bulking, cutting, or just trying to eat enough protein, ProteinQuest focuses on the one number that matters most. Clean dark UI, fast scans, and honest estimates — designed for gym-goers, meal preppers, and anyone tired of complicated trackers.\n\nFEATURES\n• AI meal scanning from camera or gallery\n• Personalized protein goal based on your stats\n• Daily food log with protein and calorie estimates\n• Trends view to see consistency over time\n• Dragon companion with XP, levels, and evolution\n• Anonymous sign-in — start tracking in seconds\n\nProteinQuest provides nutritional estimates for informational purposes only. It is not medical advice. Always consult a qualified professional for dietary or health decisions.\n\nDownload ProteinQuest and make your daily protein target the easiest win of your day.",
+  "tags": [
+    "protein tracker",
+    "meal scanner",
+    "fitness",
+    "nutrition",
+    "macro tracking",
+    "AI food analysis",
+    "gym",
+    "muscle building"
+  ],
+  "contentRating": {
+    "questionnaireGuidance": {
+      "violence": "None",
+      "sexualContent": "None",
+      "language": "None",
+      "controlledSubstances": "None — app tracks nutrition only; no promotion of drugs or alcohol",
+      "userGeneratedContent": "None shared publicly — meal logs are private to the user",
+      "locationSharing": "No location collected",
+      "personalInfoCollection": "Yes — anonymous account, profile stats, meal logs, optional meal photos",
+      "healthAppDisclaimer": "Nutritional estimates only; not a medical device",
+      "targetAudience": "General audience / 13+ recommended",
+      "expectedRating": "Everyone or Teen (IARC typically rates nutrition trackers Everyone)"
+    }
+  },
+  "storeAssets": {
+    "required": {
+      "appIcon": {
+        "size": "512x512",
+        "path": "assets/images/icon.png",
+        "status": "ready"
+      },
+      "featureGraphic": {
+        "size": "1024x500",
+        "status": "needed",
+        "notes": "Create a banner with app name, tagline, and dragon artwork"
+      },
+      "phoneScreenshots": {
+        "count": "2-8",
+        "aspectRatio": "9:16 recommended (1080x1920 or 1440x2560)",
+        "status": "partial",
+        "existing": [
+          "demo/today-scroll-mobile-390.png",
+          "demo/today-scroll-wide-960.png",
+          "demo/today-scroll-desktop-1280.png"
+        ],
+        "notes": "Run: node demo/generate-play-screenshots.mjs for Play Store-sized captures"
+      }
+    }
+  },
+  "playConsoleChecklist": [
+    "Create app in Google Play Console with package com.proteinquest.app",
+    "Complete store listing (copy fields from this file)",
+    "Upload 512x512 icon and 1024x500 feature graphic",
+    "Upload at least 2 phone screenshots (portrait 9:16)",
+    "Set privacy policy URL to https://proteinquest.vercel.app/privacy",
+    "Complete Data safety form: camera, photos, account/profile data, cloud storage via Supabase",
+    "Complete content rating questionnaire (see contentRating.questionnaireGuidance)",
+    "Upload AAB from: eas build --platform android --profile production",
+    "Create internal testing track first, then promote to production",
+    "Fill in target countries, pricing (free), and app access declarations"
+  ]
+}

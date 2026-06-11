@@ -54,7 +54,9 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "deploy:prod": "node scripts/deploy-prod.mjs"
+    "deploy:prod": "node scripts/deploy-prod.mjs",
+    "build:android": "eas build --platform android --profile production",
+    "play-store:prep": "node scripts/play-store-prep.mjs"
   },
   "private": true
 }
