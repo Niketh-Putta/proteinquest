@@ -44,6 +44,7 @@
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
+    "eas-cli": "^20.1.0",
     "playwright": "^1.60.0",
     "typescript": "~6.0.3"
   },
