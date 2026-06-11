@@ -41,12 +41,6 @@ jobs:
       - name: Deploy to Vercel production
         run: |
           set -euo pipefail
-          DEPLOY_JSON="$(npx vercel deploy --prod --yes --prebuilt --token "${{ secrets.VERCEL_TOKEN }}" --json | tail -1)"
-          DEPLOY_URL="$(node -e "const j=JSON.parse(process.argv[1]); console.log(j.url || j.preview?.url || '')" "$DEPLOY_JSON")"
-          if [ -z "$DEPLOY_URL" ]; then
-            echo "Could not parse deployment URL from Vercel output"
-            exit 1
-          fi
-          echo "Deployed to $DEPLOY_URL"
-          npx vercel alias set "$DEPLOY_URL" proteinquest.vercel.app --token "${{ secrets.VERCEL_TOKEN }}" --scope team_RHLmvpeNG6AR3YddwMwPy6mq
+          npx vercel deploy --prod --yes --prebuilt --token "${{ secrets.VERCEL_TOKEN }}"
+          npx vercel alias set https://proteinlens.vercel.app proteinquest.vercel.app --token "${{ secrets.VERCEL_TOKEN }}" --scope team_RHLmvpeNG6AR3YddwMwPy6mq
           echo "Production: https://proteinquest.vercel.app"
