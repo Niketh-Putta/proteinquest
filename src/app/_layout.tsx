@@ -65,6 +65,7 @@ export default function RootLayout() {
             options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
           />
           <Stack.Screen name="admin" options={{ animation: 'fade' }} />
+          <Stack.Screen name="privacy" options={{ animation: 'fade' }} />
         </Stack>
       </SessionProvider>
     </GestureHandlerRootView>
