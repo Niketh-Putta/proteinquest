@@ -1,5 +1,6 @@
 import type { Session } from '@supabase/supabase-js';
 import { useGlobalSearchParams } from 'expo-router';
+import { Platform } from 'react-native';
 import React, {
   createContext,
   useCallback,
@@ -131,23 +132,39 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     refreshProfile(session.user.id).catch(() => {});
   }, [params.checkout, session?.user.id, refreshProfile]);
 
+  // Capture the invite code as soon as it appears in the URL. Root redirects
+  // (/?invite=X -> /intro or /today) can strip the query before the session is
+  // ready, so we hold the code in state until we can act on it.
+  const [pendingInvite, setPendingInvite] = useState<string | null>(null);
+
   useEffect(() => {
-    const invite = Array.isArray(params.invite) ? params.invite[0] : params.invite;
-    if (!invite || !session?.user.id) return;
+    let invite = Array.isArray(params.invite) ? params.invite[0] : params.invite;
+    if (!invite && Platform.OS === 'web' && typeof window !== 'undefined') {
+      invite = new URLSearchParams(window.location.search).get('invite') ?? undefined;
+    }
+    if (invite) setPendingInvite(invite);
+  }, [params.invite]);
+
+  useEffect(() => {
+    if (!pendingInvite || !session?.user.id) return;
 
     let cancelled = false;
-    acceptFriendInvite(invite)
+    acceptFriendInvite(pendingInvite)
       .then(() => {
-        if (!cancelled) refreshProfile(session.user.id).catch(() => {});
+        if (cancelled) return;
+        setPendingInvite(null);
+        refreshProfile(session.user.id).catch(() => {});
       })
       .catch((e) => {
         if (__DEV__) console.warn('[friends] invite accept skipped:', e);
+        // Clear self-invites / bad codes so they don't retry forever.
+        if (!cancelled) setPendingInvite(null);
       });
 
     return () => {
       cancelled = true;
     };
-  }, [params.invite, session?.user.id, refreshProfile]);
+  }, [pendingInvite, session?.user.id, refreshProfile]);
 
   useEffect(() => {
     const userId = session?.user.id;

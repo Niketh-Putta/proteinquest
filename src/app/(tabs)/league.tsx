@@ -57,7 +57,8 @@ function avatarColor(handle: string): string {
 }
 
 function handleLabel(entry: LeaderboardEntry): string {
-  return entry.isYou ? 'you' : `@${entry.handle}`;
+  if (entry.isYou) return entry.displayName && entry.displayName !== 'You' ? entry.displayName : 'You';
+  return entry.displayName;
 }
 
 function Avatar({
@@ -233,6 +234,7 @@ export default function LeagueTab() {
   const [rows, setRows] = useState<FriendLeaderboardRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [inviteStatus, setInviteStatus] = useState<string | null>(null);
+  const [inviteLink, setInviteLink] = useState<string | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -271,9 +273,12 @@ export default function LeagueTab() {
         ? window.location.origin
         : 'https://proteinquest.vercel.app';
     const url = inviteUrl(profile, origin);
-    const message = url
-      ? `Join my ProteinQuest league and try to out-log me: ${url}`
-      : 'Join me on ProteinQuest and climb the protein league.';
+    if (!url) {
+      setInviteStatus('Preparing your invite link — try again in a moment.');
+      setTimeout(() => setInviteStatus(null), 2400);
+      return;
+    }
+    const message = `Join my ProteinQuest league and try to out-log me: ${url}`;
     try {
       if (Platform.OS === 'web') {
         const nav =
@@ -283,11 +288,16 @@ export default function LeagueTab() {
                 clipboard?: { writeText?: (text: string) => Promise<void> };
               })
             : undefined;
-        if (nav?.share) await nav.share({ title: 'ProteinQuest', text: message });
-        else if (nav?.clipboard?.writeText && url) {
+        // Always reveal the link so the user can copy/send it manually too.
+        setInviteLink(url);
+        if (nav?.clipboard?.writeText) {
           await nav.clipboard.writeText(url);
-          setInviteStatus('Invite link copied.');
-          setTimeout(() => setInviteStatus(null), 1800);
+          setInviteStatus('Link copied — send it to a friend. They auto-join when they open it.');
+        } else {
+          setInviteStatus('Copy this link and send it to a friend.');
+        }
+        if (nav?.share) {
+          nav.share({ title: 'ProteinQuest', text: message }).catch(() => {});
         }
       } else {
         await Share.share({ message });
@@ -340,6 +350,28 @@ export default function LeagueTab() {
             </Pressable>
           </View>
           {inviteStatus ? <Text style={styles.inviteStatus}>{inviteStatus}</Text> : null}
+          {inviteLink ? (
+            <Pressable
+              onPress={async () => {
+                if (
+                  Platform.OS === 'web' &&
+                  typeof navigator !== 'undefined' &&
+                  (navigator as unknown as { clipboard?: { writeText?: (t: string) => Promise<void> } })
+                    .clipboard?.writeText
+                ) {
+                  await (
+                    navigator as unknown as { clipboard: { writeText: (t: string) => Promise<void> } }
+                  ).clipboard.writeText(inviteLink);
+                  setInviteStatus('Link copied — send it to a friend. They auto-join when they open it.');
+                }
+              }}
+              style={[styles.inviteLinkRow, pressableWeb]}>
+              <Text style={styles.inviteLinkText} numberOfLines={1} selectable>
+                {inviteLink}
+              </Text>
+              <Ionicons name="copy-outline" size={15} color={colors.accent} />
+            </Pressable>
+          ) : null}
 
           <View style={styles.podium}>
             <PodiumColumn entry={podium[1]} place={2} youArt={youDragonArt} />
@@ -433,7 +465,25 @@ const styles = StyleSheet.create({
     color: colors.accent,
     textAlign: 'right',
     marginTop: -spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  inviteLinkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: RED.edge,
     marginBottom: spacing.md,
+  },
+  inviteLinkText: {
+    flex: 1,
+    fontFamily: fonts.mono,
+    fontSize: 11,
+    color: colors.textSecondary,
   },
 
   // Podium
