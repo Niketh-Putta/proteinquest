@@ -42,7 +42,7 @@ import { canScan } from '@/lib/paywall-gate';
 import { todayISODate } from '@/lib/protein';
 import { useSession } from '@/lib/session';
 import type { Analysis } from '@/lib/types';
-import { colors, fonts, spacing } from '@/theme';
+import { colors, fonts, spacing, textInputWeb } from '@/theme';
 
 type Phase = 'camera' | 'analyzing' | 'result';
 
@@ -439,7 +439,7 @@ export default function ScanScreen() {
             <Text style={styles.totalLabel}>TOTAL PROTEIN</Text>
             <View style={styles.totalInputRow}>
               <TextInput
-                style={styles.totalInput}
+                style={[styles.totalInput, textInputWeb]}
                 value={proteinOverride}
                 onChangeText={(t) => setProteinOverride(t.replace(/[^0-9.]/g, ''))}
                 keyboardType="numeric"

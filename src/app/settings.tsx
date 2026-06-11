@@ -3,7 +3,7 @@ import { Image } from 'expo-image';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -26,7 +26,7 @@ import { todayISODate } from '@/lib/protein';
 import { useSession } from '@/lib/session';
 import type { Profile } from '@/lib/types';
 import { setPreferredName } from '@/lib/xp';
-import { colors, fonts, noTextCaret, spacing } from '@/theme';
+import { colors, fonts, spacing, textInputWeb } from '@/theme';
 
 function goHome() {
   if (router.canGoBack()) router.back();
@@ -42,11 +42,17 @@ export default function SettingsScreen() {
   const [leagueName, setLeagueName] = useState('');
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const nameHydrated = useRef(false);
 
   useEffect(() => {
-    if (profile?.display_name) setLeagueName(profile.display_name);
+    if (!profile || nameHydrated.current) return;
+    setLeagueName(profile.display_name ?? '');
+    nameHydrated.current = true;
+  }, [profile]);
+
+  useEffect(() => {
     setAvatarUrl(profile?.avatar_url ?? null);
-  }, [profile?.display_name, profile?.avatar_url]);
+  }, [profile?.avatar_url]);
 
   async function commitName() {
     const next = leagueName.trim().slice(0, 24);
@@ -195,7 +201,8 @@ export default function SettingsScreen() {
               maxLength={24}
               autoCapitalize="words"
               autoCorrect={false}
-              style={[styles.nameInput, noTextCaret]}
+              editable
+              style={[styles.nameInput, textInputWeb]}
             />
             <Pressable onPress={() => router.push('/league')} style={styles.leagueLink}>
               <View style={{ flex: 1 }}>

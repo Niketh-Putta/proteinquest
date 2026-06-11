@@ -34,7 +34,7 @@ import { Button } from '@/components/Button';
 import { useLayout, usePinnedFooterGap } from '@/lib/layout';
 import { useSession } from '@/lib/session';
 import { setPreferredName } from '@/lib/xp';
-import { colors, fonts, noTextCaret, pressableWeb, spacing } from '@/theme';
+import { colors, fonts, noTextCaret, pressableWeb, spacing, textInputWeb } from '@/theme';
 
 const HERO_ART = require('@/assets/character/dragons/fire-5.png');
 const EMBERS_VIDEO = require('@/assets/video/embers.mp4');
@@ -393,7 +393,7 @@ export default function IntroScreen() {
                   What should{'\n'}we call you?
                 </Text>
                 <TextInput
-                  style={[styles.nameInput, isCompact && styles.nameInputCompact]}
+                  style={[styles.nameInput, isCompact && styles.nameInputCompact, textInputWeb]}
                   value={name}
                   onChangeText={setName}
                   placeholder="Your name"

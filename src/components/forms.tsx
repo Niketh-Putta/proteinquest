@@ -2,7 +2,7 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { useLayout } from '@/lib/layout';
-import { colors, fonts, noTextCaret, pressableWeb, spacing, type } from '@/theme';
+import { colors, fonts, noTextCaret, pressableWeb, spacing, textInputWeb, type } from '@/theme';
 
 export function FieldLabel({ children }: { children: React.ReactNode }) {
   const { isNarrow } = useLayout();
@@ -33,7 +33,7 @@ export function TextField({
   return (
     <View style={styles.textFieldWrap}>
       <TextInput
-        style={styles.textField}
+        style={[styles.textField, textInputWeb]}
         value={value}
         onChangeText={onChange}
         placeholder={placeholder}
@@ -67,7 +67,7 @@ export function NumberField({
   return (
     <View style={[styles.inputWrap, { minWidth: 0 }]}>
       <TextInput
-        style={[styles.input, small && styles.inputCompact]}
+        style={[styles.input, small && styles.inputCompact, textInputWeb]}
         value={value}
         onChangeText={(t) => onChange(t.replace(/[^0-9.]/g, ''))}
         placeholder={placeholder}

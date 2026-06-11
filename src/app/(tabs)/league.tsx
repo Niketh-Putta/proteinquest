@@ -322,7 +322,7 @@ export default function LeagueTab() {
                   ? 'Loading your league…'
                   : friendCount > 0
                     ? `${friendCount} friends added`
-                    : '2 bot rivals active'}
+                    : 'Invite friends to compete'}
               </Text>
             </View>
             <Pressable
@@ -346,14 +346,6 @@ export default function LeagueTab() {
             <PodiumColumn entry={podium[0]} place={1} youArt={youDragonArt} />
             <PodiumColumn entry={podium[2]} place={3} youArt={youDragonArt} />
           </View>
-
-          {!loading && friendCount === 0 ? (
-            <View style={styles.emptyState}>
-              <View style={styles.emptyRule} />
-              <Text style={styles.emptyTitle}>Bot rivals are holding the board.</Text>
-              <Text style={styles.emptyText}>Invite friends to replace them with real competition.</Text>
-            </View>
-          ) : null}
 
           <View style={styles.list}>
             {rest.map((entry, i) => (
@@ -590,30 +582,6 @@ const styles = StyleSheet.create({
   },
 
   // Ranked list
-  emptyState: {
-    alignItems: 'center',
-    marginTop: -spacing.md,
-    marginBottom: spacing.xl,
-  },
-  emptyRule: {
-    height: StyleSheet.hairlineWidth,
-    width: '100%',
-    backgroundColor: colors.hairline,
-    marginBottom: spacing.lg,
-  },
-  emptyTitle: {
-    fontFamily: fonts.displayMedium,
-    fontSize: 14,
-    color: colors.text,
-    textAlign: 'center',
-  },
-  emptyText: {
-    fontFamily: fonts.body,
-    fontSize: 12,
-    color: colors.textSecondary,
-    marginTop: 4,
-    lineHeight: 18,
-  },
   list: {
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.hairline,

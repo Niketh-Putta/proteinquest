@@ -84,10 +84,22 @@ export const shadowCard: ViewStyle = {
   elevation: 8,
 };
 
-/** Label Text inside Pressables — no web caret, text selection, or pointer interception. */
+/** Label Text inside Pressables — no text selection; must NOT be used on TextInput. */
 export const noTextCaret: TextStyle =
   Platform.OS === 'web'
     ? ({ userSelect: 'none', cursor: 'default', pointerEvents: 'none' } as unknown as TextStyle)
+    : {};
+
+/** Web styles for editable TextInput fields — keeps them clickable while hiding the caret. */
+export const textInputWeb: TextStyle =
+  Platform.OS === 'web'
+    ? ({
+        outlineStyle: 'none',
+        cursor: 'text',
+        pointerEvents: 'auto',
+        userSelect: 'text',
+        caretColor: 'transparent',
+      } as unknown as TextStyle)
     : {};
 
 /** Tappable control chrome on web — pointer cursor, no focus ring. */
