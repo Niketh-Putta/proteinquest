@@ -42,6 +42,9 @@ export default function SettingsScreen() {
   const [leagueName, setLeagueName] = useState('');
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [nameFocused, setNameFocused] = useState(false);
+  const [nameSaved, setNameSaved] = useState(false);
+  const nameInputRef = useRef<TextInput>(null);
   const nameHydrated = useRef(false);
 
   useEffect(() => {
@@ -54,12 +57,17 @@ export default function SettingsScreen() {
     setAvatarUrl(profile?.avatar_url ?? null);
   }, [profile?.avatar_url]);
 
+  const nameDirty = leagueName.trim() !== (profile?.display_name ?? '').trim();
+
   async function commitName() {
+    setNameFocused(false);
     const next = leagueName.trim().slice(0, 24);
     setPreferredName(next).catch(() => {});
     if (next && next !== (profile?.display_name ?? '')) {
       try {
         await saveProfile({ display_name: next });
+        setNameSaved(true);
+        setTimeout(() => setNameSaved(false), 1600);
       } catch {
         /* name is cosmetic; ignore transient save errors */
       }
@@ -190,20 +198,36 @@ export default function SettingsScreen() {
 
           <View style={styles.section}>
             <Text style={styles.sectionLabel}>LEAGUE NAME</Text>
-            <TextInput
-              value={leagueName}
-              onChangeText={setLeagueName}
-              onBlur={commitName}
-              onSubmitEditing={commitName}
-              returnKeyType="done"
-              placeholder="How you appear on the board"
-              placeholderTextColor={colors.textTertiary}
-              maxLength={24}
-              autoCapitalize="words"
-              autoCorrect={false}
-              editable
-              style={[styles.nameInput, textInputWeb]}
-            />
+            <Pressable
+              onPress={() => nameInputRef.current?.focus()}
+              style={[styles.nameField, nameFocused && styles.nameFieldFocused]}>
+              <TextInput
+                ref={nameInputRef}
+                value={leagueName}
+                onChangeText={setLeagueName}
+                onFocus={() => setNameFocused(true)}
+                onBlur={commitName}
+                onSubmitEditing={commitName}
+                returnKeyType="done"
+                placeholder="How you appear on the board"
+                placeholderTextColor={colors.textTertiary}
+                maxLength={24}
+                autoCapitalize="words"
+                autoCorrect={false}
+                editable
+                style={[styles.nameInput, textInputWeb]}
+              />
+              {nameDirty ? (
+                <Pressable
+                  onPress={commitName}
+                  hitSlop={8}
+                  style={({ pressed }) => [styles.nameSave, pressed && { opacity: 0.85 }]}>
+                  <Text style={styles.nameSaveText}>Save</Text>
+                </Pressable>
+              ) : nameSaved ? (
+                <Ionicons name="checkmark-circle" size={20} color={colors.accent} />
+              ) : null}
+            </Pressable>
             <Pressable onPress={() => router.push('/league')} style={styles.leagueLink}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.leagueLinkTitle}>Protein League</Text>
@@ -373,16 +397,36 @@ const styles = StyleSheet.create({
     marginTop: 3,
     lineHeight: 17,
   },
-  nameInput: {
-    fontFamily: fonts.displayMedium,
-    fontSize: 16,
-    color: colors.text,
+  nameField: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
     backgroundColor: colors.surface,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.hairlineBright,
     borderRadius: 10,
     paddingHorizontal: spacing.md,
     paddingVertical: 12,
+  },
+  nameFieldFocused: {
+    borderColor: colors.accent,
+  },
+  nameInput: {
+    flex: 1,
+    fontFamily: fonts.displayMedium,
+    fontSize: 16,
+    color: colors.text,
+  },
+  nameSave: {
+    backgroundColor: colors.accent,
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+  },
+  nameSaveText: {
+    fontFamily: fonts.displayMedium,
+    fontSize: 13,
+    color: colors.onAccent,
   },
   leagueLink: {
     flexDirection: 'row',

@@ -90,7 +90,7 @@ export const noTextCaret: TextStyle =
     ? ({ userSelect: 'none', cursor: 'default', pointerEvents: 'none' } as unknown as TextStyle)
     : {};
 
-/** Web styles for editable TextInput fields — keeps them clickable while hiding the caret. */
+/** Web styles for editable TextInput fields — clickable, typable, with a visible caret. */
 export const textInputWeb: TextStyle =
   Platform.OS === 'web'
     ? ({
@@ -98,7 +98,7 @@ export const textInputWeb: TextStyle =
         cursor: 'text',
         pointerEvents: 'auto',
         userSelect: 'text',
-        caretColor: 'transparent',
+        caretColor: colors.accent,
       } as unknown as TextStyle)
     : {};
 

@@ -9,7 +9,7 @@ body :not(input):not(textarea):not([contenteditable="true"]) {
   caret-color: transparent !important;
 }
 
-/* Real inputs must stay focusable and typable even with app-wide caret hiding. */
+/* Real inputs must stay fully usable: focusable, typable, with a VISIBLE caret. */
 input,
 textarea,
 [contenteditable="true"] {
@@ -17,7 +17,7 @@ textarea,
   cursor: text !important;
   user-select: text !important;
   -webkit-user-select: text !important;
-  caret-color: transparent !important;
+  caret-color: auto !important;
 }
 
 /* App chrome shouldn't feel like a selectable web page. */
