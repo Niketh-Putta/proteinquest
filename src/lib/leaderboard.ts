@@ -1,12 +1,7 @@
 import { levelForXp } from './character';
-import { rankForLevel, totalXp, type Rank } from './xp';
-import type { Profile } from './types';
-
-/**
- * Local-only leaderboard. Shaped so a Supabase `leaderboard` table
- * (id uuid, handle text, display_name text, xp int) could replace
- * MOCK_ROWS later without touching the UI.
- */
+import { supabase } from './supabase';
+import type { DragonId, DragonProgress, Profile } from './types';
+import { rankForLevel, type Rank } from './xp';
 
 export interface LeaderboardEntry {
   id: string;
@@ -19,58 +14,105 @@ export interface LeaderboardEntry {
   isYou: boolean;
 }
 
-interface SeedRow {
-  id: string;
-  handle: string;
-  displayName: string;
+export interface FriendLeaderboardRow {
+  user_id: string;
+  display_name: string | null;
+  invite_code: string | null;
   xp: number;
+  dragon_progress: Partial<Record<DragonId, DragonProgress>> | null;
+  active_dragon_id: DragonId | null;
+  daily_dragon_id: DragonId | null;
+  daily_dragon_date: string | null;
 }
 
-/** Lifetime protein logged ≈ XP (1 XP per gram). */
-const MOCK_ROWS: SeedRow[] = [
-  { id: 'm01', handle: 'lena.k', displayName: 'Lena', xp: 41280 },
-  { id: 'm02', handle: 'marcus', displayName: 'Marcus', xp: 38950 },
-  { id: 'm03', handle: 'priya.r', displayName: 'Priya', xp: 33410 },
-  { id: 'm04', handle: 'tom.h', displayName: 'Tom', xp: 27860 },
-  { id: 'm05', handle: 'aisha', displayName: 'Aisha', xp: 21540 },
-  { id: 'm06', handle: 'dan.m', displayName: 'Dan', xp: 16720 },
-  { id: 'm07', handle: 'sofia', displayName: 'Sofia', xp: 11890 },
-  { id: 'm08', handle: 'jakob', displayName: 'Jakob', xp: 8340 },
-  { id: 'm09', handle: 'em', displayName: 'Em', xp: 5120 },
-  { id: 'm10', handle: 'ryu', displayName: 'Ryu', xp: 2980 },
-  { id: 'm11', handle: 'chloe', displayName: 'Chloe', xp: 1460 },
-  { id: 'm12', handle: 'felix', displayName: 'Felix', xp: 410 },
-];
+export interface InviteAcceptResult {
+  status: 'accepted' | 'self';
+  friend_id?: string;
+  display_name?: string;
+}
 
-function toEntry(row: SeedRow, isYou: boolean): Omit<LeaderboardEntry, 'position'> {
-  const level = levelForXp(row.xp);
+function totalFriendXp(row: FriendLeaderboardRow): number {
+  const dragonTotal = Object.values(row.dragon_progress ?? {}).reduce(
+    (sum, progress) => sum + Math.max(0, Number(progress?.xp ?? 0)),
+    0,
+  );
+  return dragonTotal > 0 ? dragonTotal : Math.max(0, Number(row.xp ?? 0));
+}
+
+function handleFromName(name: string, fallback: string): string {
+  const clean = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '.')
+    .replace(/^\.+|\.+$/g, '')
+    .slice(0, 14);
+  return clean || fallback;
+}
+
+function toEntry(
+  row: FriendLeaderboardRow,
+  currentUserId: string | null | undefined,
+): Omit<LeaderboardEntry, 'position'> {
+  const isYou = row.user_id === currentUserId;
+  const displayName = row.display_name?.trim() || (isYou ? 'You' : 'ProteinQuest player');
+  const xp = totalFriendXp(row);
+  const level = levelForXp(xp);
   return {
-    id: row.id,
-    handle: row.handle,
-    displayName: row.displayName,
-    xp: row.xp,
+    id: row.user_id,
+    handle: isYou ? 'you' : handleFromName(displayName, row.user_id.slice(0, 6)),
+    displayName,
+    xp,
     level,
     rank: rankForLevel(level),
     isYou,
   };
 }
 
-/** Mock users + the real player, sorted into true rank order. */
 export function buildLeaderboard(
-  profile: Profile | null | undefined,
-  preferredName: string | null,
+  rows: FriendLeaderboardRow[],
+  currentUserId: string | null | undefined,
 ): LeaderboardEntry[] {
-  const youXp = totalXp(profile);
-  const you: SeedRow = {
-    id: profile?.id ?? 'you',
-    handle: 'you',
-    displayName: preferredName ?? 'You',
-    xp: youXp,
-  };
+  const entries = rows.map((row) => toEntry(row, currentUserId));
+  const hasYou = entries.some((entry) => entry.isYou);
+  if (!hasYou && currentUserId) {
+    entries.push(
+      toEntry(
+        {
+          user_id: currentUserId,
+          display_name: 'You',
+          invite_code: null,
+          xp: 0,
+          dragon_progress: {},
+          active_dragon_id: null,
+          daily_dragon_id: null,
+          daily_dragon_date: null,
+        },
+        currentUserId,
+      ),
+    );
+  }
+  const rowsSorted = entries;
+  rowsSorted.sort((a, b) => b.xp - a.xp);
+  return rowsSorted.map((r, i) => ({ ...r, position: i + 1 }));
+}
 
-  const rows = [...MOCK_ROWS.map((r) => toEntry(r, false)), toEntry(you, true)];
-  rows.sort((a, b) => b.xp - a.xp);
-  return rows.map((r, i) => ({ ...r, position: i + 1 }));
+export async function fetchFriendLeaderboard(): Promise<FriendLeaderboardRow[]> {
+  const { data, error } = await supabase.rpc('friend_leaderboard');
+  if (error) throw error;
+  return (data ?? []) as FriendLeaderboardRow[];
+}
+
+export async function acceptFriendInvite(inviteCode: string): Promise<InviteAcceptResult> {
+  const { data, error } = await supabase.rpc('accept_friend_invite', {
+    invite: inviteCode,
+  });
+  if (error) throw error;
+  return data as InviteAcceptResult;
+}
+
+export function inviteUrl(profile: Profile | null | undefined, origin: string): string | null {
+  const code = profile?.invite_code?.trim();
+  if (!code) return null;
+  return `${origin.replace(/\/$/, '')}/?invite=${encodeURIComponent(code)}`;
 }
 
 export function formatXp(xp: number): string {

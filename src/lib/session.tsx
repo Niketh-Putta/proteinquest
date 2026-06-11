@@ -14,6 +14,7 @@ import {
   resetAnonymousSignupAttempt,
 } from './auth';
 import { fetchProfile, isStaleProfileSaveError, upsertProfile } from './api';
+import { acceptFriendInvite } from './leaderboard';
 import { syncPremiumFromRevenueCat } from './payments';
 import { initRevenueCat, subscribeToProEntitlementChanges } from './revenuecat';
 import { supabase } from './supabase';
@@ -47,7 +48,7 @@ async function loadProfile(userId: string): Promise<Profile | null> {
 }
 
 export function SessionProvider({ children }: { children: React.ReactNode }) {
-  const params = useGlobalSearchParams<{ checkout?: string }>();
+  const params = useGlobalSearchParams<{ checkout?: string; invite?: string }>();
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -129,6 +130,24 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     if (params.checkout !== 'success' || !session?.user.id) return;
     refreshProfile(session.user.id).catch(() => {});
   }, [params.checkout, session?.user.id, refreshProfile]);
+
+  useEffect(() => {
+    const invite = Array.isArray(params.invite) ? params.invite[0] : params.invite;
+    if (!invite || !session?.user.id) return;
+
+    let cancelled = false;
+    acceptFriendInvite(invite)
+      .then(() => {
+        if (!cancelled) refreshProfile(session.user.id).catch(() => {});
+      })
+      .catch((e) => {
+        if (__DEV__) console.warn('[friends] invite accept skipped:', e);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [params.invite, session?.user.id, refreshProfile]);
 
   useEffect(() => {
     const userId = session?.user.id;

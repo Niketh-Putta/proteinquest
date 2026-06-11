@@ -46,19 +46,25 @@ function ScanTabBar({ state, navigation }: TabBarProps) {
     }
     navigation.navigate('trends');
   }
-  const tabs = [
-    { name: 'today', label: 'Today', icon: 'flash' as const },
-    { name: 'trends', label: 'Trends', icon: 'stats-chart' as const },
-  ];
+  const tabs = {
+    today: { name: 'today', label: 'Today', icon: 'flash' as const },
+    trends: { name: 'trends', label: 'Trends', icon: 'stats-chart' as const },
+    league: { name: 'league', label: 'League', icon: 'trophy' as const },
+  };
 
   return (
     <View style={[styles.barOuter, { paddingBottom: Math.max(insets.bottom, 12) }]}>
       <View
         style={[styles.bar, isWide && { maxWidth: contentMaxWidth, alignSelf: 'center', width: '100%' }]}>
         <TabButton
-          tab={tabs[0]}
+          tab={tabs.today}
           active={state.index === 0}
           onPress={() => navigation.navigate('today')}
+        />
+        <TabButton
+          tab={tabs.trends}
+          active={state.index === 1}
+          onPress={openTrends}
         />
 
         <Pressable
@@ -78,9 +84,9 @@ function ScanTabBar({ state, navigation }: TabBarProps) {
         </Pressable>
 
         <TabButton
-          tab={tabs[1]}
-          active={state.index === 1}
-          onPress={openTrends}
+          tab={tabs.league}
+          active={state.index === 2}
+          onPress={() => navigation.navigate('league')}
         />
       </View>
     </View>
@@ -120,6 +126,7 @@ export default function TabsLayout() {
       }}>
       <Tabs.Screen name="today" />
       <Tabs.Screen name="trends" />
+      <Tabs.Screen name="league" />
     </Tabs>
   );
 }

@@ -12,6 +12,7 @@ import {
   Text,
   TextInput,
   View,
+  ViewStyle,
 } from 'react-native';
 import Animated, {
   Easing,
@@ -94,6 +95,11 @@ function EmberOverlay() {
     p.muted = true;
   });
 
+  // Hold the layer hidden until the video is actually playing. Before playback,
+  // the underlying <video> element renders at its intrinsic size in the top-left
+  // corner, which otherwise shows as a stray dark box over the hero.
+  const [ready, setReady] = useState(false);
+
   // Kick playback after mount; a play() inside the setup callback can be
   // dropped on web before the view attaches (muted, so autoplay is allowed).
   // Retry briefly because the first play can race the view attaching.
@@ -102,7 +108,12 @@ function EmberOverlay() {
     const timer = setInterval(() => {
       tries += 1;
       try {
-        if (player.playing || tries > 10) {
+        if (player.playing) {
+          setReady(true);
+          clearInterval(timer);
+          return;
+        }
+        if (tries > 12) {
           clearInterval(timer);
           return;
         }
@@ -110,15 +121,15 @@ function EmberOverlay() {
       } catch {
         clearInterval(timer);
       }
-    }, 300);
+    }, 250);
     return () => clearInterval(timer);
   }, [player]);
 
   return (
-    <View style={[StyleSheet.absoluteFill, styles.emberLayer]}>
+    <View style={[StyleSheet.absoluteFill, styles.emberLayer, { opacity: ready ? 0.5 : 0 }]}>
       <VideoView
         player={player}
-        style={StyleSheet.absoluteFill}
+        style={styles.emberVideo}
         contentFit="cover"
         nativeControls={false}
       />
@@ -265,7 +276,10 @@ export default function IntroScreen() {
     setSaving(true);
     setError(null);
     try {
-      await saveProfile({ intro_completed: true });
+      await saveProfile({
+        intro_completed: true,
+        ...(name.trim() ? { display_name: name.trim() } : {}),
+      });
       router.replace('/onboarding');
     } catch (e: unknown) {
       if (__DEV__ && e) console.error('[intro] saveProfile failed:', e);
@@ -478,7 +492,12 @@ const styles = StyleSheet.create({
   noPointer: { pointerEvents: 'none' },
 
   // Hero scene layers
-  emberLayer: { opacity: 0.5 },
+  emberLayer: {
+    backgroundColor: 'transparent',
+    // Smooth fade-in once the video begins playing (web).
+    ...(Platform.OS === 'web' ? { transition: 'opacity 600ms ease' } : {}),
+  } as unknown as ViewStyle,
+  emberVideo: { width: '100%', height: '100%', backgroundColor: 'transparent' },
   glow: {
     position: 'absolute',
     bottom: -160,
