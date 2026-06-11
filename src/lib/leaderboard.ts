@@ -156,6 +156,11 @@ export async function acceptFriendInvite(inviteCode: string): Promise<InviteAcce
   return data as InviteAcceptResult;
 }
 
+export async function removeFriend(friendId: string): Promise<void> {
+  const { error } = await supabase.rpc('remove_friend', { friend: friendId });
+  if (error) throw error;
+}
+
 export function inviteUrl(profile: Profile | null | undefined, origin: string): string | null {
   const code = profile?.invite_code?.trim();
   if (!code) return null;

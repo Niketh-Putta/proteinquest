@@ -16,6 +16,7 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { PageCanvas } from '@/components/PageCanvas';
+import { confirmDestructive } from '@/lib/confirm';
 import {
   displayDragonId,
   displayProgress,
@@ -28,6 +29,7 @@ import {
   fetchFriendLeaderboard,
   formatXp,
   inviteUrl,
+  removeFriend,
   type FriendLeaderboardRow,
   type LeaderboardEntry,
 } from '@/lib/leaderboard';
@@ -173,27 +175,44 @@ function PodiumBlock({
   );
 }
 
+function canRemove(entry: LeaderboardEntry | undefined): entry is LeaderboardEntry {
+  return !!entry && !entry.isYou && !entry.isBot;
+}
+
 /** One stepped pedestal column. Champion (place 1) is tallest, crowned and glowing. */
 function PodiumColumn({
   entry,
   place,
   youArt,
+  onRemove,
 }: {
   entry?: LeaderboardEntry;
   place: 1 | 2 | 3;
   youArt?: ImageSourcePropType;
+  onRemove?: (entry: LeaderboardEntry) => void;
 }) {
   if (!entry) return <View style={styles.podCol} />;
 
   const isChamp = place === 1;
   const pedestalHeight = place === 1 ? 108 : place === 2 ? 78 : 58;
   const avatarSize = isChamp ? 68 : 50;
+  const removable = canRemove(entry);
 
   return (
     <Animated.View
       entering={FadeInDown.delay(place === 1 ? 0 : place === 2 ? 90 : 150).duration(360)}
       style={styles.podCol}>
       <View style={styles.podTop}>
+        {removable && onRemove ? (
+          <Pressable
+            onPress={() => onRemove(entry)}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel={`Remove ${entry.displayName}`}
+            style={[styles.podRemove, pressableWeb]}>
+            <Ionicons name="close" size={14} color={colors.textTertiary} />
+          </Pressable>
+        ) : null}
         {isChamp ? (
           <MaterialCommunityIcons
             name="crown"
@@ -235,6 +254,18 @@ export default function LeagueTab() {
   const [loading, setLoading] = useState(true);
   const [inviteStatus, setInviteStatus] = useState<string | null>(null);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
+  const [removingId, setRemovingId] = useState<string | null>(null);
+
+  const reloadLeaderboard = useCallback(() => {
+    setLoading(true);
+    return fetchFriendLeaderboard()
+      .then(setRows)
+      .catch((e) => {
+        if (__DEV__) console.warn('[friends] leaderboard failed:', e);
+        setRows([]);
+      })
+      .finally(() => setLoading(false));
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -257,6 +288,25 @@ export default function LeagueTab() {
       };
     }, []),
   );
+
+  function confirmRemove(entry: LeaderboardEntry) {
+    if (!canRemove(entry)) return;
+    confirmDestructive(
+      'Remove from league?',
+      `${entry.displayName} will no longer appear on your leaderboard.`,
+      'Remove',
+    ).then((ok) => {
+      if (!ok) return;
+      setRemovingId(entry.id);
+      removeFriend(entry.id)
+        .then(() => reloadLeaderboard())
+        .catch((e) => {
+          if (__DEV__) console.warn('[friends] remove failed:', e);
+          if (Platform.OS === 'web') window.alert('Could not remove. Please try again in a moment.');
+        })
+        .finally(() => setRemovingId(null));
+    });
+  }
 
   const entries = buildLeaderboard(rows, session?.user.id);
   const podium = entries.slice(0, 3);
@@ -374,9 +424,9 @@ export default function LeagueTab() {
           ) : null}
 
           <View style={styles.podium}>
-            <PodiumColumn entry={podium[1]} place={2} youArt={youDragonArt} />
-            <PodiumColumn entry={podium[0]} place={1} youArt={youDragonArt} />
-            <PodiumColumn entry={podium[2]} place={3} youArt={youDragonArt} />
+            <PodiumColumn entry={podium[1]} place={2} youArt={youDragonArt} onRemove={confirmRemove} />
+            <PodiumColumn entry={podium[0]} place={1} youArt={youDragonArt} onRemove={confirmRemove} />
+            <PodiumColumn entry={podium[2]} place={3} youArt={youDragonArt} onRemove={confirmRemove} />
           </View>
 
           <View style={styles.list}>
@@ -403,6 +453,17 @@ export default function LeagueTab() {
                 <Text style={styles.rowXp}>
                   {formatXp(entry.xp)} <Text style={styles.rowXpUnit}>XP</Text>
                 </Text>
+                {canRemove(entry) ? (
+                  <Pressable
+                    onPress={() => confirmRemove(entry)}
+                    disabled={removingId === entry.id}
+                    hitSlop={8}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Remove ${entry.displayName}`}
+                    style={({ pressed }) => [styles.rowRemove, pressableWeb, pressed && { opacity: 0.7 }]}>
+                    <Ionicons name="close" size={16} color={colors.textTertiary} />
+                  </Pressable>
+                ) : null}
               </Animated.View>
             ))}
           </View>
@@ -503,6 +564,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     marginBottom: 10,
+    width: '100%',
+  },
+  podRemove: {
+    position: 'absolute',
+    top: -4,
+    right: 4,
+    zIndex: 2,
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   crown: {
     marginBottom: -2,
@@ -691,6 +763,13 @@ const styles = StyleSheet.create({
     fontSize: 9,
     letterSpacing: 0.5,
     color: RED.bright,
+  },
+  rowRemove: {
+    width: 28,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: -4,
   },
   footnote: {
     fontFamily: fonts.mono,
