@@ -14,32 +14,28 @@ export interface LeaderboardEntry {
   position: number;
   isYou: boolean;
   isBot?: boolean;
+  isFriend?: boolean;
 }
 
-export interface FriendLeaderboardRow {
+export interface LeaderboardRow {
   user_id: string;
   display_name: string | null;
   avatar_url: string | null;
-  invite_code: string | null;
   xp: number;
   dragon_progress: Partial<Record<DragonId, DragonProgress>> | null;
   active_dragon_id: DragonId | null;
   daily_dragon_id: DragonId | null;
   daily_dragon_date: string | null;
+  is_friend?: boolean;
 }
+
+/** @deprecated use LeaderboardRow */
+export type FriendLeaderboardRow = LeaderboardRow & { invite_code?: string | null };
 
 export interface InviteAcceptResult {
   status: 'accepted' | 'self';
   friend_id?: string;
   display_name?: string;
-}
-
-function totalFriendXp(row: FriendLeaderboardRow): number {
-  const dragonTotal = Object.values(row.dragon_progress ?? {}).reduce(
-    (sum, progress) => sum + Math.max(0, Number(progress?.xp ?? 0)),
-    0,
-  );
-  return dragonTotal > 0 ? dragonTotal : Math.max(0, Number(row.xp ?? 0));
 }
 
 function handleFromName(name: string, fallback: string): string {
@@ -51,13 +47,22 @@ function handleFromName(name: string, fallback: string): string {
   return clean || fallback;
 }
 
+function rowXp(row: LeaderboardRow): number {
+  if (row.xp > 0) return row.xp;
+  const dragonTotal = Object.values(row.dragon_progress ?? {}).reduce(
+    (sum, progress) => sum + Math.max(0, Number(progress?.xp ?? 0)),
+    0,
+  );
+  return dragonTotal;
+}
+
 function toEntry(
-  row: FriendLeaderboardRow,
+  row: LeaderboardRow,
   currentUserId: string | null | undefined,
 ): Omit<LeaderboardEntry, 'position'> {
   const isYou = row.user_id === currentUserId;
   const displayName = row.display_name?.trim() || (isYou ? 'You' : 'ProteinQuest player');
-  const xp = totalFriendXp(row);
+  const xp = rowXp(row);
   const level = levelForXp(xp);
   return {
     id: row.user_id,
@@ -68,36 +73,12 @@ function toEntry(
     level,
     rank: rankForLevel(level),
     isYou,
-  };
-}
-
-function botEntry({
-  id,
-  handle,
-  displayName,
-  xp,
-}: {
-  id: string;
-  handle: string;
-  displayName: string;
-  xp: number;
-}): Omit<LeaderboardEntry, 'position'> {
-  const level = levelForXp(xp);
-  return {
-    id,
-    handle,
-    displayName,
-    avatarUrl: null,
-    xp,
-    level,
-    rank: rankForLevel(level),
-    isYou: false,
-    isBot: true,
+    isFriend: row.is_friend ?? false,
   };
 }
 
 export function buildLeaderboard(
-  rows: FriendLeaderboardRow[],
+  rows: LeaderboardRow[],
   currentUserId: string | null | undefined,
 ): LeaderboardEntry[] {
   const entries = rows.map((row) => toEntry(row, currentUserId));
@@ -109,43 +90,31 @@ export function buildLeaderboard(
           user_id: currentUserId,
           display_name: 'You',
           avatar_url: null,
-          invite_code: null,
           xp: 0,
           dragon_progress: {},
           active_dragon_id: null,
           daily_dragon_id: null,
           daily_dragon_date: null,
+          is_friend: false,
         },
         currentUserId,
       ),
     );
   }
-  const youXp = entries.find((entry) => entry.isYou)?.xp ?? 0;
-  const floor = Math.max(900, youXp);
-  entries.push(
-    botEntry({
-      id: 'bot-ember',
-      handle: 'ember.ai',
-      displayName: 'Ember AI',
-      xp: Math.max(63000, floor + 1800),
-    }),
-    botEntry({
-      id: 'bot-onyx',
-      handle: 'onyx.ai',
-      displayName: 'Onyx AI',
-      xp: Math.max(57000, floor + 900),
-    }),
-  );
 
-  const rowsSorted = entries;
-  rowsSorted.sort((a, b) => b.xp - a.xp);
-  return rowsSorted.map((r, i) => ({ ...r, position: i + 1 }));
+  entries.sort((a, b) => b.xp - a.xp || a.id.localeCompare(b.id));
+  return entries.map((r, i) => ({ ...r, position: i + 1 }));
 }
 
-export async function fetchFriendLeaderboard(): Promise<FriendLeaderboardRow[]> {
-  const { data, error } = await supabase.rpc('friend_leaderboard');
+export async function fetchLeaderboard(): Promise<LeaderboardRow[]> {
+  const { data, error } = await supabase.rpc('global_leaderboard');
   if (error) throw error;
-  return (data ?? []) as FriendLeaderboardRow[];
+  return (data ?? []) as LeaderboardRow[];
+}
+
+/** @deprecated use fetchLeaderboard */
+export async function fetchFriendLeaderboard(): Promise<LeaderboardRow[]> {
+  return fetchLeaderboard();
 }
 
 export async function acceptFriendInvite(inviteCode: string): Promise<InviteAcceptResult> {

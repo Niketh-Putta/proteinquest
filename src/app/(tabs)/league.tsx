@@ -26,12 +26,12 @@ import {
 import { flexFill, flexScroll, useLayout, useTabBarScrollInset } from '@/lib/layout';
 import {
   buildLeaderboard,
-  fetchFriendLeaderboard,
+  fetchLeaderboard,
   formatXp,
   inviteUrl,
   removeFriend,
-  type FriendLeaderboardRow,
   type LeaderboardEntry,
+  type LeaderboardRow,
 } from '@/lib/leaderboard';
 import { todayISODate } from '@/lib/protein';
 import { useSession } from '@/lib/session';
@@ -176,7 +176,7 @@ function PodiumBlock({
 }
 
 function canRemove(entry: LeaderboardEntry | undefined): entry is LeaderboardEntry {
-  return !!entry && !entry.isYou && !entry.isBot;
+  return !!entry && !entry.isYou && !entry.isBot && !!entry.isFriend;
 }
 
 /** One stepped pedestal column. Champion (place 1) is tallest, crowned and glowing. */
@@ -250,7 +250,7 @@ export default function LeagueTab() {
   const { profile, session } = useSession();
   const { horizontalPad, contentMaxWidth } = useLayout();
   const bottomInset = useTabBarScrollInset();
-  const [rows, setRows] = useState<FriendLeaderboardRow[]>([]);
+  const [rows, setRows] = useState<LeaderboardRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [inviteStatus, setInviteStatus] = useState<string | null>(null);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
@@ -258,7 +258,7 @@ export default function LeagueTab() {
 
   const reloadLeaderboard = useCallback(() => {
     setLoading(true);
-    return fetchFriendLeaderboard()
+    return fetchLeaderboard()
       .then(setRows)
       .catch((e) => {
         if (__DEV__) console.warn('[friends] leaderboard failed:', e);
@@ -271,7 +271,7 @@ export default function LeagueTab() {
     useCallback(() => {
       let cancelled = false;
       setLoading(true);
-      fetchFriendLeaderboard()
+      fetchLeaderboard()
         .then((next) => {
           if (!cancelled) setRows(next);
         })
@@ -292,8 +292,8 @@ export default function LeagueTab() {
   function confirmRemove(entry: LeaderboardEntry) {
     if (!canRemove(entry)) return;
     confirmDestructive(
-      'Remove from league?',
-      `${entry.displayName} will no longer appear on your leaderboard.`,
+      'Remove friend?',
+      `${entry.displayName} will be removed from your friends list.`,
       'Remove',
     ).then((ok) => {
       if (!ok) return;
@@ -311,7 +311,7 @@ export default function LeagueTab() {
   const entries = buildLeaderboard(rows, session?.user.id);
   const podium = entries.slice(0, 3);
   const rest = entries.slice(3);
-  const friendCount = entries.filter((entry) => !entry.isYou && !entry.isBot).length;
+  const playerCount = entries.length;
   const todayISO = todayISODate();
   const youDragonArt: ImageSourcePropType | undefined = profile
     ? stageForXpLevel(effectiveLevel(displayProgress(profile, todayISO)), displayDragonId(profile, todayISO)).art
@@ -380,9 +380,7 @@ export default function LeagueTab() {
               <Text style={styles.subtitle}>
                 {loading
                   ? 'Loading your league…'
-                  : friendCount > 0
-                    ? `${friendCount} friends added`
-                    : 'Invite friends to compete'}
+                  : `${playerCount} player${playerCount === 1 ? '' : 's'} ranked`}
               </Text>
             </View>
             <Pressable
