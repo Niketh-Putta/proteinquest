@@ -3,6 +3,7 @@ import { Platform } from 'react-native';
 import {
   checkProEntitlement,
   getRevenueCatPlans,
+  hasLiveOfferings,
   isRevenueCatConfigured,
   purchasePlan,
   restorePurchases,
@@ -104,6 +105,12 @@ export async function getNativePaymentProvider(): Promise<PaymentProvider> {
     return { ...revenueCatProvider, plans };
   }
   return stubProvider;
+}
+
+/** Whether store products are available for purchase (Play/App Store + RC offering linked). */
+export async function nativePurchasesReady(): Promise<boolean> {
+  if (!isRevenueCatConfigured()) return false;
+  return hasLiveOfferings();
 }
 
 const stubProvider: PaymentProvider = {

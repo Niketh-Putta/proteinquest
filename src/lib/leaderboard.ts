@@ -38,6 +38,14 @@ export interface InviteAcceptResult {
   display_name?: string;
 }
 
+const PLACEHOLDER_NAME = 'ProteinQuest player';
+
+function hasLeagueName(row: LeaderboardRow, currentUserId: string | null | undefined): boolean {
+  if (row.user_id === currentUserId) return true;
+  const name = row.display_name?.trim();
+  return !!name && name !== PLACEHOLDER_NAME;
+}
+
 function handleFromName(name: string, fallback: string): string {
   const clean = name
     .toLowerCase()
@@ -61,7 +69,7 @@ function toEntry(
   currentUserId: string | null | undefined,
 ): Omit<LeaderboardEntry, 'position'> {
   const isYou = row.user_id === currentUserId;
-  const displayName = row.display_name?.trim() || (isYou ? 'You' : 'ProteinQuest player');
+  const displayName = row.display_name?.trim() || (isYou ? 'You' : PLACEHOLDER_NAME);
   const xp = rowXp(row);
   const level = levelForXp(xp);
   return {
@@ -81,7 +89,8 @@ export function buildLeaderboard(
   rows: LeaderboardRow[],
   currentUserId: string | null | undefined,
 ): LeaderboardEntry[] {
-  const entries = rows.map((row) => toEntry(row, currentUserId));
+  const namedRows = rows.filter((row) => hasLeagueName(row, currentUserId));
+  const entries = namedRows.map((row) => toEntry(row, currentUserId));
   const hasYou = entries.some((entry) => entry.isYou);
   if (!hasYou && currentUserId) {
     entries.push(

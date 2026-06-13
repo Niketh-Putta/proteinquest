@@ -105,9 +105,9 @@ export default function PrivacyScreen() {
 
         <Section title="Subscriptions and payments">
           <Paragraph>
-            ProteinQuest Pro is an optional subscription that unlocks unlimited AI meal scans and
-            full trends history. Free users receive a limited number of AI scans per day without
-            a subscription.
+            ProteinQuest Pro is an optional subscription that unlocks unlimited AI meal scans. Free
+            users receive a limited number of AI scans per day without a subscription. Trends and
+            weekly history are available to all users.
           </Paragraph>
           <Bullet>
             Mobile (iOS/Android): purchases are processed by Apple or Google via RevenueCat. We

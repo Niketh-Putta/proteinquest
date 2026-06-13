@@ -25,6 +25,7 @@ import { isPro, remainingFreeScans, shouldShowDelayedPaywall } from '@/lib/paywa
 import { todayISODate } from '@/lib/protein';
 import { useSession } from '@/lib/session';
 import type { ProteinLog } from '@/lib/types';
+import { formatXp } from '@/lib/leaderboard';
 import { xpSnapshot } from '@/lib/xp';
 import { colors, fonts, noTextCaret, pressableWeb, spacing } from '@/theme';
 
@@ -165,14 +166,17 @@ export default function TodayScreen() {
             onPress={() => router.push('/league')}
             hitSlop={8}
             accessibilityRole="button"
-            accessibilityLabel={`Level ${snapshot.level}, ${snapshot.rank.label}. Open leaderboard`}
-            style={[styles.levelPill, pressableWeb]}>
-            <Text selectable={false} style={styles.levelPillText}>
-              LV {snapshot.level}
+            accessibilityLabel={`Level ${snapshot.level}, ${formatXp(snapshot.xpIntoLevel)} of ${formatXp(snapshot.xpForNext)} XP. Open leaderboard`}
+            style={[styles.levelBadge, pressableWeb]}>
+            <Text selectable={false} style={styles.levelRankName}>
+              Lvl {snapshot.level}
             </Text>
-            <View style={styles.levelPillTrack}>
-              <View style={[styles.levelPillFill, { width: `${snapshot.levelPct * 100}%` }]} />
-            </View>
+            <Text selectable={false} style={styles.levelXpLine}>
+              {formatXp(snapshot.xpIntoLevel)}
+              <Text style={styles.levelXpSep}> / </Text>
+              {formatXp(snapshot.xpForNext)}
+              <Text style={styles.levelXpUnit}> XP</Text>
+            </Text>
           </Pressable>
           <Pressable
             onPress={() => router.push('/settings')}
@@ -222,7 +226,7 @@ export default function TodayScreen() {
 
           {profile && showDragonInHero ? (
             <Animated.View
-              entering={FadeInDown.delay(100).springify().damping(16)}
+              entering={FadeInDown.delay(100).duration(440)}
               style={heroLayout === 'split' ? { flex: 1 } : undefined}>
               <CharacterCard profile={profile} dragonLocked />
             </Animated.View>
@@ -261,7 +265,7 @@ export default function TodayScreen() {
       />
     ),
     renderItem: ({ item, index }: { item: ProteinLog; index: number }) => (
-      <Animated.View entering={FadeInDown.delay(60 * Math.min(index, 5)).springify().damping(16)}>
+      <Animated.View entering={FadeInDown.delay(60 * Math.min(index, 5)).duration(380)}>
         <View style={[styles.logRow, index > 0 && styles.logRowBorder]}>
           <View style={{ flex: 1 }}>
             <Text style={styles.logName} numberOfLines={1}>
@@ -393,42 +397,54 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  levelPill: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
+  levelBadge: {
+    alignItems: 'flex-start',
+    gap: 1,
     paddingHorizontal: 12,
-    minHeight: 44,
-    borderRadius: 999,
+    paddingTop: 8,
+    paddingBottom: 5,
+    marginRight: spacing.md,
+    borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.hairlineBright,
     backgroundColor: colors.surface,
     marginTop: 2,
   },
-  levelPillText: {
+  levelRankName: {
     ...noTextCaret,
     fontFamily: fonts.monoBold,
-    fontSize: 10,
-    letterSpacing: 1.2,
+    fontSize: 11,
+    letterSpacing: 0.5,
     color: colors.text,
+    lineHeight: 13,
   },
-  levelPillTrack: {
-    width: 36,
-    height: 2,
-    borderRadius: 1,
-    backgroundColor: colors.ringTrack,
-    overflow: 'hidden',
+  levelXpLine: {
+    ...noTextCaret,
+    fontFamily: fonts.monoBold,
+    fontSize: 11,
+    letterSpacing: 0.2,
+    color: colors.text,
+    fontVariant: ['tabular-nums'],
+    lineHeight: 13,
   },
-  levelPillFill: {
-    height: '100%',
-    backgroundColor: colors.accent,
+  levelXpSep: {
+    color: colors.textTertiary,
+    fontFamily: fonts.mono,
+    fontWeight: '600',
+  },
+  levelXpUnit: {
+    color: colors.textSecondary,
+    fontFamily: fonts.mono,
+    fontSize: 10,
+    fontWeight: '600',
   },
   scansPill: {
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
     gap: 6,
-    marginTop: spacing.sm,
+    marginTop: -spacing.sm,
+    marginBottom: spacing.md,
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 999,

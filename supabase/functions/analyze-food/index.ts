@@ -24,6 +24,8 @@ const corsHeaders = {
 
 const SYSTEM_PROMPT = `You are an expert sports nutritionist who estimates PROTEIN ONLY from food photos.
 
+IMPORTANT BIAS (visual estimates only): Err slightly LOW, not high. Photos exaggerate portion size. When uncertain, pick the lower plausible weight. Users strongly prefer underestimates to overestimates. Never inflate totals to "be safe".
+
 WORK IN 5 STEPS (reason internally, output final JSON only):
 0. LABEL / TEXT DETECTION (do this FIRST — highest priority):
    - Scan the image for ANY readable text: nutrition facts panels, supplement labels, packaging, barcodes, macro-tracking app screenshots, restaurant menus with macros.
@@ -35,12 +37,13 @@ WORK IN 5 STEPS (reason internally, output final JSON only):
 1. IDENTIFY every visible food component (skip if step 0 found authoritative label text). Separate visible items from likely hidden ingredients (sauce, oil, cheese dust, marinade). Note cooking method (grilled, fried, baked) — affects weight more than protein density.
 2. ESTIMATE PORTION SIZE for each item using visual anchors (only when protein_source is "visual" or "mixed"):
    - Standard dinner plate ~26cm; fork ~19cm; palm ~10cm wide
-   - Palm-sized chicken breast (cooked) ~120g; large breast ~160-180g
-   - Sliced/strip chicken: count strips × ~18-22g each (7 strips ≈130-150g, NOT full plate weight)
+   - Palm-sized chicken breast (cooked) ~90-110g; large breast ~130-150g (not 200g+ unless clearly huge)
+   - Sliced/strip chicken: count strips × ~15-18g each (6 strips ≈90-108g, NOT full plate weight)
    - 1 large egg ~50g (~6g protein); 2 eggs ~100g (~13g protein)
-   - Deck-of-cards meat portion ~85g; fist-sized rice/pasta ~150g cooked
-   - Greens/kale bed under protein: ~60-100g (shares plate with protein above)
+   - Deck-of-cards meat portion ~75-85g; fist-sized rice/pasta ~120-140g cooked
+   - Greens/kale bed under protein: ~40-70g (shares plate with protein above — do NOT add full plate weight)
    - Protein bar ~60g; yogurt cup small ~125g, large ~170g
+   - Camera angle makes food look 15-25% larger — adjust grams DOWN accordingly
 3. CALCULATE protein_g = estimated_grams × (protein per 100g for that food) / 100
    Densities: chicken breast 31, ground beef 26, salmon 25, egg 13, greek yogurt 10, tofu 17, kale/spinach 3, rice 2.7, cheese 25, protein bar 30
 4. SUM all item protein_g → total_protein_g (must match within 0.5g)
@@ -50,19 +53,20 @@ Rules:
 - label_protein_g: set when step 0 finds explicit protein on a label or screen; null/omit otherwise.
 - If NOT food: is_food=false, empty food_name, empty items, zeros, protein_source="visual", explain in notes.
 - If food: list protein-bearing components only (chicken, eggs, meat, fish, tofu, beans, cheese, yogurt). Skip zero-protein garnishes (lemon wedge, herbs, pickles).
-- LAYERED PLATES: items share plate space — do NOT assign full plate area to each item. Greens under chicken are typically 60-120g, not equal to the protein portion.
-- portion must describe size AND method ("~150g grilled, 6 strips", "~80g sautéed bed under chicken").
-- estimated_grams = cooked edible weight only. Typical dinner plate total food ~250-450g.
+- LAYERED PLATES: items share plate space — do NOT assign full plate area to each item. Greens under chicken are typically 40-80g, not equal to the protein portion.
+- Do NOT double-count: one chicken portion per plate unless multiple distinct pieces are clearly separate servings.
+- portion must describe size AND method ("~110g grilled, 5 strips", "~60g sautéed bed under chicken").
+- estimated_grams = cooked edible weight only. Typical dinner plate total food ~180-320g (not 450g+ unless clearly a large meal).
 - Per-item confidence: low (ambiguous size), medium (reasonable estimate), high (clear size + familiar food).
 - Never hallucinate food not visible. Hidden ingredients only if strongly implied (curry sauce, burger patty under bun).
 - Keep notes under 100 characters. No double quotes, backslashes, or line breaks inside strings.
 
 Few-shot calibration examples (do NOT copy blindly — adapt to the photo):
-A) Grilled chicken strips (7 strips ~140g) + sautéed kale (~80g) + parmesan dust (~5g):
-   chicken 140g×31%=43.4g, kale 80g×3%=2.4g, cheese 5g×25%=1.3g → total ~47g, confidence medium-high
+A) Grilled chicken strips (5-6 strips ~100g) + sautéed kale (~60g) + light parmesan (~3g):
+   chicken 100g×31%=31g, kale 60g×3%=1.8g, cheese 3g×25%=0.8g → total ~34g, confidence medium
 B) 2 scrambled eggs (~100g) + toast (~30g):
    eggs 13g, toast 2.7g → total ~16g
-C) Chicken curry bowl: visible chicken ~120g (37g) + sauce/veg ~200g (6g) → total ~43g
+C) Chicken curry bowl: visible chicken ~100g (31g) + sauce/veg ~180g (5g) → total ~36g
 D) Empty plate or non-food → is_food=false
 E) Nutrition label photo showing "Protein 50g" per serving, whole product visible:
    protein_source="label", label_protein_g=50, one item from label → total_protein_g=50, confidence high
@@ -267,8 +271,8 @@ async function callGemini(
             {
               text:
                 attempt === 0
-                  ? "Analyze this image for protein. Step 0: read any nutrition labels, packaging text, or on-screen macros (OCR). If label shows protein grams, use that as primary source (protein_source=label). Otherwise Step 1-4: identify foods, estimate grams, apply density, sum. Return valid JSON only."
-                  : "Analyze this image for protein. Check labels/text first. Return ONLY compact valid JSON matching the schema. Keep notes under 80 characters. No quotes or newlines inside strings.",
+                  ? "Analyze this image for protein. Step 0: read any nutrition labels, packaging text, or on-screen macros (OCR). If label shows protein grams, use that as primary source (protein_source=label). Otherwise Step 1-4: identify foods, estimate grams conservatively (prefer lower end), apply density, sum. Return valid JSON only."
+                  : "Analyze this image for protein. Check labels/text first. Estimate visual portions conservatively (slightly low). Return ONLY compact valid JSON matching the schema. Keep notes under 80 characters. No quotes or newlines inside strings.",
             },
             { inline_data: { mime_type: mimeType, data: imageBase64 } },
           ],
@@ -370,7 +374,7 @@ async function callOpenAI(
           content: [
             {
               type: "text",
-              text: "Analyze this image for protein. First read any nutrition labels, packaging, or on-screen text for explicit protein grams. If found, protein_source=label and use that value. Otherwise estimate from visual portion. Return JSON only.",
+              text: "Analyze this image for protein. First read any nutrition labels, packaging, or on-screen text for explicit protein grams. If found, protein_source=label and use that value. Otherwise estimate from visual portion — prefer the lower end of plausible weights, never inflate. Return JSON only.",
             },
             {
               type: "image_url",
@@ -422,30 +426,43 @@ type NormalizedItem = {
   confidence: string;
 };
 
+/** Slight downward bias on visual-only estimates (labels untouched). */
+const VISUAL_CONSERVATIVE_TRIM = 0.94;
+
 function calibrateItem(item: NormalizedItem, skipCalibration = false): NormalizedItem {
   if (skipCalibration) return item;
 
+  let protein = item.protein_g;
   const grams = item.estimated_grams;
-  if (!grams || grams <= 0) return item;
 
-  const density = lookupProteinDensity(item.name);
-  if (!density) return item;
+  if (grams && grams > 0) {
+    const density = lookupProteinDensity(item.name);
+    if (density) {
+      const anchor = proteinFromDensity(grams, density);
+      const ratio = anchor > 0 ? protein / anchor : 1;
 
-  const fromDensity = proteinFromDensity(grams, density);
-  const llmProtein = item.protein_g;
-
-  // Never pull estimates DOWN — label readings and dense portions can exceed density×grams.
-  if (llmProtein >= fromDensity * 0.85) return item;
-
-  // Visual underestimate only: blend upward toward USDA density anchor.
-  const shortfall = fromDensity > 0 ? (fromDensity - llmProtein) / fromDensity : 0;
-  const densityWeight = shortfall > 0.4 ? 0.6 : 0.4;
-  const blended = round1(fromDensity * densityWeight + llmProtein * (1 - densityWeight));
+      if (ratio > 1.15) {
+        // LLM overshot vs portion×density — cap near anchor (+3% slack max).
+        protein = round1(anchor * 1.03);
+      } else if (ratio > 1.05) {
+        // Mild overshoot — blend down toward density anchor.
+        protein = round1(anchor * 0.65 + protein * 0.35);
+      } else if (ratio < 0.7) {
+        // Large undershoot — light nudge up only (avoid old aggressive upward bias).
+        protein = round1(anchor * 0.15 + protein * 0.85);
+      } else {
+        protein = round1(protein * VISUAL_CONSERVATIVE_TRIM);
+      }
+    } else {
+      protein = round1(protein * VISUAL_CONSERVATIVE_TRIM);
+    }
+  } else {
+    protein = round1(protein * VISUAL_CONSERVATIVE_TRIM);
+  }
 
   return {
     ...item,
-    protein_g: Math.max(blended, llmProtein),
-    confidence: shortfall > 0.5 ? "medium" : item.confidence,
+    protein_g: protein,
   };
 }
 

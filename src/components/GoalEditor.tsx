@@ -164,7 +164,7 @@ export function GoalEditor({ profile, submitLabel, saving, onSubmit }: Props) {
       />
 
       {calc ? (
-        <Animated.View entering={FadeInDown.springify().damping(16)} style={styles.goalBlock}>
+        <Animated.View entering={FadeInDown.duration(360)} style={styles.goalBlock}>
           <Text style={styles.goalLabel}>YOUR DAILY TARGET</Text>
           <View style={styles.goalRow}>
             <Text style={[styles.goalValue, isNarrow && styles.goalValueNarrow]}>

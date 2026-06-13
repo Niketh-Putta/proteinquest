@@ -9,6 +9,7 @@ import {
   FREE_DAILY_SCANS,
   getNativePaymentProvider,
   getPaymentProvider,
+  nativePurchasesReady,
   type PaymentPlan,
   type PaymentProvider,
 } from '@/lib/payments';
@@ -17,8 +18,8 @@ import { colors, fonts, radius, spacing } from '@/theme';
 
 const PERKS = [
   { icon: 'infinite' as const, text: 'Unlimited AI scans every day' },
-  { icon: 'stats-chart' as const, text: 'Full trends & history forever' },
   { icon: 'flash' as const, text: 'Priority analysis speed' },
+  { icon: 'camera' as const, text: 'Never hit the daily scan limit' },
 ];
 
 const PRIVACY_URL = 'https://proteinquest.vercel.app/privacy';
@@ -38,6 +39,7 @@ export default function Paywall() {
   const [planId, setPlanId] = useState(provider.plans[1]?.id ?? 'pro_yearly');
   const [busy, setBusy] = useState(false);
   const [restoring, setRestoring] = useState(false);
+  const [purchasesReady, setPurchasesReady] = useState(false);
 
   useEffect(() => {
     if (Platform.OS === 'web') return;
@@ -47,6 +49,9 @@ export default function Paywall() {
         setPlanId(p.plans[1]?.id ?? p.plans[0]?.id ?? 'pro_yearly');
       })
       .catch(() => {});
+    nativePurchasesReady()
+      .then(setPurchasesReady)
+      .catch(() => setPurchasesReady(false));
   }, []);
 
   async function grantPremium() {
@@ -125,7 +130,7 @@ export default function Paywall() {
         <Text style={styles.kicker}>PROTEINQUEST PRO</Text>
         <Text style={styles.title}>Never stop{'\n'}counting.</Text>
         <Text style={styles.subtitle}>
-          Free includes {FREE_DAILY_SCANS} AI scans a day. Go Pro for unlimited scans and full trends.
+          Free includes {FREE_DAILY_SCANS} AI scans a day. Go Pro for unlimited scans.
         </Text>
 
         <View style={styles.perks}>
@@ -143,6 +148,11 @@ export default function Paywall() {
           <Text style={styles.devNote}>
             Payments aren&apos;t connected yet (RevenueCat on iOS/Android, Stripe on web). This
             button unlocks Pro for testing only.
+          </Text>
+        ) : !purchasesReady ? (
+          <Text style={styles.devNote}>
+            Subscriptions are being set up in Google Play. Purchases will work once store products
+            are live — usually within 24 hours of Play Console setup.
           </Text>
         ) : null}
 
@@ -162,9 +172,16 @@ export default function Paywall() {
         </Text>
 
         <Button
-          title={provider.isConfigured ? 'Continue' : 'Unlock Pro (test mode)'}
+          title={
+            !provider.isConfigured
+              ? 'Unlock Pro (test mode)'
+              : !purchasesReady
+                ? 'Subscriptions coming soon'
+                : 'Continue'
+          }
           onPress={handlePurchase}
           loading={busy}
+          disabled={provider.isConfigured && !purchasesReady}
           style={{ marginTop: spacing.md }}
         />
 
@@ -174,10 +191,11 @@ export default function Paywall() {
             variant="secondary"
             onPress={handleRestore}
             loading={restoring}
+            style={{ marginTop: spacing.sm }}
           />
         ) : null}
 
-        <Button title="Not now" variant="ghost" onPress={handleDismiss} />
+        <Button title="Not now" variant="ghost" onPress={handleDismiss} style={{ marginTop: spacing.sm }} />
       </ScrollView>
     </SafeAreaView>
   );

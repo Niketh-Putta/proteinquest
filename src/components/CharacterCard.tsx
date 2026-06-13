@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import React, { useEffect } from 'react';
-import { Image, Platform, StyleSheet, Text, View } from 'react-native';
+import { Image, StyleSheet, Text, View } from 'react-native';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -46,9 +47,9 @@ export function CharacterCard({
 }: Props) {
   const { characterScale: layoutScale } = useLayout();
   const scale = scaleProp ?? layoutScale;
-  const artSize = Math.round(132 * scale);
   const nameSize = Math.round(24 * scale);
-  const glowSize = Math.round(200 * scale);
+  const sceneW = Math.round(300 * scale);
+  const sceneH = Math.round(200 * scale);
 
   const todayISO = todayISODate();
   const dragonId = displayDragonId(profile, todayISO);
@@ -59,38 +60,31 @@ export function CharacterCard({
   const next = nextEvolutionStage(level, dragonId);
   const streak = effectiveStreak(progress, todayISO, todayISODate(-1));
 
+  // Slow, calm breathing only — no bounce. Keeps the dragon feeling alive
+  // without the springy, jittery motion the previous build had.
   const breath = useSharedValue(1);
   const float = useSharedValue(0);
-  const glow = useSharedValue(0.12);
 
   useEffect(() => {
     breath.value = withRepeat(
       withSequence(
-        withTiming(1.03, { duration: 3200, easing: Easing.inOut(Easing.sin) }),
-        withTiming(1, { duration: 3200, easing: Easing.inOut(Easing.sin) }),
+        withTiming(1.02, { duration: 3600, easing: Easing.inOut(Easing.sin) }),
+        withTiming(1, { duration: 3600, easing: Easing.inOut(Easing.sin) }),
       ),
       -1,
     );
     float.value = withRepeat(
       withSequence(
-        withTiming(-4, { duration: 3400, easing: Easing.inOut(Easing.sin) }),
-        withTiming(2, { duration: 3400, easing: Easing.inOut(Easing.sin) }),
+        withTiming(-3, { duration: 3800, easing: Easing.inOut(Easing.sin) }),
+        withTiming(2, { duration: 3800, easing: Easing.inOut(Easing.sin) }),
       ),
       -1,
     );
-    glow.value = withRepeat(
-      withSequence(
-        withTiming(0.18, { duration: 3800, easing: Easing.inOut(Easing.sin) }),
-        withTiming(0.08, { duration: 3800, easing: Easing.inOut(Easing.sin) }),
-      ),
-      -1,
-    );
-  }, [breath, float, glow]);
+  }, [breath, float]);
 
   const characterStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: float.value }, { scale: breath.value }],
   }));
-  const glowStyle = useAnimatedStyle(() => ({ opacity: glow.value }));
 
   const progressToNext = next
     ? Math.min((level - stage.levelRequired) / (next.levelRequired - stage.levelRequired), 1)
@@ -107,35 +101,30 @@ export function CharacterCard({
         bleed != null && { marginHorizontal: -bleed, paddingHorizontal: bleed },
       ]}>
       <View style={styles.stage}>
-        <Animated.View
-          style={[
-            styles.glow,
-            glowStyle,
-            {
-              backgroundColor: dragon.accent,
-              width: glowSize,
-              height: glowSize,
-              borderRadius: glowSize / 2,
-            },
-            Platform.OS === 'web' && styles.glowBlur,
-          ]}
-        />
-
         <Text style={styles.kicker}>Reach your potential</Text>
 
-        <Animated.View style={[styles.characterWrap, characterStyle]}>
-          <Image
-            source={stage.art}
-            style={[
-              styles.art,
-              {
-                width: artSize,
-                height: artSize,
-                borderRadius: radius.character,
-              },
-            ]}
+        <View style={[styles.scene, { width: sceneW, height: sceneH }]}>
+          <Animated.View style={[StyleSheet.absoluteFill, characterStyle]}>
+            <Image source={stage.art} style={styles.sceneArt} resizeMode="cover" />
+          </Animated.View>
+          {/* Feather the rectangular art edges into the page background on all
+              four sides so the dragon reads as a character living in its
+              scene rather than a pasted-on image. */}
+          <LinearGradient
+            pointerEvents="none"
+            colors={[colors.bg, 'transparent', 'transparent', colors.bg]}
+            locations={[0, 0.16, 0.84, 1]}
+            style={StyleSheet.absoluteFill}
           />
-        </Animated.View>
+          <LinearGradient
+            pointerEvents="none"
+            colors={[colors.bg, 'transparent', 'transparent', colors.bg]}
+            locations={[0, 0.12, 0.88, 1]}
+            start={{ x: 0, y: 0.5 }}
+            end={{ x: 1, y: 0.5 }}
+            style={StyleSheet.absoluteFill}
+          />
+        </View>
 
         <View style={styles.identity}>
           <Text style={[styles.name, { fontSize: nameSize }]}>{dragon.name}</Text>
@@ -235,15 +224,6 @@ const styles = StyleSheet.create({
     width: '100%',
     position: 'relative',
   },
-  glow: {
-    position: 'absolute',
-    top: 48,
-    alignSelf: 'center',
-  },
-  glowBlur: Platform.select({
-    web: { filter: 'blur(56px)' as unknown as undefined },
-    default: {},
-  }),
   kicker: {
     fontFamily: fonts.mono,
     fontSize: 9,
@@ -253,13 +233,15 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
     zIndex: 1,
   },
-  characterWrap: {
-    alignItems: 'center',
-    justifyContent: 'center',
+  scene: {
+    alignSelf: 'center',
+    overflow: 'hidden',
+    backgroundColor: colors.bg,
     zIndex: 1,
   },
-  art: {
-    backgroundColor: 'transparent',
+  sceneArt: {
+    width: '100%',
+    height: '100%',
   },
   identity: {
     alignItems: 'center',

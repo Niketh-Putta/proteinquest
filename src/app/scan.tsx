@@ -295,7 +295,7 @@ export default function ScanScreen() {
       </View>
 
       {error ? (
-        <Animated.View entering={FadeInDown.springify().damping(16)} style={styles.errorBanner}>
+        <Animated.View entering={FadeInDown.duration(320)} style={styles.errorBanner}>
           <Ionicons name="alert-circle" size={15} color={colors.danger} />
           <Text style={styles.errorText}>{error}</Text>
           <Pressable onPress={() => setError(null)} hitSlop={8}>
@@ -395,7 +395,7 @@ export default function ScanScreen() {
             />
           ) : null}
 
-          <Animated.View entering={FadeInDown.delay(80).springify().damping(16)}>
+          <Animated.View entering={FadeInDown.delay(80).duration(400)}>
             <Text style={styles.foodName}>{analysis.food_name}</Text>
             <Text style={styles.metaText}>
               {analysis.confidence?.toUpperCase()} CONFIDENCE
@@ -405,7 +405,7 @@ export default function ScanScreen() {
 
           <View style={styles.rule} />
 
-          <Animated.View entering={FadeInDown.delay(160).springify().damping(16)}>
+          <Animated.View entering={FadeInDown.delay(160).duration(400)}>
             {analysis.items.map((item, i) => (
               <View key={`${item.name}-${i}`} style={[styles.itemRow, i > 0 && styles.itemRowBorder]}>
                 <View style={{ flex: 1 }}>
@@ -435,7 +435,7 @@ export default function ScanScreen() {
 
           <View style={styles.rule} />
 
-          <Animated.View entering={FadeInDown.delay(240).springify().damping(16)} style={styles.totalBlock}>
+          <Animated.View entering={FadeInDown.delay(240).duration(400)} style={styles.totalBlock}>
             <Text style={styles.totalLabel}>TOTAL PROTEIN</Text>
             <View style={styles.totalInputRow}>
               <TextInput

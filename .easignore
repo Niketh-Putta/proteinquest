@@ -1,0 +1,31 @@
+# NOTE: when present, .easignore REPLACES .gitignore for EAS uploads,
+# so this must also re-list everything that must never be uploaded.
+
+# --- from .gitignore (must keep excluded) ---
+node_modules/
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+.kotlin/
+*.orig.*
+.env
+.env*.local
+*.tsbuildinfo
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.pem
+.vercel
+/ios
+/android
+
+# --- secrets that live under store/ ---
+store/google-play-service-account.json
+
+# --- large assets not needed by the native build ---
+demo/
+store/proteinquest.aab
+store/screenshots/

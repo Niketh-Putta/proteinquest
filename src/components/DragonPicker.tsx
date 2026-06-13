@@ -31,8 +31,8 @@ export function DragonPicker({ value, onChange, compact = false, tight = false }
           <Text style={styles.step}>STEP 1 · CHOOSE YOUR COMPANION</Text>
           <Text style={styles.title}>Who will you grow with?</Text>
           <Text style={styles.sub}>
-            Lock in one dragon per day. Hit your protein goal to earn XP, level up, and unlock ten
-            evolution forms. Consistency is the unlock.
+            Lock in one dragon per day. Hit your protein goal to earn XP, level up, and evolve
+            through five forms. Consistency is the unlock.
           </Text>
         </>
       ) : null}
@@ -43,7 +43,7 @@ export function DragonPicker({ value, onChange, compact = false, tight = false }
           return (
             <Animated.View
               key={dragon.id}
-              entering={FadeInDown.delay(i * 80).springify().damping(16)}>
+              entering={FadeInDown.delay(i * 70).duration(420)}>
               <Pressable
                 onPress={() => pick(dragon.id)}
                 style={[styles.row, tight && styles.rowTight, active && styles.rowActive]}>

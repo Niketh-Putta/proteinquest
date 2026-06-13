@@ -87,8 +87,7 @@ export default function TermsScreen() {
 
         <Section title="ProteinQuest Pro subscriptions">
           <Bullet>
-            ProteinQuest Pro is an auto-renewing subscription that unlocks unlimited AI scans and
-            full trends history.
+            ProteinQuest Pro is an auto-renewing subscription that unlocks unlimited AI scans.
           </Bullet>
           <Bullet>Weekly plan: £6.99 per week. Yearly plan: £29.99 per year.</Bullet>
           <Bullet>

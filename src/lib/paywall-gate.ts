@@ -19,8 +19,9 @@ export function shouldShowDelayedPaywall(profile: Profile | null | undefined): b
   return totalXp(profile) > 0;
 }
 
-export function canAccessTrends(profile: Profile | null | undefined): boolean {
-  return isPro(profile);
+/** Trends (7-day rhythm view) is free for all users. */
+export function canAccessTrends(_profile: Profile | null | undefined): boolean {
+  return true;
 }
 
 export function canScan(profile: Profile | null | undefined, scansUsedToday: number): boolean {

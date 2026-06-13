@@ -44,7 +44,7 @@ export function DailyDragonPicker() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
         bounces>
-        <Animated.View entering={FadeInDown.springify().damping(16)}>
+        <Animated.View entering={FadeInDown.duration(420)}>
           <Text style={[styles.kicker, isCompact && styles.kickerCompact]}>NEW DAY</Text>
           <Text
             style={[

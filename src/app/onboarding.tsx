@@ -24,6 +24,7 @@ import { Button } from '@/components/Button';
 import { DragonPicker } from '@/components/DragonPicker';
 import { GoalEditor } from '@/components/GoalEditor';
 import { emptyDragonProgress } from '@/lib/character';
+import { todayISODate } from '@/lib/protein';
 import { useLayout, usePinnedFooterGap } from '@/lib/layout';
 import { useSession } from '@/lib/session';
 import type { DragonId, Profile } from '@/lib/types';
@@ -137,6 +138,10 @@ export default function Onboarding() {
       await saveProfile({
         ...updates,
         active_dragon_id: dragonId,
+        // Lock the chosen dragon as today's dragon so first-time users land
+        // straight on their Today hub instead of being asked to pick again.
+        daily_dragon_id: dragonId,
+        daily_dragon_date: todayISODate(),
         dragon_progress: { [dragonId]: progress },
         xp: 0,
         streak: 0,

@@ -63,6 +63,30 @@ export interface RevenueCatPlan {
   packageIdentifier: string;
 }
 
+/** True when RevenueCat returns a current offering with at least one weekly/yearly package. */
+export async function hasLiveOfferings(): Promise<boolean> {
+  if (!isRevenueCatConfigured()) return false;
+  try {
+    const Purchases = (await import('react-native-purchases')).default;
+    const offerings = await Purchases.getOfferings();
+    const current = offerings.current;
+    if (!current?.availablePackages.length) return false;
+    return current.availablePackages.some((p) => {
+      const id = p.product.identifier;
+      return (
+        id === REVENUECAT_PRODUCT_IDS.weekly ||
+        id === REVENUECAT_PRODUCT_IDS.yearly ||
+        p.packageType === 'WEEKLY' ||
+        p.packageType === 'ANNUAL' ||
+        p.identifier === '$rc_weekly' ||
+        p.identifier === '$rc_annual'
+      );
+    });
+  } catch {
+    return false;
+  }
+}
+
 /** Fetch current offering packages mapped to our plan IDs. Falls back to static copy if unavailable. */
 export async function getRevenueCatPlans(): Promise<RevenueCatPlan[]> {
   const fallback: RevenueCatPlan[] = [

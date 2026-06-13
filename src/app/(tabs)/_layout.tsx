@@ -6,11 +6,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { isDailyDragonLockedForToday } from '@/lib/character';
 import { useLayout } from '@/lib/layout';
-import { canAccessTrends, canScan } from '@/lib/paywall-gate';
+import { canScan } from '@/lib/paywall-gate';
 import { countTodayPhotoScans } from '@/lib/api';
 import { todayISODate } from '@/lib/protein';
 import { useSession } from '@/lib/session';
-import { colors, fonts, noTextCaret, pressableWeb, shadowAccent, spacing } from '@/theme';
+import { colors, fonts, noTextCaret, pressableWeb, spacing } from '@/theme';
 
 interface TabBarProps {
   state: { index: number };
@@ -40,10 +40,6 @@ function ScanTabBar({ state, navigation }: TabBarProps) {
   }
 
   function openTrends() {
-    if (profile && !canAccessTrends(profile)) {
-      router.push('/paywall');
-      return;
-    }
     navigation.navigate('trends');
   }
   const tabs = {
@@ -144,9 +140,10 @@ const styles = StyleSheet.create({
   bar: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    justifyContent: 'space-around',
+    justifyContent: 'space-between',
+    width: '100%',
   },
-  tab: { alignItems: 'center', gap: 4, width: 72, minHeight: 44, paddingBottom: 2 },
+  tab: { flex: 1, alignItems: 'center', gap: 4, minHeight: 44, paddingBottom: 2 },
   tabLabel: {
     ...noTextCaret,
     fontFamily: fonts.mono,
@@ -164,9 +161,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent,
   },
   scanTab: {
+    flex: 1,
     alignItems: 'center',
     gap: 4,
-    width: 72,
     minHeight: 44,
     paddingBottom: 2,
   },
@@ -182,7 +179,6 @@ const styles = StyleSheet.create({
     marginTop: -22,
     borderWidth: 3,
     borderColor: colors.bg,
-    ...shadowAccent,
   },
   scanLabel: {
     ...noTextCaret,

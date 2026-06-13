@@ -1,15 +1,12 @@
-import { Ionicons } from '@expo/vector-icons';
-import { router, useFocusEffect } from 'expo-router';
+import { useFocusEffect } from 'expo-router';
 import React, { useCallback, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { Button } from '@/components/Button';
 import { PageCanvas } from '@/components/PageCanvas';
 import { fetchDailyTotals } from '@/lib/api';
 import { displayProgress, effectiveStreak } from '@/lib/character';
 import { useLayout } from '@/lib/layout';
-import { canAccessTrends } from '@/lib/paywall-gate';
 import { todayISODate } from '@/lib/protein';
 import { useSession } from '@/lib/session';
 import { colors, fonts, spacing } from '@/theme';
@@ -63,33 +60,6 @@ export default function TrendsScreen() {
       : activeDayCount === 1
         ? 'average on your one logged day'
         : `average across ${activeDayCount} logged days`;
-
-  if (profile && !canAccessTrends(profile)) {
-    return (
-      <PageCanvas>
-        <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-          <View
-            style={[
-              styles.lockedWrap,
-              {
-                paddingHorizontal: horizontalPad,
-                maxWidth: contentMaxWidth,
-                width: '100%',
-                alignSelf: 'center',
-              },
-            ]}>
-            <Ionicons name="lock-closed" size={32} color={colors.accent} />
-            <Text style={styles.lockedTitle}>Trends is a Pro feature</Text>
-            <Text style={styles.lockedText}>
-              See your weekly rhythm, streaks, and consistency with ProteinQuest Pro.
-            </Text>
-            <Button title="Unlock Pro" onPress={() => router.push('/paywall')} style={{ marginTop: spacing.lg }} />
-            <Button title="Back to Today" variant="ghost" onPress={() => router.replace('/(tabs)/today')} />
-          </View>
-        </SafeAreaView>
-      </PageCanvas>
-    );
-  }
 
   return (
     <PageCanvas>
@@ -213,28 +183,6 @@ export default function TrendsScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
-  lockedWrap: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingBottom: 120,
-    gap: spacing.sm,
-  },
-  lockedTitle: {
-    fontFamily: fonts.displayHeavy,
-    fontSize: 24,
-    color: colors.text,
-    textAlign: 'center',
-    marginTop: spacing.md,
-  },
-  lockedText: {
-    fontFamily: fonts.body,
-    fontSize: 15,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: 22,
-    maxWidth: 300,
-  },
   scroll: { paddingTop: spacing.lg, paddingBottom: 120 },
   header: { marginBottom: spacing.xl },
   eyebrow: {

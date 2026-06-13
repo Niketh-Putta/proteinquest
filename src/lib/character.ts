@@ -28,8 +28,13 @@ export interface DragonType {
   motto: string;
 }
 
-/** XP levels that unlock a new visual dragon form (5 stages). */
-export const VISUAL_EVOLUTION_LEVELS = [1, 5, 12, 20, 40] as const;
+/**
+ * XP levels that unlock a new visual dragon form (5 stages). Early thresholds
+ * are deliberately reachable — the first evolution lands around day 2 of
+ * hitting your goal so the transformation hooks new users fast, then the
+ * later forms stretch out to stay aspirational.
+ */
+export const VISUAL_EVOLUTION_LEVELS = [1, 3, 8, 16, 30] as const;
 
 const STAGE_NAMES = ['Baby', 'Juvenile', 'Adolescent', 'Adult', 'Legendary'] as const;
 const STAGE_GOALS = [0, 2, 7, 14, 30] as const;

@@ -44,8 +44,8 @@ type Phase = 'hero' | 'name' | 'benefits' | 'manifesto';
 const PHASES: Phase[] = ['hero', 'name', 'benefits', 'manifesto'];
 
 /** Cinematic opening title sequence: each word holds, then yields to the next. */
-const TITLE_WORDS = ['EAT.', 'TRAIN.', 'EVOLVE.'];
-const WORD_HOLD_MS = 1450;
+const TITLE_WORDS = ['FUEL.', 'FEED.', 'EVOLVE.'];
+const WORD_HOLD_MS = 1250;
 
 const BENEFITS = [
   'Build real muscle',
@@ -137,7 +137,13 @@ function EmberOverlay() {
   );
 }
 
-/** One word of the opening title: tracking-in + rise, then dissolve. */
+/**
+ * One word of the opening title: tracking-in + rise. The animation is fully
+ * driven by a shared value that re-fires whenever `word` changes, so it never
+ * relies on key-based remounts or `exiting` layout animations (those hang on
+ * Android release builds with the React Compiler enabled, freezing the
+ * sequence on the first word).
+ */
 function TitleWord({
   word,
   compact,
@@ -149,8 +155,9 @@ function TitleWord({
 }) {
   const p = useSharedValue(0);
   useEffect(() => {
-    p.value = withTiming(1, { duration: 900, easing: Easing.out(Easing.cubic) });
-  }, [p]);
+    p.value = 0;
+    p.value = withTiming(1, { duration: 560, easing: Easing.out(Easing.cubic) });
+  }, [word, p]);
 
   const style = useAnimatedStyle(() => ({
     opacity: p.value,
@@ -161,16 +168,33 @@ function TitleWord({
     ],
   }));
 
-  // Layout animation lives on the wrapper so it never fights the opacity worklet.
   return (
-    <Animated.View exiting={FadeOut.duration(420)} style={styles.titleWordWrap}>
+    <View style={styles.titleWordWrap}>
       <Animated.Text
         style={[styles.heroWord, compact && styles.heroWordCompact, sizeStyle, style]}
         numberOfLines={1}
         adjustsFontSizeToFit>
         {word}
       </Animated.Text>
-    </Animated.View>
+    </View>
+  );
+}
+
+/**
+ * Three-step progress dots beneath the opening title. Makes the sequence read
+ * as "advancing" rather than "stuck on the first word" — the exact failure the
+ * old Android build showed.
+ */
+function TitleDots({ index, total }: { index: number; total: number }) {
+  return (
+    <View style={styles.titleDots} pointerEvents="none">
+      {Array.from({ length: total }).map((_, i) => (
+        <View
+          key={i}
+          style={[styles.titleDot, i <= index ? styles.titleDotOn : styles.titleDotOff]}
+        />
+      ))}
+    </View>
   );
 }
 
@@ -235,7 +259,7 @@ export default function IntroScreen() {
 
   const phaseIndex = PHASES.indexOf(phase);
 
-  // Opening title sequence: EAT. TRAIN. EVOLVE. → settle on the brand statement.
+  // Opening title sequence: FUEL. FEED. EVOLVE. → settle on the brand statement.
   useEffect(() => {
     if (phase !== 'hero' || titleDone) return;
     const timer = setTimeout(() => {
@@ -319,14 +343,16 @@ export default function IntroScreen() {
 
             <View style={styles.heroCenter}>
               {!titleDone ? (
-                <TitleWord
-                  key={TITLE_WORDS[wordIndex]}
-                  word={TITLE_WORDS[wordIndex]}
-                  compact={isCompact}
-                  sizeStyle={heroType}
-                />
+                <>
+                  <TitleWord
+                    word={TITLE_WORDS[wordIndex]}
+                    compact={isCompact}
+                    sizeStyle={heroType}
+                  />
+                  <TitleDots index={wordIndex} total={TITLE_WORDS.length} />
+                </>
               ) : (
-                <Animated.View entering={FadeIn.duration(700)} style={styles.heroSettled}>
+                <View style={styles.heroSettled}>
                   <Text
                     style={[styles.heroWord, isCompact && styles.heroWordCompact, heroType]}
                     numberOfLines={1}
@@ -338,7 +364,7 @@ export default function IntroScreen() {
                     style={[styles.heroSub, isCompact && styles.heroSubCompact]}>
                     Hit your protein. Feed your dragon.{'\n'}Level up for real.
                   </Animated.Text>
-                </Animated.View>
+                </View>
               )}
             </View>
 
@@ -523,6 +549,19 @@ const styles = StyleSheet.create({
   },
   heroCenter: { flex: 1, alignItems: 'center', justifyContent: 'center', minWidth: 0 },
   titleWordWrap: { width: '100%', alignItems: 'center' },
+  titleDots: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: spacing.xl,
+  },
+  titleDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+  },
+  titleDotOn: { backgroundColor: colors.accent },
+  titleDotOff: { backgroundColor: colors.ringTrack },
   heroSettled: { alignItems: 'center', gap: spacing.md, width: '100%' },
   heroWord: {
     ...noTextCaret,
