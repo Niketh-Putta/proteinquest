@@ -1,0 +1,18 @@
+Resume: 1 sent, need 99 more
+Discovery: 19 search users, 4 explore posts
+✓ SENT @andry_strong (12,626) — 2/100
+✓ SENT @jonah_calisthenics (8,263) — 3/100
+✓ SENT @sarahfit (60,616) — 4/100
+user error @hyroxuk: element not found: div[contenteditable=true][role="textbox"]
+✓ SENT @hyroxworld (21,536) — 5/100
+✓ SENT @hyroxger (8,062) — 6/100
+user error @tony_jeffries: element not found: div[contenteditable=true][role="textbox"]
+tag #fitness error: posts is not iterable
+tag #gym error: posts is not iterable
+tag #protein error: posts is not iterable
+tag #calisthenics error: posts is not iterable
+tag #crossfit error: posts is not iterable
+tag #running error: posts is not iterable
+tag #mealprep error: posts is not iterable
+tag #hyrox error: posts is not iterable
+DONE { sent: 6, skipped: 16, failed: 2 }

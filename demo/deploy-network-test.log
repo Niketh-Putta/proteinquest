@@ -1,0 +1,4 @@
+Vercel CLI 54.10.3 (Node.js 25.9.0)
+Error: Not able to load user because of unexpected error: request to https://api.vercel.com/v2/user failed, reason: getaddrinfo ENOTFOUND api.vercel.com
+
+vercel deploy exited with code 1

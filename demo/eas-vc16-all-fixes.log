@@ -1,0 +1,51 @@
+Found eas-cli in your project dependencies.
+It's recommended to use the "cli.version" field in eas.json to enforce the eas-cli version for your project.
+Learn more: https://github.com/expo/eas-cli#enforcing-eas-cli-version-for-your-project
+
+
+⚠️ Detected that your app uses Expo Go for development, this is not recommended when building production apps.
+Learn more: https://expo.fyi/why-not-build-expo-go-for-production
+To suppress this warning, set EAS_BUILD_NO_EXPO_GO_WARNING=true.
+
+Resolved "production" environment for the build. Learn more: https://docs.expo.dev/eas/environment-variables/#setting-the-environment-for-your-builds
+Environment variables with visibility "Plain text" and "Sensitive" loaded from the "production" environment on EAS: EXPO_PUBLIC_REVENUECAT_ANDROID_KEY, EXPO_PUBLIC_SUPABASE_KEY, EXPO_PUBLIC_SUPABASE_URL.
+
+- Incrementing versionCode from 15 to 16.
+✔ Incremented versionCode from 15 to 16.
+
+
+android.versionCode field in app config is ignored when version source is set to remote, but this value will still be in the manifest available via expo-constants. It's recommended to remove this value from app config.
+✔ Using remote Android credentials (Expo server)
+✔ Using Keystore from configuration: Build Credentials Rr3MWJDvmn (default)
+
+Compressing project files and uploading to EAS Build. Learn more: https://expo.fyi/eas-build-archive
+- Compressing project files
+- Uploading to EAS Build (0 / 103 MB)
+✔ Uploaded to EAS 17s
+- Computing project fingerprint
+✔ Computed project fingerprint
+
+See logs: https://expo.dev/accounts/nikethputta/projects/proteinquest/builds/bbaad855-a614-4039-b994-7b2adfb85250
+
+Project ID:                     16c8d824-5395-4173-aa70-88218dcb54d5
+Release track:                  production
+Changes not sent for a review:  false
+Release status:                 COMPLETED
+Google Service Account Key:     
+    Key Source   :  local
+    Key Path     :  ./store/google-play-service-account.json
+    Account Email:  revenuecat@maximal-journey-472709-k7.iam.gserviceaccount.com
+Rollout:                        undefined
+Build:                          
+    Build ID    :  bbaad855-a614-4039-b994-7b2adfb85250
+    Build Date  :  6/13/2026, 5:12:31 PM
+    App Version :  1.0.0
+    Version code:  16
+
+- Scheduling Android submission
+✔ Scheduled Android submission
+
+Submission details: https://expo.dev/accounts/nikethputta/projects/proteinquest/submissions/3afe1d23-d26f-4560-b830-42a024094bd9
+
+Waiting for build to complete. You can press Ctrl+C to exit.
+- Waiting for build to complete.

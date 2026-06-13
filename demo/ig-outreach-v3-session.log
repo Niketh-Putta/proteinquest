@@ -1,0 +1,45 @@
+Resume: 6/100 sent, 94 remaining
+Queue: 20 new candidates
+→ vetting @myxdcreations
+SKIP @myxdcreations: private/no DM
+→ vetting @imma_jeetee
+SKIP @imma_jeetee: private/no DM
+→ vetting @goodfood.goodmood.mp
+SKIP @goodfood.goodmood.mp: private/no DM
+→ vetting @thatmealprepguy
+SKIP @thatmealprepguy: private/no DM
+→ vetting @upnorthnosh
+SKIP @upnorthnosh: private/no DM
+→ vetting @devgymset
+SKIP @devgymset: private/no DM
+→ vetting @gaukhar.polatbay
+SKIP @gaukhar.polatbay: private/no DM
+→ vetting @subazz_lifts
+SKIP @subazz_lifts: private/no DM
+→ vetting @kamciakova
+SKIP @kamciakova: private/no DM
+→ vetting @proteinsumorecipes
+SKIP @proteinsumorecipes: private/no DM
+→ vetting @itstartswithprotein
+SKIP @itstartswithprotein: private/no DM
+→ vetting @movewithmaisie
+ERROR @movewithmaisie: evaluate: TypeError: Cannot read properties of null (reading 'innerText')
+    at <anonymous>:2:29
+    at <anonymous>:13:5
+→ vetting @leranachevkina
+SKIP @leranachevkina: private/no DM
+→ vetting @borodina_lchr
+SKIP @borodina_lchr: private/no DM
+→ vetting @derya_best_
+SKIP @derya_best_: private/no DM
+→ vetting @brittamaxime
+SKIP @brittamaxime: private/no DM
+→ vetting @fitness._.reels
+SKIP @fitness._.reels: private/no DM
+→ vetting @fitness_.reels
+SKIP @fitness_.reels: private/no DM
+→ vetting @fitness__reels_
+SKIP @fitness__reels_: private/no DM
+→ vetting @fitness__reels___
+SKIP @fitness__reels___: private/no DM
+DONE { sent: 6, skipped: 35, failed: 2 }

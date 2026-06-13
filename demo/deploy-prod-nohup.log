@@ -1,0 +1,101 @@
+
+> npx expo export --platform web
+npm warn Unknown env config "devdir". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+env: load .env.local .env
+env: export EXPO_PUBLIC_SUPABASE_KEY EXPO_PUBLIC_SUPABASE_URL EXPO_TOKEN SUPABASE_DB_PASSWORD
+Using src/app as the root directory for Expo Router.
+React Compiler enabled
+Starting Metro Bundler
+
+Web Bundled 1431ms node_modules/expo-router/entry.js (1580 modules)
+
+› Assets (77):
+assets/character/dragons/fire-1.24ad1272c8c0a16e090851954903e7b6.png (2MB)
+assets/character/dragons/fire-2.569b757ce8d6533f1f306b2bdc4ce4fb.png (2.1MB)
+assets/character/dragons/fire-3.4743992e47d2fa9600e09ff03f31ce12.png (2.5MB)
+assets/character/dragons/fire-4.bfb50abe1270148da0f04418d60c5fe9.png (2.9MB)
+assets/character/dragons/fire-5.b7a7afe1a455b63daa49bcc0e6e2f67c.png (2.9MB)
+assets/character/dragons/forest-1.5e6ca501c38912a32c5865bdfd54c187.png (1.9MB)
+assets/character/dragons/forest-2.2bc045773538ac4610995aad435e995c.png (2.2MB)
+assets/character/dragons/forest-3.23c872701ca674a46453cc5d08d6a72b.png (2.5MB)
+assets/character/dragons/forest-4.712722420b4a299c4e89b0c5f972097b.png (2.6MB)
+assets/character/dragons/forest-5.763f47a6113c5c8bf66f30ea95fecd44.png (3MB)
+assets/character/dragons/ice-1.8e206d86b2c01ea32996721e79773acd.png (1.9MB)
+assets/character/dragons/ice-2.56034c80b7c83c2091d582e5f458d895.png (2.3MB)
+assets/character/dragons/ice-3.00a71147e5e358ce3da2379d92fce745.png (2.4MB)
+assets/character/dragons/ice-4.7de946646f0f8ea5f604703116219837.png (2.8MB)
+assets/character/dragons/ice-5.3931b33cbbdc28d30a5a374ea587a65d.png (2.8MB)
+assets/video/embers.8509594e8ed505df5c9ef607f6468a5b.mp4 (3.3MB)
+node_modules/@expo-google-fonts/jetbrains-mono/100Thin_Italic/JetBrainsMono_100Thin_Italic.e0e8df064ed52d72d70f586f36cee7f7.ttf (118KB)
+node_modules/@expo-google-fonts/jetbrains-mono/100Thin/JetBrainsMono_100Thin.629142e9d264355129ad45763caa52e0.ttf (115KB)
+node_modules/@expo-google-fonts/jetbrains-mono/200ExtraLight_Italic/JetBrainsMono_200ExtraLight_Italic.2c20f32cbea6e03d91e0db149eb82466.ttf (118KB)
+node_modules/@expo-google-fonts/jetbrains-mono/200ExtraLight/JetBrainsMono_200ExtraLight.34216e1124b11af7747ecc363ee3504b.ttf (115KB)
+node_modules/@expo-google-fonts/jetbrains-mono/300Light_Italic/JetBrainsMono_300Light_Italic.c1e8599bfdb164b1006ac9bc662f2f08.ttf (118KB)
+node_modules/@expo-google-fonts/jetbrains-mono/300Light/JetBrainsMono_300Light.822a285e32f16f218ae505dc3c51cae7.ttf (115KB)
+node_modules/@expo-google-fonts/jetbrains-mono/400Regular_Italic/JetBrainsMono_400Regular_Italic.7cd8630e1bc8cae364a3616418f954ed.ttf (118KB)
+node_modules/@expo-google-fonts/jetbrains-mono/400Regular/JetBrainsMono_400Regular.a0147b5ab9e4946e81879aef45313def.ttf (115KB)
+node_modules/@expo-google-fonts/jetbrains-mono/500Medium_Italic/JetBrainsMono_500Medium_Italic.69d9370ee127c4606da21f105d346f3f.ttf (118KB)
+node_modules/@expo-google-fonts/jetbrains-mono/500Medium/JetBrainsMono_500Medium.9200bf1d80f2f4947b496a2e6ab2e224.ttf (115KB)
+node_modules/@expo-google-fonts/jetbrains-mono/600SemiBold_Italic/JetBrainsMono_600SemiBold_Italic.fa8c03a52bf38d2fb2967f54fbf28a75.ttf (118KB)
+node_modules/@expo-google-fonts/jetbrains-mono/600SemiBold/JetBrainsMono_600SemiBold.9d1d8c76cca7c52b5ba85124ea0dde52.ttf (115KB)
+node_modules/@expo-google-fonts/jetbrains-mono/700Bold_Italic/JetBrainsMono_700Bold_Italic.7bef26e508e26a73412f3430432b8d79.ttf (118KB)
+node_modules/@expo-google-fonts/jetbrains-mono/700Bold/JetBrainsMono_700Bold.3aba5b9b33104e426ed11fe6b5789753.ttf (115KB)
+node_modules/@expo-google-fonts/jetbrains-mono/800ExtraBold_Italic/JetBrainsMono_800ExtraBold_Italic.6f6d2ebd4e9e8050c1b761f0290518b2.ttf (118KB)
+node_modules/@expo-google-fonts/jetbrains-mono/800ExtraBold/JetBrainsMono_800ExtraBold.49969685a0e949f34240ac994e4f6ac2.ttf (115KB)
+node_modules/@expo-google-fonts/sora/100Thin/Sora_100Thin.4d6461db63e84ae9df86ca7e37248cd1.ttf (58KB)
+node_modules/@expo-google-fonts/sora/200ExtraLight/Sora_200ExtraLight.14d6620afd81e5431dd1b88e37a19832.ttf (58KB)
+node_modules/@expo-google-fonts/sora/300Light/Sora_300Light.8439a5806686ec5655ea2a629dc871a5.ttf (58KB)
+node_modules/@expo-google-fonts/sora/400Regular/Sora_400Regular.de5ed389a590333faa0d8b20d4d0badb.ttf (58KB)
+node_modules/@expo-google-fonts/sora/500Medium/Sora_500Medium.1915bf4161ebc710866e5c88aeea173f.ttf (58KB)
+node_modules/@expo-google-fonts/sora/600SemiBold/Sora_600SemiBold.8569cb014b6e06cfd0e5b26805e96ca0.ttf (58KB)
+node_modules/@expo-google-fonts/sora/700Bold/Sora_700Bold.d4691f264e2c1ed09de4766e489a99b2.ttf (58KB)
+node_modules/@expo-google-fonts/sora/800ExtraBold/Sora_800ExtraBold.31d2b6e64285548fc0ec7a50e47aaf4c.ttf (58KB)
+node_modules/@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/AntDesign.3f78af31cca60105799838a1a7a59fbd.ttf (130KB)
+node_modules/@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/Entypo.31b5ffea3daddc69dd01a1f3d6cf63c5.ttf (66KB)
+node_modules/@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/EvilIcons.140c53a7643ea949007aa9a282153849.ttf (13KB)
+node_modules/@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/Feather.ca4b48e04dc1ce10bfbddb262c8b835f.ttf (56KB)
+node_modules/@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/FontAwesome.b06871f281fee6b241d60582ae9369b9.ttf (166KB)
+node_modules/@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/FontAwesome5_Brands.3b89dd103490708d19a95adcae52210e.ttf (134KB)
+node_modules/@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/FontAwesome5_Regular.1f77739ca9ff2188b539c36f30ffa2be.ttf (34KB)
+node_modules/@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/FontAwesome5_Solid.605ed7926cf39a2ad5ec2d1f9d391d3d.ttf (203KB)
+node_modules/@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/FontAwesome6_Brands.56c8d80832e37783f12c05db7c8849e2.ttf (209KB)
+node_modules/@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/FontAwesome6_Regular.370dd5af19f8364907b6e2c41f45dbbf.ttf (68KB)
+node_modules/@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/FontAwesome6_Solid.adec7d6f310bc577f05e8fe06a5daccf.ttf (424KB)
+node_modules/@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/Fontisto.b49ae8ab2dbccb02c4d11caaacf09eab.ttf (314KB)
+node_modules/@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/Foundation.e20945d7c929279ef7a6f1db184a4470.ttf (57KB)
+node_modules/@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/Ionicons.b4eb097d35f44ed943676fd56f6bdc51.ttf (390KB)
+node_modules/@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/MaterialCommunityIcons.6e435534bd35da5fef04168860a9b8fa.ttf (1.3MB)
+node_modules/@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/MaterialIcons.4e85bc9ebe07e0340c9c4fc2f6c38908.ttf (357KB)
+node_modules/@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/Octicons.871378c6eab492a3e689a9385dc45a12.ttf (69KB)
+node_modules/@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/SimpleLineIcons.d2285965fe34b05465047401b8595dd0.ttf (54KB)
+node_modules/@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/Zocial.1681f34aaca71b8dfb70756bca331eb2.ttf (26KB)
+node_modules/expo-router/assets/arrow_down.017bc6ba3fc25503e5eb5e53826d48a8.png (9.5KB)
+node_modules/expo-router/assets/error.d1ea1496f9057eb392d5bbf3732a61b7.png (469B)
+node_modules/expo-router/assets/file.19eeb73b9593a38f8e9f418337fc7d10.png (138B)
+node_modules/expo-router/assets/forward.d8b800c443b8972542883e0b9de2bdc6.png (188B)
+node_modules/expo-router/assets/pkg.ab19f4cbc543357183a20571f68380a3.png (364B)
+node_modules/expo-router/assets/react-navigation/elements/back-icon-mask.0a328cd9c1afd0afe8e3b1ec5165b1b4.png (653B)
+node_modules/expo-router/assets/react-navigation/elements/back-icon.35ba0eaec5a4f5ed12ca16fabeae451d.png (207B)
+node_modules/expo-router/assets/react-navigation/elements/clear-icon.c94f6478e7ae0cdd9f15de1fcb9e5e55.png (4 variations | 425B)
+node_modules/expo-router/assets/react-navigation/elements/close-icon.808e1b1b9b53114ec2838071a7e6daa7.png (4 variations | 235B)
+node_modules/expo-router/assets/react-navigation/elements/search-icon.286d67d3f74808a60a78d3ebf1a5fb57.png (928B)
+node_modules/expo-router/assets/sitemap.412dd9275b6b48ad28f5e3d81bb1f626.png (465B)
+node_modules/expo-router/assets/unmatched.20e71bdf79e3a97bf55fd9e164041578.png (4.8KB)
+
+› web bundles (3):
+_expo/static/js/web/entry-a6629e8443ad022d8a5b0aee145b1db2.js (3.3MB)
+_expo/static/js/web/index-0dd865440ac03cc812973f9ed6028306.js (46KB)
+_expo/static/js/web/index-a763eb4c1c2e759bb9159c5160d98983.js (868KB)
+
+› Files (2):
+index.html (1.2KB)
+metadata.json (49B)
+
+Exported: dist
+
+> node scripts/prepare-web-export.mjs
+Copied public favicon assets to dist/
+Updated dist/index.html with branded favicon links
+
+> vercel deploy dist --prod --yes --json
+Could not parse deployment URL from Vercel output.

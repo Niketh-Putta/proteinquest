@@ -1,0 +1,54 @@
+FAST RUN | 11/150 sent
+search fitness creator: +3
+search meal prep creator: +5
+search protein recipes: +5
+search gym influencer: +0
+search calisthenics athlete: +0
+search home workout coach: +5
+search nutrition coach: +3
+search macro coach: +0
+search fitness reel creator: +5
+page fitness%20influencer: posts 4, queue 8
+page meal%20prep%20creator: posts 4, queue 8
+page protein%20recipes: posts 4, queue 9
+page calisthenics%20athlete: posts 4, queue 10
+page gym%20content%20creator: posts 4, queue 11
+page nutrition%20coach: posts 4, queue 13
+page home%20workout%20coach: posts 4, queue 16
+
+Vetting 16 candidates...
+
+--- @fitness.premuuu ---
+SKIP @fitness.premuuu: under 5k followers
+--- @sahil__fit01 ---
+SKIP @sahil__fit01: under 5k followers
+--- @kumarbanti_7722 ---
+SKIP @kumarbanti_7722: under 5k followers
+--- @fitwith_alex07 ---
+SKIP @fitwith_alex07: under 5k followers
+--- @edilainemotiva ---
+SKIP @edilainemotiva: under 5k followers
+--- @rajandroh ---
+SKIP @rajandroh: verified brand/org account
+--- @justinpf951 ---
+✓ SENT @justinpf951 — 12 total | solo fitness creator, 56,100 followers, reel views 6735/6735/6735, avg ~6,735
+--- @bymiamendes ---
+SKIP @bymiamendes: reel views below 5k or inconsistent (1300, 1300, 1300)
+--- @chef.tnac ---
+SKIP @chef.tnac: not fitness/nutrition content
+--- @candies.sw ---
+SKIP @candies.sw: reel views below 5k or inconsistent (1123796, 1123796, 1123796)
+--- @hussein.fht ---
+SKIP @hussein.fht: over 200k followers
+--- @nutritioncoach_adam ---
+SKIP @nutritioncoach_adam: private/no DM
+--- @coach_acos ---
+SKIP @coach_acos: reel views below 5k or inconsistent (168, 168, 168)
+--- @summers.coach ---
+✓ SENT @summers.coach — 13 total | solo fitness creator, 23,000 followers, reel views 61268/61269/61269, avg ~61,269
+--- @pierredalati ---
+SKIP @pierredalati: over 200k followers
+--- @mustafarbm ---
+SKIP @mustafarbm: over 200k followers
+
+DONE: +2 this run | total 11/150

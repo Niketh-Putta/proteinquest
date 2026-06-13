@@ -1,0 +1,8 @@
+npm warn Unknown env config "devdir". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+
+> proteinquest@1.0.0 setup:github-vercel
+> node scripts/setup-github-vercel.mjs
+
+
+> gh auth status
+GitHub CLI is not authenticated. Run: gh auth login -h github.com

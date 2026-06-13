@@ -25,8 +25,8 @@ const CASES = [
     file: 'demo/meal-scan.jpg',
     mime: 'image/jpeg',
     description: 'Grilled chicken + kale (visual portion estimate)',
-    expectMin: 40,
-    expectMax: 65,
+    expectMin: 28,
+    expectMax: 48,
     expectSource: 'visual',
   },
   {

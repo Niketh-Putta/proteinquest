@@ -1,0 +1,15 @@
+node_modules/
+.expo/
+dist/
+web-build/
+demo/
+store/*.png
+store/*.aab
+store/screenshots/
+store/google-play-service-account.json
+store/SubscriptionKey_*.p8
+.env
+.env*.local
+ios/
+android/
+.git/

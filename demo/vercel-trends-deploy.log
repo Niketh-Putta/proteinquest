@@ -1,0 +1,20 @@
+Vercel CLI 54.10.3 (Node.js 25.9.0)
+Retrieving project…
+Deploying niketh-puttas-projects/proteinquest
+Uploading [--------------------] (0.0B/137.5MB)
+Uploading [=====---------------] (34.4MB/137.5MB)
+Uploading [==========----------] (68.8MB/137.5MB)
+Uploading [===============-----] (103.2MB/137.5MB)
+Uploading [====================] (137.5MB/137.5MB)
+{
+  "status": "error",
+  "reason": "deploy_failed",
+  "message": "File size limit exceeded (100 MB)",
+  "next": [
+    {
+      "command": "vercel deploy",
+      "when": "retry deploy"
+    }
+  ]
+}
+Error: File size limit exceeded (100 MB)
