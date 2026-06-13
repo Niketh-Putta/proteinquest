@@ -4,8 +4,6 @@ import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-na
 
 import { colors, fonts, noTextCaret, pressableWeb, radius, spacing } from '@/theme';
 
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
-
 interface Props {
   title: string;
   onPress: () => void;
@@ -19,50 +17,71 @@ export function Button({ title, onPress, variant = 'primary', disabled, loading,
   const scale = useSharedValue(1);
   const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
   const isPrimary = variant === 'primary';
+  const isDisabled = disabled || loading;
 
+  // IMPORTANT: the touch target is a plain <Pressable>, and the press-scale
+  // animation lives on an inner <Animated.View>. Wrapping the Pressable itself
+  // with reanimated (Animated.createAnimatedComponent(Pressable)) makes Android
+  // drop/delay the first taps because the animated prop writes race the gesture
+  // responder — that was the "takes a few clicks" bug.
   return (
-    <AnimatedPressable
+    <Pressable
       onPress={onPress}
-      disabled={disabled || loading}
-      // Forgiving touch target: keep the press alive even if the finger drifts
-      // slightly (otherwise a ScrollView steals the gesture and the tap is
-      // dropped, which makes the button feel unresponsive on Android).
+      disabled={isDisabled}
       hitSlop={10}
       pressRetentionOffset={{ top: 24, bottom: 24, left: 24, right: 24 }}
       android_ripple={{
         color: isPrimary ? 'rgba(0,0,0,0.16)' : colors.hairlineBright,
         borderless: false,
       }}
-      onPressIn={() => (scale.value = withSpring(0.98, { damping: 18, stiffness: 400 }))}
-      onPressOut={() => (scale.value = withSpring(1, { damping: 14, stiffness: 300 }))}
-      style={[
-        styles.base,
-        isPrimary && styles.primary,
-        variant === 'secondary' && styles.secondary,
-        variant === 'ghost' && styles.ghost,
-        (disabled || loading) && { opacity: 0.4 },
-        animatedStyle,
-        style,
-      ]}>
-      {loading ? (
-        <ActivityIndicator color={isPrimary ? colors.onAccent : colors.text} />
-      ) : (
-        <Text
-          selectable={false}
-          style={[
-            styles.label,
-            { color: isPrimary ? colors.onAccent : variant === 'ghost' ? colors.textSecondary : colors.text },
-          ]}>
-          {title}
-        </Text>
-      )}
-    </AnimatedPressable>
+      onPressIn={() => {
+        scale.value = withSpring(0.98, { damping: 18, stiffness: 400 });
+      }}
+      onPressOut={() => {
+        scale.value = withSpring(1, { damping: 14, stiffness: 300 });
+      }}
+      style={[styles.pressable, isDisabled && styles.disabled, style]}>
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.base,
+          isPrimary && styles.primary,
+          variant === 'secondary' && styles.secondary,
+          variant === 'ghost' && styles.ghost,
+          animatedStyle,
+        ]}>
+        {loading ? (
+          <ActivityIndicator color={isPrimary ? colors.onAccent : colors.text} />
+        ) : (
+          <Text
+            selectable={false}
+            style={[
+              styles.label,
+              {
+                color: isPrimary
+                  ? colors.onAccent
+                  : variant === 'ghost'
+                    ? colors.textSecondary
+                    : colors.text,
+              },
+            ]}>
+            {title}
+          </Text>
+        )}
+      </Animated.View>
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  base: {
+  pressable: {
     ...pressableWeb,
+    borderRadius: radius.button,
+    // Clip the Android ripple to the rounded shape.
+    overflow: 'hidden',
+  },
+  disabled: { opacity: 0.4 },
+  base: {
     height: 52,
     alignItems: 'center',
     justifyContent: 'center',
