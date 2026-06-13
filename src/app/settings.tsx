@@ -18,6 +18,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { uploadAvatar } from '@/lib/api';
+import { BillingSheet } from '@/components/BillingSheet';
 import { DragonEvolutionGallery } from '@/components/DragonEvolutionGallery';
 import { GoalEditor } from '@/components/GoalEditor';
 import { dragonById, displayDragonId, isDailyDragonLockedForToday } from '@/lib/character';
@@ -44,6 +45,7 @@ export default function SettingsScreen() {
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [nameFocused, setNameFocused] = useState(false);
   const [nameSaved, setNameSaved] = useState(false);
+  const [billingOpen, setBillingOpen] = useState(false);
   const nameInputRef = useRef<TextInput>(null);
   const nameHydrated = useRef(false);
 
@@ -237,6 +239,27 @@ export default function SettingsScreen() {
             </Pressable>
           </View>
 
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>BILLING</Text>
+            <Pressable
+              onPress={() => setBillingOpen(true)}
+              android_ripple={{ color: colors.hairlineBright }}
+              style={({ pressed }) => [styles.billingBtn, pressed && styles.billingBtnPressed]}>
+              <View style={styles.billingIcon}>
+                <Ionicons name="card" size={18} color={colors.accent} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.billingTitle}>Manage billing</Text>
+                <Text style={styles.billingHint}>
+                  {profile?.is_premium
+                    ? 'Update payment, restore, or cancel Pro'
+                    : 'Payment method, restore, and plan options'}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+            </Pressable>
+          </View>
+
           {profile && isDailyDragonLockedForToday(profile, todayISODate()) ? (
             <View style={styles.lockedDragon}>
               <Text style={styles.lockedLabel}>TODAY&apos;S DRAGON</Text>
@@ -258,6 +281,15 @@ export default function SettingsScreen() {
           />
         </ScrollView>
       </KeyboardAvoidingView>
+      <BillingSheet
+        visible={billingOpen}
+        isPro={!!profile?.is_premium}
+        onClose={() => setBillingOpen(false)}
+        onRestored={() => {
+          saveProfile({ is_premium: true }).catch(() => {});
+          setBillingOpen(false);
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -443,6 +475,39 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   leagueLinkHint: {
+    fontFamily: fonts.body,
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  billingBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    backgroundColor: colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.hairlineBright,
+    borderRadius: 10,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 12,
+    minHeight: 44,
+    overflow: 'hidden',
+  },
+  billingBtnPressed: { opacity: 0.85 },
+  billingIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: colors.accentSurface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  billingTitle: {
+    fontFamily: fonts.displayMedium,
+    fontSize: 15,
+    color: colors.text,
+  },
+  billingHint: {
     fontFamily: fonts.body,
     fontSize: 12,
     color: colors.textSecondary,

@@ -203,6 +203,28 @@ export async function restorePurchases(): Promise<boolean> {
   return hasProEntitlement(info);
 }
 
+/**
+ * Where the user manages payment method / cancellation for their subscription.
+ * Prefers RevenueCat's per-user management URL; otherwise falls back to the
+ * platform's store subscription page. Billing changes (card, cancel) are owned
+ * by the store, so we always route there rather than handling them in-app.
+ */
+export async function getBillingManagementUrl(): Promise<string> {
+  const storeFallback =
+    Platform.OS === 'ios'
+      ? 'https://apps.apple.com/account/subscriptions'
+      : 'https://play.google.com/store/account/subscriptions';
+
+  if (!isRevenueCatConfigured()) return storeFallback;
+  try {
+    const Purchases = (await import('react-native-purchases')).default;
+    const info = await Purchases.getCustomerInfo();
+    return info.managementURL ?? storeFallback;
+  } catch {
+    return storeFallback;
+  }
+}
+
 /** Subscribe to entitlement changes (renewal, expiry, restore). Returns unsubscribe fn. */
 export function subscribeToProEntitlementChanges(
   onChange: (isPro: boolean) => void,

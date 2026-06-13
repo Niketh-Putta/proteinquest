@@ -9,7 +9,9 @@ import {
   FREE_DAILY_SCANS,
   getNativePaymentProvider,
   getPaymentProvider,
+  getProMemberCount,
   nativePurchasesReady,
+  PRO_MEMBER_BASE,
   type PaymentPlan,
   type PaymentProvider,
 } from '@/lib/payments';
@@ -40,6 +42,7 @@ export default function Paywall() {
   const [busy, setBusy] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [purchasesReady, setPurchasesReady] = useState(false);
+  const [memberCount, setMemberCount] = useState(PRO_MEMBER_BASE);
 
   useEffect(() => {
     if (Platform.OS === 'web') return;
@@ -52,6 +55,18 @@ export default function Paywall() {
     nativePurchasesReady()
       .then(setPurchasesReady)
       .catch(() => setPurchasesReady(false));
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    getProMemberCount()
+      .then((n) => {
+        if (active) setMemberCount(n);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
   }, []);
 
   async function grantPremium() {
@@ -132,6 +147,14 @@ export default function Paywall() {
         <Text style={styles.subtitle}>
           Free includes {FREE_DAILY_SCANS} AI scans a day. Go Pro for unlimited scans.
         </Text>
+
+        <View style={styles.socialProof}>
+          <Ionicons name="people" size={16} color={colors.accent} />
+          <Text style={styles.socialProofText}>
+            Join <Text style={styles.socialProofCount}>{memberCount.toLocaleString()}</Text> people
+            already enjoying ProteinQuest Pro
+          </Text>
+        </View>
 
         <View style={styles.perks}>
           {PERKS.map((p) => (
@@ -234,6 +257,29 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
     lineHeight: 22,
     fontFamily: fonts.body,
+  },
+  socialProof: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.md,
+    backgroundColor: colors.accentSurface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.accent,
+  },
+  socialProofText: {
+    flex: 1,
+    fontFamily: fonts.body,
+    fontSize: 13,
+    lineHeight: 18,
+    color: colors.textSecondary,
+  },
+  socialProofCount: {
+    fontFamily: fonts.displayMedium,
+    color: colors.accent,
   },
   perks: { gap: spacing.md, marginVertical: spacing.xl },
   perkRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },

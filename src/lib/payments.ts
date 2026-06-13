@@ -2,6 +2,7 @@ import { Platform } from 'react-native';
 
 import {
   checkProEntitlement,
+  getBillingManagementUrl,
   getRevenueCatPlans,
   hasLiveOfferings,
   isRevenueCatConfigured,
@@ -9,6 +10,9 @@ import {
   restorePurchases,
 } from './revenuecat';
 import { supabase } from './supabase';
+
+/** Social-proof offset so the paywall reads as an established community. */
+export const PRO_MEMBER_BASE = 23;
 
 export interface PaymentPlan {
   id: string;
@@ -44,6 +48,7 @@ export const PLANS: PaymentPlan[] = [
 ];
 
 export { FREE_DAILY_SCANS } from './paywall-gate';
+export { getBillingManagementUrl } from './revenuecat';
 
 const stripeEnabled = process.env.EXPO_PUBLIC_STRIPE_ENABLED === 'true';
 
@@ -135,4 +140,22 @@ export function getPaymentProvider(): PaymentProvider {
 export async function syncPremiumFromRevenueCat(): Promise<boolean> {
   if (!isRevenueCatConfigured()) return false;
   return checkProEntitlement();
+}
+
+/**
+ * Running total of Pro members for the paywall's social proof.
+ * Returns `PRO_MEMBER_BASE` + the real number of premium profiles, so it
+ * starts at 23 and climbs by one with every new subscriber. Falls back to the
+ * base offset if the count can't be fetched.
+ */
+export async function getProMemberCount(): Promise<number> {
+  try {
+    const { data, error } = await supabase.rpc('pro_member_count');
+    if (error || typeof data !== 'number' || !Number.isFinite(data)) {
+      return PRO_MEMBER_BASE;
+    }
+    return Math.max(PRO_MEMBER_BASE, data);
+  } catch {
+    return PRO_MEMBER_BASE;
+  }
 }
