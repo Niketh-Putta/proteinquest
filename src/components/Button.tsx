@@ -24,6 +24,15 @@ export function Button({ title, onPress, variant = 'primary', disabled, loading,
     <AnimatedPressable
       onPress={onPress}
       disabled={disabled || loading}
+      // Forgiving touch target: keep the press alive even if the finger drifts
+      // slightly (otherwise a ScrollView steals the gesture and the tap is
+      // dropped, which makes the button feel unresponsive on Android).
+      hitSlop={10}
+      pressRetentionOffset={{ top: 24, bottom: 24, left: 24, right: 24 }}
+      android_ripple={{
+        color: isPrimary ? 'rgba(0,0,0,0.16)' : colors.hairlineBright,
+        borderless: false,
+      }}
       onPressIn={() => (scale.value = withSpring(0.98, { damping: 18, stiffness: 400 }))}
       onPressOut={() => (scale.value = withSpring(1, { damping: 14, stiffness: 300 }))}
       style={[

@@ -20,6 +20,7 @@ import Animated, {
   FadeInDown,
   FadeOut,
   interpolate,
+  runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withDelay,
@@ -138,11 +139,16 @@ function EmberOverlay() {
 }
 
 /**
- * One word of the opening title: tracking-in + rise. The animation is fully
- * driven by a shared value that re-fires whenever `word` changes, so it never
- * relies on key-based remounts or `exiting` layout animations (those hang on
- * Android release builds with the React Compiler enabled, freezing the
- * sequence on the first word).
+ * One word of the opening title. Each word glides out before the next glides
+ * in via a single shared-value crossfade, so the swap reads as a smooth
+ * hand-off rather than a hard cut.
+ *
+ * Only transform + opacity are animated (both GPU-composited). We deliberately
+ * do NOT animate `letterSpacing`: it is a text-layout property, so animating it
+ * forces a full glyph relayout every frame, which is what made the sequence
+ * look jittery. The animation is driven entirely by shared values — no
+ * key-based remounts or `exiting` layout animations, which hang on Android
+ * release builds with the React Compiler enabled.
  */
 function TitleWord({
   word,
@@ -154,17 +160,30 @@ function TitleWord({
   sizeStyle: { fontSize: number; lineHeight: number };
 }) {
   const p = useSharedValue(0);
+  // The text actually rendered. It only swaps once the outgoing word has
+  // finished gliding away, so the two words never visibly overlap.
+  const [shown, setShown] = useState(word);
+
+  // Glide the freshly-shown word in.
   useEffect(() => {
     p.value = 0;
-    p.value = withTiming(1, { duration: 560, easing: Easing.out(Easing.cubic) });
-  }, [word, p]);
+    p.value = withTiming(1, { duration: 540, easing: Easing.out(Easing.cubic) });
+  }, [shown, p]);
+
+  // When the target word changes, glide the current one out, then swap.
+  useEffect(() => {
+    if (word === shown) return;
+    p.value = withTiming(1, { duration: 1 }); // ensure we start from a settled state
+    p.value = withTiming(0, { duration: 260, easing: Easing.in(Easing.cubic) }, (finished) => {
+      if (finished) runOnJS(setShown)(word);
+    });
+  }, [word, shown, p]);
 
   const style = useAnimatedStyle(() => ({
     opacity: p.value,
-    letterSpacing: interpolate(p.value, [0, 1], [18, 4]),
     transform: [
-      { translateY: interpolate(p.value, [0, 1], [26, 0]) },
-      { scale: interpolate(p.value, [0, 1], [1.06, 1]) },
+      { translateY: interpolate(p.value, [0, 1], [20, 0]) },
+      { scale: interpolate(p.value, [0, 1], [0.97, 1]) },
     ],
   }));
 
@@ -174,7 +193,7 @@ function TitleWord({
         style={[styles.heroWord, compact && styles.heroWordCompact, sizeStyle, style]}
         numberOfLines={1}
         adjustsFontSizeToFit>
-        {word}
+        {shown}
       </Animated.Text>
     </View>
   );
