@@ -50,7 +50,7 @@
     "eslint": "^9.0.0",
     "eslint-config-expo": "~56.0.4",
     "playwright": "^1.60.0",
-    "typescript": "~6.0.3"
+    "typescript": "~5.9.3"
   },
   "scripts": {
     "start": "expo start",
