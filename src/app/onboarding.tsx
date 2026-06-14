@@ -164,17 +164,13 @@ export default function Onboarding() {
     );
   }
 
-  function handleContinueFromDragon() {
-    if (!dragonId) {
-      setError('Choose a dragon to continue.');
-      return;
-    }
+  function handleDragonPick(id: DragonId) {
+    setDragonId(id);
     setError(null);
     setStep('goal');
   }
 
-  // Centered content column shared by the scroll body and the pinned footer so
-  // the Continue button always lines up with the cards above it.
+  // Centered content column for the scroll body.
   const columnStyle = {
     width: '100%' as const,
     maxWidth: contentMaxWidth,
@@ -182,33 +178,22 @@ export default function Onboarding() {
     paddingHorizontal: horizontalPad,
   };
 
-  // The dragon step pins its Continue button in a fixed footer below the scroll
-  // area. This guarantees the button is always on-screen and tappable on every
-  // viewport — short phones included — instead of relying on the button being
-  // scrolled into view. The button is intentionally NOT wrapped in a reanimated
-  // entering/exiting layout animation: those hang/mis-place the touch target on
-  // Android release builds with the React Compiler enabled, which is what made
-  // the button feel unresponsive on some devices.
+  // Picking a dragon advances immediately — no Continue button. That removes the
+  // extra tap that was failing on small phones / Android release builds.
   if (step === 'dragon') {
     return (
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-        <View style={styles.flex}>
-          <ScrollView
-            style={styles.flex}
-            contentContainerStyle={[styles.scroll, columnStyle]}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}>
-            <View style={styles.content}>
-              <StepProgress index={0} />
-              <DragonPicker value={dragonId} onChange={setDragonId} />
-              {error ? <Text style={styles.error}>{error}</Text> : null}
-            </View>
-          </ScrollView>
-
-          <View style={[styles.footer, columnStyle, { paddingBottom: footerGap }]}>
-            <Button title="Continue" onPress={handleContinueFromDragon} disabled={!dragonId} />
+        <ScrollView
+          style={styles.flex}
+          contentContainerStyle={[styles.scroll, columnStyle, { paddingBottom: footerGap }]}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}>
+          <View style={styles.content}>
+            <StepProgress index={0} />
+            <DragonPicker value={dragonId} onChange={handleDragonPick} />
+            {error ? <Text style={styles.error}>{error}</Text> : null}
           </View>
-        </View>
+        </ScrollView>
       </SafeAreaView>
     );
   }
@@ -278,12 +263,6 @@ const styles = StyleSheet.create({
   flex: { flex: 1, width: '100%' },
   scroll: { paddingTop: spacing.lg },
   content: { width: '100%', maxWidth: '100%', minWidth: 0 },
-  footer: {
-    paddingTop: spacing.md,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.hairline,
-    backgroundColor: colors.bg,
-  },
   kicker: {
     fontFamily: fonts.mono,
     fontSize: 9,

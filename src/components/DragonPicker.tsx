@@ -1,10 +1,9 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
-import Animated, { FadeInDown } from 'react-native-reanimated';
 
 import { DRAGONS } from '@/lib/character';
 import type { DragonId } from '@/lib/types';
-import { colors, fonts, radius, spacing } from '@/theme';
+import { colors, fonts, pressableWeb, radius, spacing } from '@/theme';
 
 interface Props {
   value: DragonId | null;
@@ -16,10 +15,7 @@ interface Props {
 }
 
 export function DragonPicker({ value, onChange, compact = false, tight = false }: Props) {
-  const [selected, setSelected] = useState<DragonId | null>(value);
-
   function pick(id: DragonId) {
-    setSelected(id);
     onChange(id);
   }
 
@@ -38,15 +34,16 @@ export function DragonPicker({ value, onChange, compact = false, tight = false }
       ) : null}
 
       <View style={[styles.list, compact && { marginTop: 0 }, tight && styles.listTight]}>
-        {DRAGONS.map((dragon, i) => {
-          const active = selected === dragon.id;
+        {DRAGONS.map((dragon) => {
+          const active = value === dragon.id;
           return (
-            <Animated.View
+            <Pressable
               key={dragon.id}
-              entering={FadeInDown.delay(i * 70).duration(420)}>
-              <Pressable
-                onPress={() => pick(dragon.id)}
-                style={[styles.row, tight && styles.rowTight, active && styles.rowActive]}>
+              accessibilityRole="radio"
+              accessibilityState={{ checked: active }}
+              onPress={() => pick(dragon.id)}
+              hitSlop={6}
+              style={[styles.row, pressableWeb, tight && styles.rowTight, active && styles.rowActive]}>
                 <View
                   style={[
                     styles.artFrame,
@@ -66,8 +63,7 @@ export function DragonPicker({ value, onChange, compact = false, tight = false }
                     <View style={[styles.radioDot, { backgroundColor: dragon.accent }]} />
                   ) : null}
                 </View>
-              </Pressable>
-            </Animated.View>
+            </Pressable>
           );
         })}
       </View>
