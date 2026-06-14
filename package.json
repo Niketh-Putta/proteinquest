@@ -50,7 +50,7 @@
     "eslint": "^9.0.0",
     "eslint-config-expo": "~56.0.4",
     "playwright": "^1.60.0",
-    "typescript": "~5.9.3"
+    "typescript": "~6.0.3"
   },
   "scripts": {
     "start": "expo start",
@@ -63,6 +63,7 @@
     "setup:github-vercel": "node scripts/setup-github-vercel.mjs",
     "build:android": "eas build --platform android --profile production",
     "build:ios": "eas build --platform ios --profile production",
+    "ship:ios": "node scripts/ios-app-store-ship.mjs",
     "build:all": "eas build --platform all --profile production",
     "play-store:prep": "node scripts/play-store-prep.mjs",
     "play-store:submit": "node scripts/play-store-submit.mjs",

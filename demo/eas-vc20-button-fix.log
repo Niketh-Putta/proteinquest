@@ -10,8 +10,8 @@ To suppress this warning, set EAS_BUILD_NO_EXPO_GO_WARNING=true.
 Resolved "production" environment for the build. Learn more: https://docs.expo.dev/eas/environment-variables/#setting-the-environment-for-your-builds
 Environment variables with visibility "Plain text" and "Sensitive" loaded from the "production" environment on EAS: EXPO_PUBLIC_REVENUECAT_ANDROID_KEY, EXPO_PUBLIC_SUPABASE_KEY, EXPO_PUBLIC_SUPABASE_URL.
 
-- Incrementing versionCode from 18 to 19.
-✔ Incremented versionCode from 18 to 19.
+- Incrementing versionCode from 19 to 20.
+✔ Incremented versionCode from 19 to 20.
 
 
 android.versionCode field in app config is ignored when version source is set to remote, but this value will still be in the manifest available via expo-constants. It's recommended to remove this value from app config.
@@ -21,11 +21,13 @@ android.versionCode field in app config is ignored when version source is set to
 Compressing project files and uploading to EAS Build. Learn more: https://expo.fyi/eas-build-archive
 - Compressing project files
 - Uploading to EAS Build (0 / 105 MB)
-✔ Uploaded to EAS 27s
+✔ Uploaded to EAS 13s
 - Computing project fingerprint
+⌛️ Computing the project fingerprint is taking longer than expected...
+⏩ To skip this step, set the environment variable: EAS_SKIP_AUTO_FINGERPRINT=1
 ✔ Computed project fingerprint
 
-See logs: https://expo.dev/accounts/nikethputta/projects/proteinquest/builds/f772b005-35f6-45dc-9dcd-fa01e067bc46
+See logs: https://expo.dev/accounts/nikethputta/projects/proteinquest/builds/81c67985-29af-492d-a316-19eb94f3a8bd
 
 Project ID:                     16c8d824-5395-4173-aa70-88218dcb54d5
 Release track:                  internal
@@ -37,22 +39,22 @@ Google Service Account Key:
     Account Email:  revenuecat@maximal-journey-472709-k7.iam.gserviceaccount.com
 Rollout:                        undefined
 Build:                          
-    Build ID    :  f772b005-35f6-45dc-9dcd-fa01e067bc46
-    Build Date  :  6/13/2026, 7:48:53 PM
+    Build ID    :  81c67985-29af-492d-a316-19eb94f3a8bd
+    Build Date  :  6/13/2026, 8:44:12 PM
     App Version :  1.0.0
-    Version code:  19
+    Version code:  20
 
 - Scheduling Android submission
 ✔ Scheduled Android submission
 
-Submission details: https://expo.dev/accounts/nikethputta/projects/proteinquest/submissions/ccccfe8a-de18-458f-85ea-2c2469b75340
+Submission details: https://expo.dev/accounts/nikethputta/projects/proteinquest/submissions/40d8d8b6-e0b2-4571-9ca9-bd8f72d84ebe
 
 Waiting for build to complete. You can press Ctrl+C to exit.
 - Waiting for build to complete.
 ✔ Build finished
 
 🤖 Android app:
-https://expo.dev/artifacts/eas/QpqRug6MpizO2vYYDKNwCvDS1uQIVndmBRISzJxyoNI.aab
+https://expo.dev/artifacts/eas/S6ZyqzjU6sYcIrdZY8KphNgDPeKJRTj7N2uSV-jY13I.aab
 
 Waiting for submission to complete. You can press Ctrl+C to exit.
 - Submitting

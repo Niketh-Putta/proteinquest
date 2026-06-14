@@ -174,8 +174,9 @@ export default function Paywall() {
           </Text>
         ) : !purchasesReady ? (
           <Text style={styles.devNote}>
-            Subscriptions are being set up in Google Play. Purchases will work once store products
-            are live — usually within 24 hours of Play Console setup.
+            {Platform.OS === 'ios'
+              ? 'Subscriptions are being set up in the App Store. Purchases will work once store products are live — usually within 24 hours of App Store Connect setup.'
+              : 'Subscriptions are being set up in Google Play. Purchases will work once store products are live — usually within 24 hours of Play Console setup.'}
           </Text>
         ) : null}
 

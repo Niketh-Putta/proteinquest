@@ -11,8 +11,6 @@ import {
 } from 'react-native';
 import Animated, {
   FadeIn,
-  FadeInDown,
-  FadeOut,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
@@ -166,6 +164,55 @@ export default function Onboarding() {
     );
   }
 
+  function handleContinueFromDragon() {
+    if (!dragonId) {
+      setError('Choose a dragon to continue.');
+      return;
+    }
+    setError(null);
+    setStep('goal');
+  }
+
+  // Centered content column shared by the scroll body and the pinned footer so
+  // the Continue button always lines up with the cards above it.
+  const columnStyle = {
+    width: '100%' as const,
+    maxWidth: contentMaxWidth,
+    alignSelf: 'center' as const,
+    paddingHorizontal: horizontalPad,
+  };
+
+  // The dragon step pins its Continue button in a fixed footer below the scroll
+  // area. This guarantees the button is always on-screen and tappable on every
+  // viewport — short phones included — instead of relying on the button being
+  // scrolled into view. The button is intentionally NOT wrapped in a reanimated
+  // entering/exiting layout animation: those hang/mis-place the touch target on
+  // Android release builds with the React Compiler enabled, which is what made
+  // the button feel unresponsive on some devices.
+  if (step === 'dragon') {
+    return (
+      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+        <View style={styles.flex}>
+          <ScrollView
+            style={styles.flex}
+            contentContainerStyle={[styles.scroll, columnStyle]}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}>
+            <View style={styles.content}>
+              <StepProgress index={0} />
+              <DragonPicker value={dragonId} onChange={setDragonId} />
+              {error ? <Text style={styles.error}>{error}</Text> : null}
+            </View>
+          </ScrollView>
+
+          <View style={[styles.footer, columnStyle, { paddingBottom: footerGap }]}>
+            <Button title="Continue" onPress={handleContinueFromDragon} disabled={!dragonId} />
+          </View>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <KeyboardAvoidingView
@@ -173,78 +220,41 @@ export default function Onboarding() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView
           style={styles.flex}
-          contentContainerStyle={[
-            styles.scroll,
-            {
-              paddingHorizontal: horizontalPad,
-              maxWidth: contentMaxWidth,
-              width: '100%',
-              alignSelf: 'center',
-              paddingBottom: footerGap,
-            },
-          ]}
+          contentContainerStyle={[styles.scroll, columnStyle, { paddingBottom: footerGap }]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}>
           <View style={styles.content}>
-            <StepProgress index={step === 'dragon' ? 0 : 1} />
-            {step === 'dragon' ? (
-              <Animated.View
-                key="dragon"
-                entering={FadeInDown.duration(380)}
-                exiting={FadeOut.duration(160)}>
-                <DragonPicker value={dragonId} onChange={setDragonId} />
-                {error ? <Text style={styles.error}>{error}</Text> : null}
-                <Button
-                  title="Continue"
-                  onPress={() => {
-                    if (!dragonId) {
-                      setError('Choose a dragon to continue.');
-                      return;
-                    }
-                    setError(null);
-                    setStep('goal');
-                  }}
-                  disabled={!dragonId}
-                  style={{ marginTop: spacing.xl }}
-                />
-              </Animated.View>
-            ) : (
-              <Animated.View
-                key="goal"
-                entering={FadeInDown.duration(380)}
-                exiting={FadeOut.duration(160)}>
-                <Text style={[styles.kicker, isCompact && styles.kickerCompact]}>
-                  REACH YOUR POTENTIAL
-                </Text>
-                <Text style={[styles.step, isCompact && styles.stepCompact]}>
-                  STEP 2 · YOUR DAILY TARGET
-                </Text>
-                <Text
-                  style={[
-                    styles.title,
-                    isNarrow && styles.titleNarrow,
-                    isCompact && styles.titleCompact,
-                  ]}>
-                  Set your protein goal
-                </Text>
-                <Text style={[styles.subtitle, isCompact && styles.subtitleCompact]}>
-                  Hit it every day to feed your dragon and unlock evolutions. Small wins compound.
-                </Text>
-                {error ? <Text style={styles.error}>{error}</Text> : null}
-                <GoalEditor
-                  profile={null}
-                  submitLabel="Start tracking"
-                  saving={saving}
-                  onSubmit={handleSubmit}
-                />
-                <Button
-                  title="Back"
-                  variant="ghost"
-                  onPress={() => setStep('dragon')}
-                  style={{ marginTop: spacing.sm }}
-                />
-              </Animated.View>
-            )}
+            <StepProgress index={1} />
+            <Text style={[styles.kicker, isCompact && styles.kickerCompact]}>
+              REACH YOUR POTENTIAL
+            </Text>
+            <Text style={[styles.step, isCompact && styles.stepCompact]}>
+              STEP 2 · YOUR DAILY TARGET
+            </Text>
+            <Text
+              style={[
+                styles.title,
+                isNarrow && styles.titleNarrow,
+                isCompact && styles.titleCompact,
+              ]}>
+              Set your protein goal
+            </Text>
+            <Text style={[styles.subtitle, isCompact && styles.subtitleCompact]}>
+              Hit it every day to feed your dragon and unlock evolutions. Small wins compound.
+            </Text>
+            {error ? <Text style={styles.error}>{error}</Text> : null}
+            <GoalEditor
+              profile={null}
+              submitLabel="Start tracking"
+              saving={saving}
+              onSubmit={handleSubmit}
+            />
+            <Button
+              title="Back"
+              variant="ghost"
+              onPress={() => setStep('dragon')}
+              style={{ marginTop: spacing.sm }}
+            />
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -268,6 +278,12 @@ const styles = StyleSheet.create({
   flex: { flex: 1, width: '100%' },
   scroll: { paddingTop: spacing.lg },
   content: { width: '100%', maxWidth: '100%', minWidth: 0 },
+  footer: {
+    paddingTop: spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.hairline,
+    backgroundColor: colors.bg,
+  },
   kicker: {
     fontFamily: fonts.mono,
     fontSize: 9,
