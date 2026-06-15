@@ -29,6 +29,8 @@ export interface Profile {
   intro_completed: boolean;
   is_premium: boolean;
   paywall_dismissed: boolean;
+  /** Set by Supabase on profile insert — used for the 2-day habit grace period. */
+  created_at?: string | null;
   /** @deprecated use dragon_progress */
   xp: number;
   /** @deprecated use dragon_progress */

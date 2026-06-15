@@ -4,8 +4,30 @@ import { totalXp } from './xp';
 /** Free tier: AI photo scans per calendar day (UTC date on server). */
 export const FREE_DAILY_SCANS = 3;
 
+/** No paywall and unlimited scans for the first N calendar days after signup. */
+export const HABIT_GRACE_DAYS = 2;
+
 export function isPro(profile: Profile | null | undefined): boolean {
   return profile?.is_premium === true;
+}
+
+/** Calendar days since signup (0 = signup day), or null if created_at is unknown. */
+export function accountAgeCalendarDays(profile: Profile | null | undefined): number | null {
+  if (!profile?.created_at) return null;
+  const created = new Date(profile.created_at);
+  if (Number.isNaN(created.getTime())) return null;
+  const signupDay = new Date(created.getFullYear(), created.getMonth(), created.getDate());
+  const today = new Date();
+  const todayDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  return Math.floor((todayDay.getTime() - signupDay.getTime()) / 86_400_000);
+}
+
+/** Days 1–2 after signup: no paywall, unlimited scans — build the habit first. */
+export function isInHabitGracePeriod(profile: Profile | null | undefined): boolean {
+  if (!profile || isPro(profile)) return false;
+  const ageDays = accountAgeCalendarDays(profile);
+  if (ageDays === null) return false;
+  return ageDays < HABIT_GRACE_DAYS;
 }
 
 /**
@@ -15,6 +37,7 @@ export function isPro(profile: Profile | null | undefined): boolean {
 export function shouldShowDelayedPaywall(profile: Profile | null | undefined): boolean {
   if (!profile?.onboarded) return false;
   if (isPro(profile)) return false;
+  if (isInHabitGracePeriod(profile)) return false;
   if (profile.paywall_dismissed) return false;
   return totalXp(profile) > 0;
 }
@@ -26,16 +49,22 @@ export function canAccessTrends(_profile: Profile | null | undefined): boolean {
 
 export function canScan(profile: Profile | null | undefined, scansUsedToday: number): boolean {
   if (isPro(profile)) return true;
+  if (isInHabitGracePeriod(profile)) return true;
   return scansUsedToday < FREE_DAILY_SCANS;
 }
 
-export function remainingFreeScans(scansUsedToday: number): number {
+export function remainingFreeScans(
+  scansUsedToday: number,
+  profile?: Profile | null,
+): number {
+  if (profile && isInHabitGracePeriod(profile)) return FREE_DAILY_SCANS;
   return Math.max(FREE_DAILY_SCANS - scansUsedToday, 0);
 }
 
 export function scansLimitLabel(scansUsedToday: number, profile: Profile | null | undefined): string {
   if (isPro(profile)) return 'Unlimited scans';
-  const left = remainingFreeScans(scansUsedToday);
+  if (isInHabitGracePeriod(profile)) return 'Unlimited scans — habit week';
+  const left = remainingFreeScans(scansUsedToday, profile);
   if (left === 0) return 'Out of free scans — go Pro';
   return `${left} free scan${left === 1 ? '' : 's'} left today`;
 }

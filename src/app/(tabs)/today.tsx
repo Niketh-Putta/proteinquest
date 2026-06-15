@@ -21,7 +21,7 @@ import { deleteLog, fetchLogsForDate, countTodayPhotoScans } from '@/lib/api';
 import { applyDeleteLogToCharacter, dragonById, isDailyDragonLockedForToday } from '@/lib/character';
 import { confirmDestructive } from '@/lib/confirm';
 import { flexFill, flexScroll, useLayout, useTabBarScrollInset } from '@/lib/layout';
-import { isPro, remainingFreeScans, shouldShowDelayedPaywall } from '@/lib/paywall-gate';
+import { isPro, isInHabitGracePeriod, remainingFreeScans, shouldShowDelayedPaywall } from '@/lib/paywall-gate';
 import { todayISODate } from '@/lib/protein';
 import { useSession } from '@/lib/session';
 import type { ProteinLog } from '@/lib/types';
@@ -68,9 +68,9 @@ export default function TodayScreen() {
         return;
       }
       countTodayPhotoScans()
-        .then((used) => setScansLeft(remainingFreeScans(used)))
+        .then((used) => setScansLeft(remainingFreeScans(used, profile)))
         .catch(() => setScansLeft(null));
-    }, [profile?.is_premium]),
+    }, [profile?.is_premium, profile?.created_at]),
   );
 
   useFocusEffect(
@@ -186,7 +186,7 @@ export default function TodayScreen() {
           </Pressable>
         </View>
 
-        {!isPro(profile) && scansLeft !== null ? (
+        {!isPro(profile) && !isInHabitGracePeriod(profile) && scansLeft !== null ? (
           <Pressable onPress={() => router.push('/paywall')} style={styles.scansPill}>
             <Ionicons name="sparkles" size={14} color={colors.accent} />
             <Text style={styles.scansPillText}>
