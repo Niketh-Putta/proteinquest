@@ -15,7 +15,9 @@ import {
   resetAnonymousSignupAttempt,
 } from './auth';
 import { fetchProfile, isStaleProfileSaveError, upsertProfile } from './api';
+import { withTimeout } from './async-utils';
 import { acceptFriendInvite } from './leaderboard';
+import { clearCachedProfile, loadCachedProfile, saveCachedProfile } from './profile-cache';
 import { syncPremiumFromRevenueCat } from './payments';
 import { initRevenueCat, subscribeToProEntitlementChanges } from './revenuecat';
 import { supabase } from './supabase';
@@ -38,6 +40,13 @@ const SessionContext = createContext<SessionContextValue>({
 });
 
 const AUTH_RETRY_MS = 2500;
+/** Max wait for network auth on a cold start with no saved session. */
+const AUTH_COLD_START_MS = 10_000;
+/** Max wait for profile when we have a session but no local cache yet. */
+const PROFILE_BOOTSTRAP_MS = 4_000;
+/** Background validation timeouts — never block the UI. */
+const AUTH_VALIDATE_MS = 8_000;
+const PROFILE_VALIDATE_MS = 8_000;
 
 async function loadProfile(userId: string): Promise<Profile | null> {
   try {
@@ -57,32 +66,102 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
   const refreshProfile = useCallback(async (userId: string) => {
     const p = await loadProfile(userId);
+    if (p) await saveCachedProfile(p);
     setProfile(p);
   }, []);
 
   useEffect(() => {
     let mounted = true;
 
+    async function validateInBackground(
+      cachedSession: NonNullable<Awaited<ReturnType<typeof ensureAuthSession>>>,
+      fallbackProfile: Profile | null,
+    ) {
+      const validated = await withTimeout(ensureAuthSession(), AUTH_VALIDATE_MS, cachedSession);
+      if (!mounted) return;
+      setSession(validated);
+      if (!validated) {
+        await clearCachedProfile();
+        setProfile(null);
+        return;
+      }
+
+      const fresh = await withTimeout(
+        loadProfile(validated.user.id),
+        PROFILE_VALIDATE_MS,
+        fallbackProfile,
+      );
+      if (!mounted || !fresh) return;
+      setProfile(fresh);
+      await saveCachedProfile(fresh);
+    }
+
     async function init() {
       try {
-        let nextSession = await ensureAuthSession();
+        const { data: sessionData } = await supabase.auth.getSession();
+        const cachedSession = sessionData.session;
+
+        if (cachedSession) {
+          const cachedProfile = await loadCachedProfile(cachedSession.user.id);
+          if (!mounted) return;
+          setSession(cachedSession);
+          if (cachedProfile) setProfile(cachedProfile);
+
+          if (cachedProfile) {
+            // Returning user — restore from disk and open immediately.
+            setLoading(false);
+            void validateInBackground(cachedSession, cachedProfile);
+            return;
+          }
+
+          // Session on disk but no profile cache (first open after update).
+          // Fetch profile only — skip blocking getUser() validation.
+          setAuthMessage('Loading…');
+          const bootProfile = await withTimeout(
+            loadProfile(cachedSession.user.id),
+            PROFILE_BOOTSTRAP_MS,
+            null,
+          );
+          if (!mounted) return;
+          if (bootProfile) {
+            setProfile(bootProfile);
+            await saveCachedProfile(bootProfile);
+          }
+          setLoading(false);
+          setAuthMessage(null);
+          void validateInBackground(cachedSession, bootProfile);
+          return;
+        }
+
+        // No saved session — need network for guest sign-in, but cap the wait.
+        setAuthMessage('Connecting…');
+        let nextSession = await withTimeout(ensureAuthSession(), AUTH_COLD_START_MS, null);
         if (!nextSession && mounted) {
-          setAuthMessage('Connecting…');
           await new Promise((resolve) => setTimeout(resolve, AUTH_RETRY_MS));
           if (!mounted) return;
           resetAnonymousSignupAttempt();
-          nextSession = await ensureAuthSession();
+          nextSession = await withTimeout(ensureAuthSession(), AUTH_COLD_START_MS, null);
         }
 
         if (!mounted) return;
         setSession(nextSession);
-        if (nextSession) await refreshProfile(nextSession.user.id);
+        if (nextSession) {
+          const p = await withTimeout(loadProfile(nextSession.user.id), PROFILE_BOOTSTRAP_MS, null);
+          if (p) {
+            setProfile(p);
+            await saveCachedProfile(p);
+          }
+        }
       } catch (e) {
         console.error('Auth init failed:', e);
         if (mounted) {
           const { data } = await supabase.auth.getSession();
           setSession(data.session);
-          if (data.session) await refreshProfile(data.session.user.id);
+          if (data.session) {
+            const cached = await loadCachedProfile(data.session.user.id);
+            if (cached) setProfile(cached);
+            else await refreshProfile(data.session.user.id);
+          }
         }
       } finally {
         if (mounted) {
@@ -216,6 +295,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
     try {
       const saved = await upsertProfile({ ...updates, id: userId });
+      await saveCachedProfile(saved);
       setProfile(saved);
       return;
     } catch (e) {
@@ -227,6 +307,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       if (!recovered) throw e;
       setSession(recovered);
       const saved = await upsertProfile({ ...updates, id: recovered.user.id });
+      await saveCachedProfile(saved);
       setProfile(saved);
     }
   }, []);
