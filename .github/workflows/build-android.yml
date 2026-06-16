@@ -16,6 +16,8 @@ concurrency:
   group: android-production
   cancel-in-progress: false
 
+# Retrigger after EXPO_TOKEN secret is configured in GitHub Actions.
+
 jobs:
   build-and-submit:
     runs-on: ubuntu-latest
