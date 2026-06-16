@@ -31,10 +31,13 @@ jobs:
         run: npm ci
 
       - name: Configure Google Play service account
-        if: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON != '' }}
         env:
           GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
         run: |
+          if [ -z "$GOOGLE_PLAY_SERVICE_ACCOUNT_JSON" ]; then
+            echo "No GOOGLE_PLAY_SERVICE_ACCOUNT_JSON secret — submit step will be skipped."
+            exit 0
+          fi
           mkdir -p store
           printf '%s' "$GOOGLE_PLAY_SERVICE_ACCOUNT_JSON" > store/google-play-service-account.json
 
@@ -48,13 +51,11 @@ jobs:
         run: npx eas-cli build --platform android --profile production --non-interactive --wait
 
       - name: Submit to Play Console (internal track)
-        if: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON != '' }}
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        run: npx eas-cli submit --platform android --profile production --latest --non-interactive
-
-      - name: Submit skipped (no Play service account secret)
-        if: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON == '' }}
         run: |
-          echo 'Build finished. Add GOOGLE_PLAY_SERVICE_ACCOUNT_JSON repo secret to auto-submit.'
-          echo 'Manual: Play Console → Internal testing → upload latest AAB from expo.dev'
+          if [ ! -f store/google-play-service-account.json ]; then
+            echo "Build finished. Upload latest AAB from expo.dev → Play Console internal testing."
+            exit 0
+          fi
+          npx eas-cli submit --platform android --profile production --latest --non-interactive
