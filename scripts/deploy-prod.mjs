@@ -4,9 +4,8 @@ import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-const PRODUCTION_DOMAIN = 'proteinquest.vercel.app';
-const VERCEL_SCOPE = 'team_RHLmvpeNG6AR3YddwMwPy6mq';
-const VERCEL_ORG_ID = VERCEL_SCOPE;
+const PRODUCTION_DOMAINS = ['proteinquest.vercel.app', 'proteinlens.vercel.app'];
+const VERCEL_SCOPE = 'niketh-puttas-projects';
 const VERCEL_PROJECT_ID = 'prj_rTOSsuDcEPLN4UlIGo0OFuzvCJCt';
 
 function run(command, options = {}) {
@@ -71,7 +70,6 @@ function vercelDeploy(distDir) {
     maxBuffer: 20 * 1024 * 1024,
     env: {
       ...process.env,
-      VERCEL_ORG_ID,
       VERCEL_PROJECT_ID,
     },
   });
@@ -99,8 +97,13 @@ if (!deployOnly) {
 }
 
 const deploymentUrl = vercelDeploy('dist');
-run(
-  `vercel alias set ${deploymentUrl} ${PRODUCTION_DOMAIN} --token "${vercelToken()}" --scope ${VERCEL_SCOPE}`,
-  { inherit: true },
-);
-console.log(`\nProduction: https://${PRODUCTION_DOMAIN}`);
+const token = vercelToken();
+for (const domain of PRODUCTION_DOMAINS) {
+  run(
+    `vercel alias set ${deploymentUrl} ${domain} --token "${token}" --scope ${VERCEL_SCOPE}`,
+    { inherit: true },
+  );
+}
+for (const domain of PRODUCTION_DOMAINS) {
+  console.log(`Production: https://${domain}`);
+}
