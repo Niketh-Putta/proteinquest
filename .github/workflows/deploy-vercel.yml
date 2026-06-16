@@ -41,6 +41,6 @@ jobs:
       - name: Deploy to Vercel production
         run: |
           set -euo pipefail
-          npx vercel deploy --prod --yes --prebuilt --token "${{ secrets.VERCEL_TOKEN }}"
-          npx vercel alias set https://proteinlens.vercel.app proteinquest.vercel.app --token "${{ secrets.VERCEL_TOKEN }}" --scope team_RHLmvpeNG6AR3YddwMwPy6mq
+          DEPLOY_URL="$(npx vercel deploy --prod --yes --prebuilt --token "${{ secrets.VERCEL_TOKEN }}" | tail -n 1)"
+          npx vercel alias set "$DEPLOY_URL" proteinquest.vercel.app --token "${{ secrets.VERCEL_TOKEN }}" --scope team_RHLmvpeNG6AR3YddwMwPy6mq
           echo "Production: https://proteinquest.vercel.app"

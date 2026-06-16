@@ -1,0 +1,60 @@
+name: Build and submit Android
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'app.json'
+      - 'eas.json'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/build-android.yml'
+
+concurrency:
+  group: android-production
+  cancel-in-progress: false
+
+jobs:
+  build-and-submit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Configure Google Play service account
+        if: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON != '' }}
+        env:
+          GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          mkdir -p store
+          printf '%s' "$GOOGLE_PLAY_SERVICE_ACCOUNT_JSON" > store/google-play-service-account.json
+
+      - name: Build Android AAB (EAS production)
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+          EXPO_PUBLIC_SUPABASE_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_KEY }}
+          EXPO_PUBLIC_REVENUECAT_IOS_KEY: ${{ secrets.EXPO_PUBLIC_REVENUECAT_IOS_KEY }}
+          EXPO_PUBLIC_REVENUECAT_ANDROID_KEY: ${{ secrets.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY }}
+        run: npx eas-cli build --platform android --profile production --non-interactive --wait
+
+      - name: Submit to Play Console (internal track)
+        if: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON != '' }}
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: npx eas-cli submit --platform android --profile production --latest --non-interactive
+
+      - name: Submit skipped (no Play service account secret)
+        if: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON == '' }}
+        run: |
+          echo 'Build finished. Add GOOGLE_PLAY_SERVICE_ACCOUNT_JSON repo secret to auto-submit.'
+          echo 'Manual: Play Console → Internal testing → upload latest AAB from expo.dev'
