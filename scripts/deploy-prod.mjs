@@ -6,7 +6,6 @@ import { join } from 'node:path';
 
 const PRODUCTION_DOMAINS = ['proteinquest.vercel.app', 'proteinlens.vercel.app'];
 const VERCEL_SCOPE = 'niketh-puttas-projects';
-const VERCEL_PROJECT_ID = 'prj_rTOSsuDcEPLN4UlIGo0OFuzvCJCt';
 
 function run(command, options = {}) {
   console.log(`\n> ${command}`);
@@ -34,7 +33,11 @@ function parseDeployUrl(output) {
   for (let i = jsonLines.length - 1; i >= 0; i -= 1) {
     try {
       const parsed = JSON.parse(jsonLines[i]);
-      const url = parsed.url ?? parsed.preview?.url ?? parsed.alias?.url ?? null;
+      const url =
+        parsed.deployment?.url ??
+        parsed.url ??
+        parsed.preview?.url ??
+        null;
       if (url) return url;
     } catch {
       /* try next line */
@@ -68,10 +71,7 @@ function vercelDeploy(distDir) {
   const result = spawnSync('vercel', args, {
     encoding: 'utf8',
     maxBuffer: 20 * 1024 * 1024,
-    env: {
-      ...process.env,
-      VERCEL_PROJECT_ID,
-    },
+    env: process.env,
   });
 
   const combined = `${result.stdout ?? ''}\n${result.stderr ?? ''}`.trim();
