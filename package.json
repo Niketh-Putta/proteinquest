@@ -66,6 +66,7 @@
     "build:all": "eas build --platform all --profile production",
     "play-store:prep": "node scripts/play-store-prep.mjs",
     "play-store:submit": "node scripts/play-store-submit.mjs",
+    "ship:android": "node scripts/complete-android-ship.mjs",
     "ship:all": "node scripts/ship-all.mjs"
   },
   "private": true
