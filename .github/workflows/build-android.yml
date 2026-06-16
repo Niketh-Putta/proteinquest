@@ -14,7 +14,7 @@ on:
 
 concurrency:
   group: android-production
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 # Retrigger after EXPO_TOKEN secret is configured in GitHub Actions.
 
