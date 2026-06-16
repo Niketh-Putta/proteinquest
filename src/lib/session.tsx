@@ -1,11 +1,12 @@
 import type { Session } from '@supabase/supabase-js';
 import { useGlobalSearchParams } from 'expo-router';
-import { Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import React, {
   createContext,
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
 } from 'react';
 
@@ -38,6 +39,30 @@ const SessionContext = createContext<SessionContextValue>({
 });
 
 const AUTH_RETRY_MS = 2500;
+const AUTH_BOOTSTRAP_TIMEOUT_MS = 8000;
+const PROFILE_BOOTSTRAP_TIMEOUT_MS = 6000;
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    promise
+      .then((value) => {
+        clearTimeout(timeout);
+        resolve(value);
+      })
+      .catch((error) => {
+        clearTimeout(timeout);
+        reject(error);
+      });
+  });
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 async function loadProfile(userId: string): Promise<Profile | null> {
   try {
@@ -54,6 +79,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [authMessage, setAuthMessage] = useState<string | null>(null);
+  const bootstrapInFlightRef = useRef(false);
+  const mountedRef = useRef(true);
 
   const refreshProfile = useCallback(async (userId: string) => {
     const p = await loadProfile(userId);
@@ -61,71 +88,140 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    let mounted = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
-    async function init() {
+  const refreshProfileSafely = useCallback(
+    async (userId: string) => {
       try {
-        let nextSession = await ensureAuthSession();
-        if (!nextSession && mounted) {
-          setAuthMessage('Connecting…');
-          await new Promise((resolve) => setTimeout(resolve, AUTH_RETRY_MS));
-          if (!mounted) return;
-          resetAnonymousSignupAttempt();
-          nextSession = await ensureAuthSession();
+        await withTimeout(refreshProfile(userId), PROFILE_BOOTSTRAP_TIMEOUT_MS, 'profile refresh');
+      } catch (e) {
+        console.warn('[session] profile refresh skipped:', e);
+      }
+    },
+    [refreshProfile],
+  );
+
+  const runBootstrap = useCallback(
+    async (showLoading: boolean) => {
+      if (bootstrapInFlightRef.current) return;
+      bootstrapInFlightRef.current = true;
+
+      if (showLoading && mountedRef.current) {
+        setLoading(true);
+        setAuthMessage(null);
+      }
+
+      try {
+        let nextSession: Session | null = null;
+
+        try {
+          nextSession = await withTimeout(
+            ensureAuthSession(),
+            AUTH_BOOTSTRAP_TIMEOUT_MS,
+            'auth bootstrap',
+          );
+        } catch (e) {
+          console.warn('[session] auth bootstrap failed:', e);
         }
 
-        if (!mounted) return;
+        if (!nextSession) {
+          if (showLoading && mountedRef.current) setAuthMessage('Connecting…');
+          await sleep(AUTH_RETRY_MS);
+          if (!mountedRef.current) return;
+          resetAnonymousSignupAttempt();
+          try {
+            nextSession = await withTimeout(
+              ensureAuthSession(),
+              AUTH_BOOTSTRAP_TIMEOUT_MS,
+              'auth bootstrap retry',
+            );
+          } catch (e) {
+            console.warn('[session] auth bootstrap retry failed:', e);
+          }
+        }
+
+        if (!nextSession) {
+          try {
+            const { data } = await withTimeout(
+              supabase.auth.getSession(),
+              AUTH_BOOTSTRAP_TIMEOUT_MS,
+              'cached session fallback',
+            );
+            nextSession = data.session;
+          } catch (e) {
+            console.warn('[session] cached session fallback failed:', e);
+          }
+        }
+
+        if (!mountedRef.current) return;
         setSession(nextSession);
-        if (nextSession) await refreshProfile(nextSession.user.id);
-      } catch (e) {
-        console.error('Auth init failed:', e);
-        if (mounted) {
-          const { data } = await supabase.auth.getSession();
-          setSession(data.session);
-          if (data.session) await refreshProfile(data.session.user.id);
+
+        if (nextSession?.user.id) {
+          await refreshProfileSafely(nextSession.user.id);
+        } else {
+          setProfile(null);
         }
       } finally {
-        if (mounted) {
+        bootstrapInFlightRef.current = false;
+        if (showLoading && mountedRef.current) {
           setLoading(false);
           setAuthMessage(null);
         }
       }
-    }
+    },
+    [refreshProfileSafely],
+  );
 
-    init();
+  useEffect(() => {
+    void runBootstrap(true);
 
-    const { data: sub } = supabase.auth.onAuthStateChange(async (_event, next) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, next) => {
+      if (!mountedRef.current) return;
       setSession(next);
       if (next?.user) {
-        await refreshProfile(next.user.id);
+        void refreshProfileSafely(next.user.id);
       } else {
         setProfile(null);
       }
     });
 
     return () => {
-      mounted = false;
       sub.subscription.unsubscribe();
     };
-  }, [refreshProfile]);
+  }, [refreshProfileSafely, runBootstrap]);
 
   useEffect(() => {
     if (loading || session) return;
 
-    let cancelled = false;
-    const timer = setTimeout(async () => {
+    const timer = setTimeout(() => {
       resetAnonymousSignupAttempt();
-      const next = await ensureAuthSession();
-      if (cancelled || !next) return;
-      setSession(next);
-      await refreshProfile(next.user.id);
-    }, AUTH_RETRY_MS);
+      void runBootstrap(false);
+    }, AUTH_RETRY_MS * 2);
 
     return () => {
-      cancelled = true;
       clearTimeout(timer);
     };
-  }, [loading, session, refreshProfile]);
+  }, [loading, runBootstrap, session]);
+
+  useEffect(() => {
+    let previousState = AppState.currentState;
+    const sub = AppState.addEventListener('change', (nextState) => {
+      const becameActive =
+        (previousState === 'inactive' || previousState === 'background') && nextState === 'active';
+      previousState = nextState;
+      if (!becameActive) return;
+
+      resetAnonymousSignupAttempt();
+      void runBootstrap(false);
+    });
+
+    return () => {
+      sub.remove();
+    };
+  }, [runBootstrap]);
 
   useEffect(() => {
     if (params.checkout !== 'success' || !session?.user.id) return;
@@ -207,7 +303,17 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   }, [session?.user.id, refreshProfile]);
 
   const saveProfile = useCallback(async (updates: Partial<Profile>) => {
-    const nextSession = await ensureAuthSession();
+    let nextSession: Session | null = null;
+    try {
+      nextSession = await withTimeout(
+        ensureAuthSession(),
+        AUTH_BOOTSTRAP_TIMEOUT_MS,
+        'save profile auth bootstrap',
+      );
+    } catch {
+      nextSession = null;
+    }
+
     if (!nextSession) {
       throw new Error('Still connecting — please wait a moment and try again.');
     }
@@ -223,7 +329,16 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
       await supabase.auth.signOut({ scope: 'local' });
       resetAnonymousSignupAttempt();
-      const recovered = await continueAsGuest();
+      let recovered: Session | null = null;
+      try {
+        recovered = await withTimeout(
+          continueAsGuest(),
+          AUTH_BOOTSTRAP_TIMEOUT_MS,
+          'save profile guest recovery',
+        );
+      } catch {
+        recovered = null;
+      }
       if (!recovered) throw e;
       setSession(recovered);
       const saved = await upsertProfile({ ...updates, id: recovered.user.id });
