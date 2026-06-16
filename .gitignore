@@ -7,6 +7,14 @@ node_modules/
 .expo/
 dist/
 web-build/
+
+# generated marketing assets (built by scripts/prepare-marketing-assets.mjs)
+marketing/assets/
+marketing/privacy/
+marketing/terms/
+marketing/favicon.ico
+marketing/favicon-32.png
+marketing/apple-touch-icon.png
 expo-env.d.ts
 
 # Native

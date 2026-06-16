@@ -95,8 +95,6 @@ function vercelDeploy(distDir) {
 
 const deployOnly = process.argv.includes('--deploy-only');
 if (!deployOnly) {
-  run('npx expo export --platform web', { inherit: true });
-  run('node scripts/prepare-web-export.mjs', { inherit: true });
   run('node scripts/prepare-vercel-output.mjs', { inherit: true });
 }
 
