@@ -19,7 +19,12 @@ import {
 import { fetchProfile, isStaleProfileSaveError, upsertProfile } from './api';
 import { withTimeout } from './async-utils';
 import { acceptFriendInvite } from './leaderboard';
-import { clearCachedProfile, loadCachedProfile, saveCachedProfile } from './profile-cache';
+import {
+  clearCachedProfile,
+  loadCachedProfile,
+  mergeProfiles,
+  saveCachedProfile,
+} from './profile-cache';
 import { syncPremiumFromRevenueCat } from './payments';
 import { initRevenueCat, subscribeToProEntitlementChanges } from './revenuecat';
 import { supabase } from './supabase';
@@ -83,11 +88,23 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   sessionRef.current = session;
   profileRef.current = profile;
 
+  const applyProfile = useCallback((incoming: Profile | null) => {
+    if (!incoming) {
+      setProfile(null);
+      return;
+    }
+    setProfile((prev) => mergeProfiles(prev, incoming));
+  }, []);
+
   const refreshProfile = useCallback(async (userId: string) => {
     const p = await loadProfile(userId);
-    if (p) await saveCachedProfile(p);
-    setProfile(p);
-  }, []);
+    if (p) {
+      await saveCachedProfile(p);
+      applyProfile(p);
+    } else {
+      setProfile(null);
+    }
+  }, [applyProfile]);
 
   const validateInBackground = useCallback(
     async (cachedSession: Session, fallbackProfile: Profile | null) => {
@@ -110,13 +127,13 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           fallbackProfile,
         );
         if (!mountedRef.current || !fresh) return;
-        setProfile(fresh);
+        applyProfile(fresh);
         await saveCachedProfile(fresh);
       } finally {
         bootstrapInFlightRef.current = false;
       }
     },
-    [],
+    [applyProfile],
   );
 
   const refreshProfileSafely = useCallback(
@@ -148,7 +165,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           const cachedProfile = await loadCachedProfile(cachedSession.user.id);
           if (!mounted) return;
           setSession(cachedSession);
-          if (cachedProfile) setProfile(cachedProfile);
+          if (cachedProfile) applyProfile(cachedProfile);
 
           if (cachedProfile) {
             // Returning user — restore from disk and open immediately.
@@ -166,7 +183,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           );
           if (!mounted) return;
           if (bootProfile) {
-            setProfile(bootProfile);
+            applyProfile(bootProfile);
             await saveCachedProfile(bootProfile);
           }
           setLoading(false);
@@ -194,7 +211,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         if (nextSession) {
           const p = await withTimeout(loadProfile(nextSession.user.id), PROFILE_BOOTSTRAP_MS, null);
           if (p) {
-            setProfile(p);
+            applyProfile(p);
             await saveCachedProfile(p);
           }
         }
@@ -205,7 +222,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           setSession(fallbackSession);
           if (fallbackSession) {
             const cached = await loadCachedProfile(fallbackSession.user.id);
-            if (cached) setProfile(cached);
+            if (cached) applyProfile(cached);
             else await refreshProfileSafely(fallbackSession.user.id);
           }
         }
@@ -233,7 +250,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       mounted = false;
       sub.subscription.unsubscribe();
     };
-  }, [refreshProfileSafely, validateInBackground]);
+  }, [applyProfile, refreshProfileSafely, validateInBackground]);
 
   useEffect(() => {
     if (loading || session) return;
@@ -360,7 +377,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     try {
       const saved = await upsertProfile({ ...updates, id: userId });
       await saveCachedProfile(saved);
-      setProfile(saved);
+      applyProfile(saved);
       return;
     } catch (e) {
       if (!isStaleProfileSaveError(e)) throw e;
@@ -372,9 +389,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       setSession(recovered);
       const saved = await upsertProfile({ ...updates, id: recovered.user.id });
       await saveCachedProfile(saved);
-      setProfile(saved);
+      applyProfile(saved);
     }
-  }, []);
+  }, [applyProfile]);
 
   return (
     <SessionContext.Provider

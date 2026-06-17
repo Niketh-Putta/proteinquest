@@ -35,8 +35,23 @@ export async function loadCachedProfile(userId: string): Promise<Profile | null>
   return entry.profile;
 }
 
+/** Keep immutable fields (e.g. created_at) when a partial profile update is cached. */
+export function mergeProfiles(
+  existing: Profile | null | undefined,
+  incoming: Profile,
+): Profile {
+  if (!existing || existing.id !== incoming.id) return incoming;
+  if (existing.created_at && !incoming.created_at) {
+    return { ...incoming, created_at: existing.created_at };
+  }
+  return incoming;
+}
+
 export async function saveCachedProfile(profile: Profile): Promise<void> {
-  await writeRaw({ userId: profile.id, profile });
+  const entry = await readRaw();
+  const merged =
+    entry?.userId === profile.id ? mergeProfiles(entry.profile, profile) : profile;
+  await writeRaw({ userId: merged.id, profile: merged });
 }
 
 export async function clearCachedProfile(): Promise<void> {

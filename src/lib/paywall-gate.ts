@@ -11,23 +11,32 @@ export function isPro(profile: Profile | null | undefined): boolean {
   return profile?.is_premium === true;
 }
 
+function localCalendarDay(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
 /** Calendar days since signup (0 = signup day), or null if created_at is unknown. */
-export function accountAgeCalendarDays(profile: Profile | null | undefined): number | null {
+export function accountAgeCalendarDays(
+  profile: Profile | null | undefined,
+  now = new Date(),
+): number | null {
   if (!profile?.created_at) return null;
   const created = new Date(profile.created_at);
   if (Number.isNaN(created.getTime())) return null;
-  const signupDay = new Date(created.getFullYear(), created.getMonth(), created.getDate());
-  const today = new Date();
-  const todayDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const signupDay = localCalendarDay(created);
+  const todayDay = localCalendarDay(now);
   return Math.floor((todayDay.getTime() - signupDay.getTime()) / 86_400_000);
 }
 
-/** Days 1–2 after signup: no paywall, unlimited scans — build the habit first. */
-export function isInHabitGracePeriod(profile: Profile | null | undefined): boolean {
+/** Signup day + next calendar day: no paywall, unlimited scans. */
+export function isInHabitGracePeriod(
+  profile: Profile | null | undefined,
+  now = new Date(),
+): boolean {
   if (!profile || isPro(profile)) return false;
-  const ageDays = accountAgeCalendarDays(profile);
+  const ageDays = accountAgeCalendarDays(profile, now);
   if (ageDays === null) return false;
-  return ageDays < HABIT_GRACE_DAYS;
+  return ageDays >= 0 && ageDays < HABIT_GRACE_DAYS;
 }
 
 /**
@@ -63,7 +72,7 @@ export function remainingFreeScans(
 
 export function scansLimitLabel(scansUsedToday: number, profile: Profile | null | undefined): string {
   if (isPro(profile)) return 'Unlimited scans';
-  if (isInHabitGracePeriod(profile)) return 'Unlimited scans — habit week';
+  if (isInHabitGracePeriod(profile)) return 'Unlimited scans — first 2 days free';
   const left = remainingFreeScans(scansUsedToday, profile);
   if (left === 0) return 'Out of free scans — go Pro';
   return `${left} free scan${left === 1 ? '' : 's'} left today`;
