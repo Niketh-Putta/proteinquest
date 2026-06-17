@@ -1,17 +1,19 @@
 import type { Session } from '@supabase/supabase-js';
 import { useGlobalSearchParams } from 'expo-router';
-import { Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import React, {
   createContext,
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
 } from 'react';
 
 import {
   continueAsGuest,
   ensureAuthSession,
+  readPersistedSession,
   resetAnonymousSignupAttempt,
 } from './auth';
 import { fetchProfile, isStaleProfileSaveError, upsertProfile } from './api';
@@ -40,6 +42,8 @@ const SessionContext = createContext<SessionContextValue>({
 });
 
 const AUTH_RETRY_MS = 2500;
+/** Cap getSession() — it can hang while refreshing an expired token after days idle. */
+const GET_SESSION_MS = 4_000;
 /** Max wait for network auth on a cold start with no saved session. */
 const AUTH_COLD_START_MS = 10_000;
 /** Max wait for profile when we have a session but no local cache yet. */
@@ -57,6 +61,13 @@ async function loadProfile(userId: string): Promise<Profile | null> {
   }
 }
 
+async function resolveLocalSession(): Promise<Session | null> {
+  const empty = { data: { session: null as Session | null } };
+  const { data } = await withTimeout(supabase.auth.getSession(), GET_SESSION_MS, empty);
+  if (data.session) return data.session;
+  return readPersistedSession();
+}
+
 export function SessionProvider({ children }: { children: React.ReactNode }) {
   const params = useGlobalSearchParams<{ checkout?: string; invite?: string }>();
   const [session, setSession] = useState<Session | null>(null);
@@ -64,42 +75,74 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [authMessage, setAuthMessage] = useState<string | null>(null);
 
+  const mountedRef = useRef(true);
+  const bootstrapInFlightRef = useRef(false);
+  const sessionRef = useRef<Session | null>(null);
+  const profileRef = useRef<Profile | null>(null);
+
+  sessionRef.current = session;
+  profileRef.current = profile;
+
   const refreshProfile = useCallback(async (userId: string) => {
     const p = await loadProfile(userId);
     if (p) await saveCachedProfile(p);
     setProfile(p);
   }, []);
 
+  const validateInBackground = useCallback(
+    async (cachedSession: Session, fallbackProfile: Profile | null) => {
+      if (bootstrapInFlightRef.current) return;
+      bootstrapInFlightRef.current = true;
+
+      try {
+        const validated = await withTimeout(ensureAuthSession(), AUTH_VALIDATE_MS, cachedSession);
+        if (!mountedRef.current) return;
+        setSession(validated);
+        if (!validated) {
+          await clearCachedProfile();
+          setProfile(null);
+          return;
+        }
+
+        const fresh = await withTimeout(
+          loadProfile(validated.user.id),
+          PROFILE_VALIDATE_MS,
+          fallbackProfile,
+        );
+        if (!mountedRef.current || !fresh) return;
+        setProfile(fresh);
+        await saveCachedProfile(fresh);
+      } finally {
+        bootstrapInFlightRef.current = false;
+      }
+    },
+    [],
+  );
+
+  const refreshProfileSafely = useCallback(
+    async (userId: string) => {
+      try {
+        await withTimeout(refreshProfile(userId), PROFILE_VALIDATE_MS, undefined);
+      } catch (e) {
+        console.warn('[session] profile refresh skipped:', e);
+      }
+    },
+    [refreshProfile],
+  );
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   useEffect(() => {
     let mounted = true;
 
-    async function validateInBackground(
-      cachedSession: NonNullable<Awaited<ReturnType<typeof ensureAuthSession>>>,
-      fallbackProfile: Profile | null,
-    ) {
-      const validated = await withTimeout(ensureAuthSession(), AUTH_VALIDATE_MS, cachedSession);
-      if (!mounted) return;
-      setSession(validated);
-      if (!validated) {
-        await clearCachedProfile();
-        setProfile(null);
-        return;
-      }
-
-      const fresh = await withTimeout(
-        loadProfile(validated.user.id),
-        PROFILE_VALIDATE_MS,
-        fallbackProfile,
-      );
-      if (!mounted || !fresh) return;
-      setProfile(fresh);
-      await saveCachedProfile(fresh);
-    }
-
     async function init() {
       try {
-        const { data: sessionData } = await supabase.auth.getSession();
-        const cachedSession = sessionData.session;
+        const cachedSession = await resolveLocalSession();
 
         if (cachedSession) {
           const cachedProfile = await loadCachedProfile(cachedSession.user.id);
@@ -115,7 +158,6 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           }
 
           // Session on disk but no profile cache (first open after update).
-          // Fetch profile only — skip blocking getUser() validation.
           setAuthMessage('Loading…');
           const bootProfile = await withTimeout(
             loadProfile(cachedSession.user.id),
@@ -143,6 +185,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           nextSession = await withTimeout(ensureAuthSession(), AUTH_COLD_START_MS, null);
         }
 
+        if (!nextSession) {
+          nextSession = await readPersistedSession();
+        }
+
         if (!mounted) return;
         setSession(nextSession);
         if (nextSession) {
@@ -155,12 +201,12 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       } catch (e) {
         console.error('Auth init failed:', e);
         if (mounted) {
-          const { data } = await supabase.auth.getSession();
-          setSession(data.session);
-          if (data.session) {
-            const cached = await loadCachedProfile(data.session.user.id);
+          const fallbackSession = await readPersistedSession();
+          setSession(fallbackSession);
+          if (fallbackSession) {
+            const cached = await loadCachedProfile(fallbackSession.user.id);
             if (cached) setProfile(cached);
-            else await refreshProfile(data.session.user.id);
+            else await refreshProfileSafely(fallbackSession.user.id);
           }
         }
       } finally {
@@ -173,10 +219,11 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
     init();
 
-    const { data: sub } = supabase.auth.onAuthStateChange(async (_event, next) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, next) => {
+      if (!mountedRef.current) return;
       setSession(next);
       if (next?.user) {
-        await refreshProfile(next.user.id);
+        void refreshProfileSafely(next.user.id);
       } else {
         setProfile(null);
       }
@@ -186,34 +233,52 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       mounted = false;
       sub.subscription.unsubscribe();
     };
-  }, [refreshProfile]);
+  }, [refreshProfileSafely, validateInBackground]);
 
   useEffect(() => {
     if (loading || session) return;
 
-    let cancelled = false;
-    const timer = setTimeout(async () => {
+    const timer = setTimeout(() => {
       resetAnonymousSignupAttempt();
-      const next = await ensureAuthSession();
-      if (cancelled || !next) return;
-      setSession(next);
-      await refreshProfile(next.user.id);
-    }, AUTH_RETRY_MS);
+      void (async () => {
+        const next = await withTimeout(ensureAuthSession(), AUTH_COLD_START_MS, null);
+        if (!mountedRef.current || !next) return;
+        setSession(next);
+        await refreshProfileSafely(next.user.id);
+      })();
+    }, AUTH_RETRY_MS * 2);
 
     return () => {
-      cancelled = true;
       clearTimeout(timer);
     };
-  }, [loading, session, refreshProfile]);
+  }, [loading, refreshProfileSafely, session]);
+
+  useEffect(() => {
+    let previousState = AppState.currentState;
+    const sub = AppState.addEventListener('change', (nextState) => {
+      const becameActive =
+        (previousState === 'inactive' || previousState === 'background') &&
+        nextState === 'active';
+      previousState = nextState;
+      if (!becameActive || !mountedRef.current) return;
+
+      // Resume after hours/days — never re-show the startup spinner.
+      resetAnonymousSignupAttempt();
+      const currentSession = sessionRef.current;
+      if (!currentSession) return;
+      void validateInBackground(currentSession, profileRef.current);
+    });
+
+    return () => {
+      sub.remove();
+    };
+  }, [validateInBackground]);
 
   useEffect(() => {
     if (params.checkout !== 'success' || !session?.user.id) return;
     refreshProfile(session.user.id).catch(() => {});
   }, [params.checkout, session?.user.id, refreshProfile]);
 
-  // Capture the invite code as soon as it appears in the URL. Root redirects
-  // (/?invite=X -> /intro or /today) can strip the query before the session is
-  // ready, so we hold the code in state until we can act on it.
   const [pendingInvite, setPendingInvite] = useState<string | null>(null);
 
   useEffect(() => {
@@ -236,7 +301,6 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       })
       .catch((e) => {
         if (__DEV__) console.warn('[friends] invite accept skipped:', e);
-        // Clear self-invites / bad codes so they don't retry forever.
         if (!cancelled) setPendingInvite(null);
       });
 
@@ -286,7 +350,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   }, [session?.user.id, refreshProfile]);
 
   const saveProfile = useCallback(async (updates: Partial<Profile>) => {
-    const nextSession = await ensureAuthSession();
+    const nextSession = await withTimeout(ensureAuthSession(), AUTH_VALIDATE_MS, null);
     if (!nextSession) {
       throw new Error('Still connecting — please wait a moment and try again.');
     }
@@ -303,7 +367,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
       await supabase.auth.signOut({ scope: 'local' });
       resetAnonymousSignupAttempt();
-      const recovered = await continueAsGuest();
+      const recovered = await withTimeout(continueAsGuest(), AUTH_VALIDATE_MS, null);
       if (!recovered) throw e;
       setSession(recovered);
       const saved = await upsertProfile({ ...updates, id: recovered.user.id });

@@ -1,7 +1,46 @@
 import type { Session } from '@supabase/supabase-js';
 import { AuthApiError } from '@supabase/supabase-js';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 
 import { supabase } from './supabase';
+
+function supabaseAuthStorageKey(): string {
+  const url = process.env.EXPO_PUBLIC_SUPABASE_URL!;
+  const projectRef = new URL(url).hostname.split('.')[0];
+  return `sb-${projectRef}-auth-token`;
+}
+
+/** Read saved auth from device storage without triggering a network token refresh. */
+export async function readPersistedSession(): Promise<Session | null> {
+  try {
+    const key = supabaseAuthStorageKey();
+    const raw =
+      Platform.OS === 'web' && typeof window !== 'undefined'
+        ? window.localStorage.getItem(key)
+        : await AsyncStorage.getItem(key);
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw) as
+      | Session
+      | { currentSession?: Session | null; session?: Session | null };
+
+    if (parsed && typeof parsed === 'object') {
+      if ('access_token' in parsed && typeof parsed.access_token === 'string') {
+        return parsed as Session;
+      }
+      if ('currentSession' in parsed && parsed.currentSession?.access_token) {
+        return parsed.currentSession;
+      }
+      if ('session' in parsed && parsed.session?.access_token) {
+        return parsed.session;
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 let anonymousSignupAttempted = false;
 
