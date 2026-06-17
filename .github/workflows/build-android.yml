@@ -61,6 +61,20 @@ jobs:
           EXPO_PUBLIC_REVENUECAT_ANDROID_KEY: ${{ secrets.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY }}
         run: npx eas-cli build --platform android --profile production --non-interactive --wait
 
+      - name: Download AAB artifact
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          mkdir -p store
+          npx eas-cli build:download --platform android --latest --non-interactive --output store/proteinquest.aab
+
+      - name: Upload AAB for manual Play Console upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: proteinquest-aab
+          path: store/proteinquest.aab
+          retention-days: 30
+
       - name: Submit to Play Console (internal track)
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
