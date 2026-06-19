@@ -16,13 +16,16 @@ import {
   displayDragonId,
   displayProgress,
   dragonById,
+  dragonLevelProgress,
   effectiveLevel,
   effectiveStreak,
   getDragonProgress,
+  microProgress,
   nextEvolutionStage,
   stageForXpLevel,
   xpProgressInLevel,
 } from '@/lib/character';
+import { formatXp } from '@/lib/leaderboard';
 import { todayISODate } from '@/lib/protein';
 import { useLayout } from '@/lib/layout';
 import type { Profile } from '@/lib/types';
@@ -55,10 +58,13 @@ export function CharacterCard({
   const dragonId = displayDragonId(profile, todayISO);
   const dragon = dragonById(dragonId);
   const progress = displayProgress(profile, todayISO);
-  const level = effectiveLevel(progress);
+  const { level, xpIntoLevel, xpForNext } = dragonLevelProgress(progress);
   const stage = stageForXpLevel(level, dragonId);
   const next = nextEvolutionStage(level, dragonId);
   const streak = effectiveStreak(progress, todayISO, todayISODate(-1));
+
+  const micro = microProgress(level, dragonId);
+  const stretchComp = (micro.scaleY - 1) * (sceneH * 0.12);
 
   // Slow, calm breathing only — no bounce. Keeps the dragon feeling alive
   // without the springy, jittery motion the previous build had.
@@ -83,7 +89,11 @@ export function CharacterCard({
   }, [breath, float]);
 
   const characterStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: float.value }, { scale: breath.value }],
+    transform: [
+      { translateY: float.value + micro.translateY - stretchComp },
+      { scaleX: breath.value * micro.scale },
+      { scaleY: breath.value * micro.scaleY },
+    ],
   }));
 
   const progressToNext = next
@@ -107,6 +117,19 @@ export function CharacterCard({
           <Animated.View style={[StyleSheet.absoluteFill, characterStyle]}>
             <Image source={stage.art} style={styles.sceneArt} resizeMode="cover" />
           </Animated.View>
+          <View
+            pointerEvents="none"
+            style={[
+              styles.sceneGlow,
+              {
+                backgroundColor: dragon.accent,
+                opacity: micro.glowOpacity * 0.35,
+                width: sceneW * 0.7,
+                height: sceneH * 0.5,
+                borderRadius: sceneW * 0.35,
+              },
+            ]}
+          />
           {/* Feather the rectangular art edges into the page background on all
               four sides so the dragon reads as a character living in its
               scene rather than a pasted-on image. */}
@@ -129,7 +152,7 @@ export function CharacterCard({
         <View style={styles.identity}>
           <Text style={[styles.name, { fontSize: nameSize }]}>{dragon.name}</Text>
           <Text style={[styles.stageLabel, { color: dragon.accent }]}>
-            Lv {level} · {stage.name} · {dragon.element}
+            Dragon Lv {level} · {stage.name} · {dragon.element}
           </Text>
         </View>
 
@@ -145,7 +168,9 @@ export function CharacterCard({
             <Text style={styles.statsLine}>0 day streak</Text>
           )}
           <Text style={styles.statsDot}>·</Text>
-          <Text style={styles.statsLine}>{progress.xp} XP</Text>
+          <Text style={styles.statsLine}>
+            {formatXp(xpIntoLevel)} / {formatXp(xpForNext)} XP
+          </Text>
           <Text style={styles.statsDot}>·</Text>
           <Text style={styles.statsLine}>
             {next ? `${levelsToEvo} lv to evolve` : evoLabel}
@@ -238,6 +263,12 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: colors.bg,
     zIndex: 1,
+  },
+  sceneGlow: {
+    position: 'absolute',
+    alignSelf: 'center',
+    top: '28%',
+    zIndex: 0,
   },
   sceneArt: {
     width: '100%',

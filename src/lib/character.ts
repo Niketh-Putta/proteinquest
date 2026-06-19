@@ -291,7 +291,22 @@ export function xpProgressInLevel(xp: number, level: number): number {
 }
 
 export function effectiveLevel(progress: DragonProgress): number {
-  return progress.level ?? levelForXp(progress.xp);
+  return levelForXp(progress.xp);
+}
+
+/** XP progress within the dragon's current level (matches trainer badge format). */
+export function dragonLevelProgress(progress: DragonProgress): {
+  level: number;
+  xpIntoLevel: number;
+  xpForNext: number;
+} {
+  const level = effectiveLevel(progress);
+  const floor = xpForLevel(level);
+  return {
+    level,
+    xpIntoLevel: Math.max(progress.xp - floor, 0),
+    xpForNext: Math.max(xpToNextLevel(level), 0),
+  };
 }
 
 export function getDragonProgress(profile: Profile, dragonId: DragonId): DragonProgress {
@@ -376,6 +391,32 @@ export function perkForLevel(level: number, dragonId: DragonId): string | null {
     return stageForXpLevel(level, dragonId).perk;
   }
   return BETWEEN_LEVEL_PERKS[dragonId][level] ?? null;
+}
+
+/** Visual growth within the current stage (0 = just evolved, 1 = about to evolve). */
+export interface MicroProgress {
+  progress: number;
+  scale: number;
+  scaleY: number;
+  translateY: number;
+  glowOpacity: number;
+}
+
+export function microProgress(level: number, dragonId: DragonId): MicroProgress {
+  const stage = stageForXpLevel(level, dragonId);
+  const next = nextEvolutionStage(level, dragonId);
+  if (!next) {
+    return { progress: 1, scale: 1.06, scaleY: 1.08, translateY: -4, glowOpacity: 0.28 };
+  }
+  const span = next.levelRequired - stage.levelRequired;
+  const progress = span <= 1 ? 0 : Math.min((level - stage.levelRequired) / span, 1);
+  return {
+    progress,
+    scale: 1 + progress * 0.06,
+    scaleY: 1 + progress * 0.08,
+    translateY: -progress * 4,
+    glowOpacity: 0.12 + progress * 0.16,
+  };
 }
 
 /** @deprecated Use stageForXpLevel with effectiveLevel(progress). */

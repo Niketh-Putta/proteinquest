@@ -166,8 +166,11 @@ export default function TodayScreen() {
             onPress={() => router.push('/league')}
             hitSlop={8}
             accessibilityRole="button"
-            accessibilityLabel={`Level ${snapshot.level}, ${formatXp(snapshot.xpIntoLevel)} of ${formatXp(snapshot.xpForNext)} XP. Open leaderboard`}
+            accessibilityLabel={`Trainer level ${snapshot.level}, ${formatXp(snapshot.xpIntoLevel)} of ${formatXp(snapshot.xpForNext)} XP. Open leaderboard`}
             style={[styles.levelBadge, pressableWeb]}>
+            <Text selectable={false} style={styles.levelKind}>
+              TRAINER
+            </Text>
             <Text selectable={false} style={styles.levelRankName}>
               Lvl {snapshot.level}
             </Text>
@@ -409,6 +412,14 @@ const styles = StyleSheet.create({
     borderColor: colors.hairlineBright,
     backgroundColor: colors.surface,
     marginTop: 2,
+  },
+  levelKind: {
+    ...noTextCaret,
+    fontFamily: fonts.mono,
+    fontSize: 8,
+    letterSpacing: 1.2,
+    color: colors.textTertiary,
+    lineHeight: 10,
   },
   levelRankName: {
     ...noTextCaret,
