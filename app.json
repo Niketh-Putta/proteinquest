@@ -12,6 +12,9 @@
       "bundleIdentifier": "com.proteinquest.app",
       "buildNumber": "2",
       "supportsTablet": true,
+      "entitlements": {
+        "aps-environment": "production"
+      },
       "infoPlist": {
         "NSCameraUsageDescription": "ProteinQuest uses the camera to photograph your meals and estimate their protein content.",
         "NSPhotoLibraryUsageDescription": "ProteinQuest uses your photo library so you can analyze meals you've already photographed.",
