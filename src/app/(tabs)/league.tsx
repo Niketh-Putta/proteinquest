@@ -249,7 +249,8 @@ function PodiumColumn({
 
 export default function LeagueTab() {
   const { profile, session } = useSession();
-  const { horizontalPad, contentMaxWidth } = useLayout();
+  const { horizontalPad, contentMaxWidth, isNarrow } = useLayout();
+  const titleSize = isNarrow ? 26 : 30;
   const bottomInset = useTabBarScrollInset();
   const [rows, setRows] = useState<LeaderboardRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -375,9 +376,15 @@ export default function LeagueTab() {
             },
           ]}>
           <View style={styles.header}>
-            <View style={{ flex: 1 }}>
+            <View style={styles.headerCopy}>
               <Text style={styles.eyebrow}>PROTEINQUEST</Text>
-              <Text style={styles.title}>Leaderboard</Text>
+              <Text
+                style={[styles.title, { fontSize: titleSize }]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.82}>
+                Leaderboard
+              </Text>
               <Text style={styles.subtitle}>
                 {loading
                   ? 'Loading your league…'
@@ -391,6 +398,7 @@ export default function LeagueTab() {
               accessibilityLabel="Invite friends"
               style={({ pressed }) => [
                 styles.invite,
+                styles.inviteShrink,
                 pressableWeb,
                 pressed && { opacity: 0.85 },
               ]}>
@@ -482,6 +490,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: spacing.xxl,
+    gap: spacing.sm,
+  },
+  headerCopy: {
+    flex: 1,
+    minWidth: 0,
   },
   eyebrow: {
     fontFamily: fonts.mono,
@@ -492,15 +505,17 @@ const styles = StyleSheet.create({
   },
   title: {
     fontFamily: fonts.displayHeavy,
-    fontSize: 34,
     color: colors.text,
-    letterSpacing: -1,
+    letterSpacing: -0.8,
   },
   subtitle: {
     fontFamily: fonts.body,
     fontSize: 12,
     color: colors.textSecondary,
     marginTop: 4,
+  },
+  inviteShrink: {
+    flexShrink: 0,
   },
   invite: {
     flexDirection: 'row',
