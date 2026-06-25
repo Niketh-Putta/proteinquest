@@ -294,7 +294,7 @@ export function effectiveLevel(progress: DragonProgress): number {
   return levelForXp(progress.xp);
 }
 
-/** XP progress within the dragon's current level (matches trainer badge format). */
+/** XP progress within the dragon's current level (per-dragon, not account total). */
 export function dragonLevelProgress(progress: DragonProgress): {
   level: number;
   xpIntoLevel: number;

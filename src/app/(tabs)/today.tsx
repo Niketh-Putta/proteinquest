@@ -166,19 +166,17 @@ export default function TodayScreen() {
             onPress={() => router.push('/league')}
             hitSlop={8}
             accessibilityRole="button"
-            accessibilityLabel={`Trainer level ${snapshot.level}, ${formatXp(snapshot.xpIntoLevel)} of ${formatXp(snapshot.xpForNext)} XP. Open leaderboard`}
+            accessibilityLabel={`Trainer rank ${snapshot.rank.label}, ${formatXp(snapshot.xp)} total XP across all dragons. Open leaderboard`}
             style={[styles.levelBadge, pressableWeb]}>
             <Text selectable={false} style={styles.levelKind}>
-              TRAINER
+              TRAINER · ALL DRAGONS
             </Text>
             <Text selectable={false} style={styles.levelRankName}>
-              Lvl {snapshot.level}
+              {snapshot.rank.label}
             </Text>
             <Text selectable={false} style={styles.levelXpLine}>
-              {formatXp(snapshot.xpIntoLevel)}
-              <Text style={styles.levelXpSep}> / </Text>
-              {formatXp(snapshot.xpForNext)}
-              <Text style={styles.levelXpUnit}> XP</Text>
+              {formatXp(snapshot.xp)}
+              <Text style={styles.levelXpUnit}> XP total</Text>
             </Text>
           </Pressable>
           <Pressable

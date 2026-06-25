@@ -152,8 +152,9 @@ export function CharacterCard({
         <View style={styles.identity}>
           <Text style={[styles.name, { fontSize: nameSize }]}>{dragon.name}</Text>
           <Text style={[styles.stageLabel, { color: dragon.accent }]}>
-            Dragon Lv {level} · {stage.name} · {dragon.element}
+            {dragon.name} · Lv {level} · {stage.name}
           </Text>
+          <Text style={styles.dragonScope}>This dragon only</Text>
         </View>
 
         <View style={styles.statsRow}>
@@ -290,6 +291,13 @@ const styles = StyleSheet.create({
     fontSize: 10,
     letterSpacing: 0.8,
     textTransform: 'capitalize',
+  },
+  dragonScope: {
+    fontFamily: fonts.mono,
+    fontSize: 8,
+    letterSpacing: 0.6,
+    color: colors.textTertiary,
+    marginTop: 2,
   },
   statsRow: {
     flexDirection: 'row',
