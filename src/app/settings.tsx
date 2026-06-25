@@ -11,6 +11,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -23,6 +24,13 @@ import { DragonEvolutionGallery } from '@/components/DragonEvolutionGallery';
 import { GoalEditor } from '@/components/GoalEditor';
 import { dragonById, displayDragonId, isDailyDragonLockedForToday } from '@/lib/character';
 import { useLayout } from '@/lib/layout';
+import {
+  formatReminderTime,
+  getNotificationPermissionStatus,
+  isMealRemindersEnabled,
+  MEAL_REMINDER_SLOTS,
+  setMealRemindersEnabled,
+} from '@/lib/meal-reminders';
 import { todayISODate } from '@/lib/protein';
 import { useSession } from '@/lib/session';
 import type { Profile } from '@/lib/types';
@@ -46,8 +54,36 @@ export default function SettingsScreen() {
   const [nameFocused, setNameFocused] = useState(false);
   const [nameSaved, setNameSaved] = useState(false);
   const [billingOpen, setBillingOpen] = useState(false);
+  const [remindersOn, setRemindersOn] = useState(true);
+  const [remindersBusy, setRemindersBusy] = useState(false);
   const nameInputRef = useRef<TextInput>(null);
   const nameHydrated = useRef(false);
+
+  useEffect(() => {
+    isMealRemindersEnabled().then(setRemindersOn).catch(() => {});
+  }, []);
+
+  async function toggleReminders(next: boolean) {
+    setRemindersBusy(true);
+    setError(null);
+    try {
+      const ok = await setMealRemindersEnabled(next);
+      if (next && !ok) {
+        const status = await getNotificationPermissionStatus();
+        if (status !== 'granted') {
+          setError('Turn on notifications in Settings to get meal reminders.');
+        }
+        setRemindersOn(false);
+      } else {
+        setRemindersOn(next);
+      }
+    } catch {
+      setError('Could not update meal reminders.');
+      setRemindersOn(!next);
+    } finally {
+      setRemindersBusy(false);
+    }
+  }
 
   useEffect(() => {
     if (!profile || nameHydrated.current) return;
@@ -238,6 +274,43 @@ export default function SettingsScreen() {
               <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
             </Pressable>
           </View>
+
+          {Platform.OS !== 'web' ? (
+            <View style={styles.section}>
+              <Text style={styles.sectionLabel}>MEAL REMINDERS</Text>
+            <View style={styles.reminderRow}>
+              <View style={styles.reminderIcon}>
+                <Ionicons name="notifications-outline" size={18} color={colors.accent} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.reminderTitle}>Feed your dragon</Text>
+                <Text style={styles.reminderHint}>
+                  Daily nudges to log meals and snacks — tap opens scan.
+                </Text>
+              </View>
+              <Switch
+                value={remindersOn}
+                onValueChange={toggleReminders}
+                disabled={remindersBusy}
+                trackColor={{ false: colors.hairline, true: colors.accentGlow }}
+                thumbColor={remindersOn ? colors.accent : colors.textTertiary}
+                ios_backgroundColor={colors.hairline}
+              />
+            </View>
+            {remindersOn ? (
+              <View style={styles.reminderSchedule}>
+                {MEAL_REMINDER_SLOTS.map((slot) => (
+                  <View key={slot.id} style={styles.reminderSlot}>
+                    <Text style={styles.reminderSlotLabel}>{slot.label}</Text>
+                    <Text style={styles.reminderSlotTime}>
+                      {formatReminderTime(slot.hour, slot.minute)}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+          </View>
+          ) : null}
 
           <View style={styles.section}>
             <Text style={styles.sectionLabel}>BILLING</Text>
@@ -479,6 +552,55 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textSecondary,
     marginTop: 2,
+  },
+  reminderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  reminderIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.accentSurface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reminderTitle: {
+    fontFamily: fonts.displayMedium,
+    fontSize: 15,
+    color: colors.text,
+  },
+  reminderHint: {
+    fontFamily: fonts.body,
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginTop: 3,
+    lineHeight: 17,
+  },
+  reminderSchedule: {
+    marginTop: spacing.xs,
+    paddingTop: spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.hairline,
+    gap: 6,
+  },
+  reminderSlot: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  reminderSlotLabel: {
+    fontFamily: fonts.body,
+    fontSize: 13,
+    color: colors.textSecondary,
+  },
+  reminderSlotTime: {
+    fontFamily: fonts.mono,
+    fontSize: 11,
+    color: colors.textTertiary,
+    letterSpacing: 0.3,
   },
   billingBtn: {
     flexDirection: 'row',

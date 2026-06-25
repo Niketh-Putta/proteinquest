@@ -15,6 +15,7 @@ import React, { useEffect } from 'react';
 import { View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
+import { MealRemindersBootstrap } from '@/components/MealRemindersBootstrap';
 import { SessionProvider } from '@/lib/session';
 import { trackPageVisitOnce } from '@/lib/track-visit';
 import { colors } from '@/theme';
@@ -45,6 +46,7 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SessionProvider>
+        <MealRemindersBootstrap />
         <StatusBar style="light" />
         <Stack
           screenOptions={{

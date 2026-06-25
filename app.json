@@ -15,6 +15,7 @@
       "infoPlist": {
         "NSCameraUsageDescription": "ProteinQuest uses the camera to photograph your meals and estimate their protein content.",
         "NSPhotoLibraryUsageDescription": "ProteinQuest uses your photo library so you can analyze meals you've already photographed.",
+        "NSUserNotificationsUsageDescription": "ProteinQuest sends friendly reminders to log meals and feed your dragon.",
         "ITSAppUsesNonExemptEncryption": false
       }
     },
@@ -28,7 +29,8 @@
       "permissions": [
         "android.permission.CAMERA",
         "com.android.vending.BILLING",
-        "android.permission.RECORD_AUDIO"
+        "android.permission.RECORD_AUDIO",
+        "android.permission.POST_NOTIFICATIONS"
       ]
     },
     "web": {
@@ -56,7 +58,14 @@
       "expo-web-browser",
       "expo-secure-store",
       "expo-video",
-      "expo-image"
+      "expo-image",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#FF7A59"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
