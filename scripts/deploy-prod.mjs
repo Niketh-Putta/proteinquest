@@ -4,7 +4,12 @@ import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-const PRODUCTION_DOMAINS = ['proteinquest.vercel.app', 'proteinlens.vercel.app'];
+const PRODUCTION_DOMAINS = [
+  'proteinquest.app',
+  'www.proteinquest.app',
+  'proteinquest.vercel.app',
+  'proteinlens.vercel.app',
+];
 const VERCEL_SCOPE = 'niketh-puttas-projects';
 
 function run(command, options = {}) {
@@ -106,4 +111,10 @@ for (const domain of PRODUCTION_DOMAINS) {
 }
 for (const domain of PRODUCTION_DOMAINS) {
   console.log(`Production: https://${domain}`);
+}
+
+try {
+  run('node scripts/refresh-og-cache.mjs', { inherit: true });
+} catch {
+  console.log('OG refresh checks reported an issue; deployment is still live.');
 }

@@ -39,6 +39,7 @@ function main() {
 
   // Marketing landing
   fs.copyFileSync(path.join(marketingDir, 'index.html'), path.join(staticDir, 'index.html'));
+  fs.copyFileSync(path.join(marketingDir, 'fonts.css'), path.join(staticDir, 'fonts.css'));
   fs.copyFileSync(path.join(marketingDir, 'styles.css'), path.join(staticDir, 'styles.css'));
   fs.copyFileSync(path.join(marketingDir, 'legal.css'), path.join(staticDir, 'legal.css'));
   fs.copyFileSync(path.join(marketingDir, 'main.js'), path.join(staticDir, 'main.js'));
@@ -55,9 +56,31 @@ function main() {
   copyLegalPage('privacy');
   copyLegalPage('terms');
 
+  const securityHeaderMap = {
+    'Strict-Transport-Security': 'max-age=63072000; includeSubDomains; preload',
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+    'Referrer-Policy': 'strict-origin-when-cross-origin',
+    'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+    'Content-Security-Policy':
+      "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; " +
+      "script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'",
+  };
+
   const config = {
     version: 3,
     routes: [
+      {
+        src: '/(.*)',
+        has: [{ type: 'host', value: 'www.proteinquest.app' }],
+        status: 308,
+        headers: { Location: 'https://proteinquest.app/$1' },
+      },
+      {
+        src: '/(.*)',
+        headers: securityHeaderMap,
+        continue: true,
+      },
       { handle: 'filesystem' },
       { src: '/(.*)', dest: '/index.html' },
     ],

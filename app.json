@@ -2,7 +2,7 @@
   "expo": {
     "name": "ProteinQuest",
     "slug": "proteinquest",
-    "version": "1.0.0",
+    "version": "1.0.2",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "proteinquest",
@@ -10,7 +10,7 @@
     "backgroundColor": "#0C0B10",
     "ios": {
       "bundleIdentifier": "com.proteinquest.app",
-      "buildNumber": "1",
+      "buildNumber": "2",
       "supportsTablet": true,
       "infoPlist": {
         "NSCameraUsageDescription": "ProteinQuest uses the camera to photograph your meals and estimate their protein content.",
@@ -20,7 +20,6 @@
     },
     "android": {
       "package": "com.proteinquest.app",
-      "versionCode": 4,
       "adaptiveIcon": {
         "backgroundColor": "#0C0B10",
         "foregroundImage": "./assets/images/android-icon-foreground.png"

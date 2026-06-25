@@ -50,6 +50,7 @@
     "eslint": "^9.0.0",
     "eslint-config-expo": "~56.0.4",
     "playwright": "^1.60.0",
+    "sharp": "^0.35.1",
     "typescript": "~5.9.3"
   },
   "scripts": {
@@ -60,6 +61,8 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "deploy:prod": "node scripts/deploy-prod.mjs",
+    "dns:update": "node scripts/update-godaddy-vercel-dns.mjs",
+    "og:refresh": "node scripts/refresh-og-cache.mjs",
     "preview:marketing": "node scripts/prepare-marketing-assets.mjs && npx --yes serve marketing -l 3456",
     "setup:github-vercel": "node scripts/setup-github-vercel.mjs",
     "build:android": "eas build --platform android --profile production",
@@ -71,7 +74,8 @@
     "payments:verify": "node scripts/verify-revenuecat-setup.mjs",
     "payments:create-play-subs": "node scripts/create-play-subscriptions.mjs",
     "ship:android": "node scripts/complete-android-ship.mjs",
-    "ship:all": "node scripts/ship-all.mjs"
+    "ship:all": "node scripts/ship-all.mjs",
+    "gemini:refresh": "node scripts/refresh-gemini-secret.mjs --clipboard"
   },
   "private": true
 }

@@ -174,9 +174,13 @@ Deno.serve(async (req) => {
       } catch (geminiErr) {
         console.error("Gemini chain failed:", geminiErr);
         if (OPENAI_API_KEY) {
-          console.warn("Falling back to OpenAI after Gemini failure");
-          const raw = await callOpenAI(image_base64, mime_type);
-          return json({ analysis: normalize(raw), model: OPENAI_MODEL, provider: "openai" });
+          try {
+            console.warn("Falling back to OpenAI after Gemini failure");
+            const raw = await callOpenAI(image_base64, mime_type);
+            return json({ analysis: normalize(raw), model: OPENAI_MODEL, provider: "openai" });
+          } catch {
+            throw geminiErr;
+          }
         }
         throw geminiErr;
       }

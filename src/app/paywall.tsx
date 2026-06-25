@@ -15,6 +15,7 @@ import {
   type PaymentPlan,
   type PaymentProvider,
 } from '@/lib/payments';
+import { SITE_URL } from '@/lib/site';
 import { useSession } from '@/lib/session';
 import { colors, fonts, radius, spacing } from '@/theme';
 
@@ -24,11 +25,11 @@ const PERKS = [
   { icon: 'camera' as const, text: 'Never hit the daily scan limit' },
 ];
 
-const PRIVACY_URL = 'https://proteinquest.vercel.app/privacy';
+const PRIVACY_URL = `${SITE_URL}/privacy`;
 const TERMS_URL =
   Platform.OS === 'ios'
     ? 'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/'
-    : 'https://proteinquest.vercel.app/terms';
+    : `${SITE_URL}/terms`;
 
 function goBack() {
   if (router.canGoBack()) router.back();

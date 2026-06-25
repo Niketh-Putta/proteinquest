@@ -118,7 +118,7 @@ a {
 .store-badges {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
   gap: 0.65rem 0.85rem;
   padding-bottom: 0.5rem;
@@ -131,67 +131,44 @@ a {
 }
 
 .store-badge {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  height: 40px;
   line-height: 0;
   transition: opacity 0.15s ease;
 }
 
-.store-badge--play:hover {
+.store-badge--play:hover,
+.store-badge--ios:hover {
   opacity: 0.85;
 }
 
-.store-badge--play img {
-  height: 48px;
+.store-badge img {
+  display: block;
+  height: 100%;
   width: auto;
-}
-
-.store-badge--soon {
-  position: relative;
-  opacity: 0.42;
-  cursor: default;
-}
-
-.store-badge--soon img {
-  height: 40px;
-  width: auto;
-}
-
-.store-badge__soon {
-  position: absolute;
-  left: 50%;
-  bottom: -1.25rem;
-  transform: translateX(-50%);
-  font-size: 0.65rem;
-  letter-spacing: 0.03em;
-  color: var(--muted);
-  white-space: nowrap;
-  line-height: 1;
+  max-width: none;
 }
 
 .preview {
   margin: 0;
   display: flex;
   justify-content: center;
+  align-items: center;
 }
 
 @media (min-width: 768px) {
   .preview {
-    justify-content: flex-end;
+    justify-content: center;
   }
 }
 
-.preview__device {
-  width: min(260px, 70vw);
-  border-radius: 28px;
-  overflow: hidden;
-  border: 1px solid var(--hairline);
-  background: #0a090e;
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
-}
-
-.preview__device img {
-  width: 100%;
-  vertical-align: top;
+.preview__hero {
+  width: min(220px, 58vw);
+  max-height: min(62vh, 480px);
+  object-fit: contain;
+  border-radius: 16px;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.32);
 }
 
 .footer {
@@ -217,21 +194,19 @@ a {
 }
 
 @media (min-width: 640px) {
-  .store-badge--play img {
-    height: 50px;
+  .store-badge {
+    height: 44px;
   }
 
-  .store-badge--soon img {
-    height: 42px;
-  }
-
-  .preview__device {
-    width: min(280px, 100%);
+  .preview__hero {
+    width: min(250px, 88%);
+    max-height: min(68vh, 520px);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .store-badge--play:hover {
+  .store-badge--play:hover,
+  .store-badge--ios:hover {
     opacity: 1;
   }
 }

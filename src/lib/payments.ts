@@ -1,5 +1,6 @@
 import { Platform } from 'react-native';
 
+import { SITE_URL } from '@/lib/site';
 import {
   checkProEntitlement,
   getBillingManagementUrl,
@@ -60,7 +61,7 @@ const stripeProvider: PaymentProvider = {
     const origin =
       Platform.OS === 'web' && typeof window !== 'undefined'
         ? window.location.origin
-        : 'https://proteinquest.vercel.app';
+        : SITE_URL;
     const { data, error } = await supabase.functions.invoke('create-checkout', {
       body: {
         plan_id: planId,

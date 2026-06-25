@@ -32,8 +32,11 @@ function friendlyAnalysisError(message: string): string {
   if (/quota|RESOURCE_EXHAUSTED|high demand|overloaded|temporarily unavailable/i.test(message)) {
     return 'AI is busy right now. Try again in a moment.';
   }
-  if (/billing|not active/i.test(message)) {
-    return 'AI service unavailable. Please try again later.';
+  if (/suspended|permission denied/i.test(message)) {
+    return 'AI key was revoked by Google. Create a new key in AI Studio and update Supabase GEMINI_API_KEY.';
+  }
+  if (/billing|not active|postpay|payment/i.test(message)) {
+    return 'AI billing is not active. Enable billing in Google AI Studio (or OpenAI) and try again.';
   }
   if (/malformed|Unterminated string|Unexpected token|JSON/i.test(message)) {
     return 'Analysis hit a glitch. Tap scan and try again.';

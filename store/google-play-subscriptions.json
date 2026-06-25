@@ -60,7 +60,7 @@
   "reviewNotes": {
     "licenseTesters": "Add Google account emails under Setup → License testing before sandbox purchases.",
     "testInstructions": "Open app → complete onboarding → paywall shows Weekly £6.99 and Yearly £29.99. Use license tester account to purchase. Free tier allows 3 AI scans/day without subscription.",
-    "privacyPolicyUrl": "https://proteinquest.vercel.app/privacy",
-    "termsUrl": "https://proteinquest.vercel.app/terms"
+    "privacyPolicyUrl": "https://proteinquest.app/privacy",
+    "termsUrl": "https://proteinquest.app/terms"
   }
 }

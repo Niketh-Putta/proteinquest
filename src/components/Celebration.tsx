@@ -1,21 +1,21 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Dimensions, Image, Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
-import type { ImageSourcePropType } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Dimensions, Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import Animated, {
   Easing,
   FadeIn,
   FadeInUp,
-  runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withDelay,
   withRepeat,
   withSequence,
-  withSpring,
   withTiming,
 } from 'react-native-reanimated';
 
+import { CARD_UNLOCK_MS, DragonCardUnlock } from '@/components/DragonCardUnlock';
+import { DragonPortrait } from '@/components/DragonPortrait';
+import { LevelUpNudge } from '@/components/LevelUpNudge';
 import {
   XP_GOAL_BONUS,
   displayDragonId,
@@ -29,13 +29,6 @@ import type { Profile } from '@/lib/types';
 import { colors, fonts, radius, spacing } from '@/theme';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
-const MORPH_MS = 2100;
-const CHARGE_MS = 780;
-const FLASH_AT = CHARGE_MS;
-const CROSSFADE_AT = FLASH_AT + 110;
-const CROSSFADE_MS = 560;
-const CHARGE_PULSE_MS = 190;
-const CHARGE_PULSES = 4;
 
 function triggerHaptic(type: 'impact' | 'success' | 'heavy') {
   if (Platform.OS === 'web') return;
@@ -94,217 +87,13 @@ function Particle({ index, color, delayBase = 800 }: { index: number; color: str
   );
 }
 
-function RingBurst({ accent, delay, maxScale = 1.6 }: { accent: string; delay: number; maxScale?: number }) {
-  const ring = useSharedValue(0.35);
-
-  useEffect(() => {
-    ring.value = withDelay(
-      delay,
-      withTiming(maxScale, { duration: MORPH_MS - delay - 200, easing: Easing.out(Easing.cubic) }),
-    );
-  }, [delay, maxScale, ring]);
-
-  const style = useAnimatedStyle(() => ({
-    opacity: 0.5 * (1 - ring.value / maxScale),
-    transform: [{ scale: ring.value }],
-  }));
-
-  return (
-    <Animated.View
-      style={[morphStyles.ring, style, { borderColor: accent, borderWidth: delay === 0 ? 3 : 2 }]}
-    />
-  );
-}
-
-function EvolutionMorph({
-  previousArt,
-  newArt,
-  accent,
-  onMorphComplete,
-}: {
-  previousArt: ImageSourcePropType;
-  newArt: ImageSourcePropType;
-  accent: string;
-  onMorphComplete: () => void;
-}) {
-  const oldOpacity = useSharedValue(1);
-  const oldScale = useSharedValue(1);
-  const newOpacity = useSharedValue(0);
-  const newScale = useSharedValue(0.48);
-  const flash = useSharedValue(0);
-  const charge = useSharedValue(1);
-  const glowPulse = useSharedValue(0.18);
-  const onMorphCompleteRef = useRef(onMorphComplete);
-  onMorphCompleteRef.current = onMorphComplete;
-
-  useEffect(() => {
-    const morphCompleteTimer = setTimeout(() => {
-      triggerHaptic('success');
-      onMorphCompleteRef.current();
-    }, MORPH_MS);
-    return () => clearTimeout(morphCompleteTimer);
-  }, []);
-
-  useEffect(() => {
-    triggerHaptic('impact');
-
-    charge.value = withRepeat(
-      withSequence(
-        withTiming(1.12, { duration: CHARGE_PULSE_MS, easing: Easing.inOut(Easing.quad) }),
-        withTiming(0.94, { duration: CHARGE_PULSE_MS, easing: Easing.inOut(Easing.quad) }),
-      ),
-      CHARGE_PULSES,
-    );
-    glowPulse.value = withRepeat(
-      withSequence(
-        withTiming(0.42, { duration: CHARGE_PULSE_MS, easing: Easing.out(Easing.quad) }),
-        withTiming(0.14, { duration: CHARGE_PULSE_MS, easing: Easing.in(Easing.quad) }),
-      ),
-      CHARGE_PULSES,
-    );
-
-    flash.value = withDelay(
-      FLASH_AT,
-      withSequence(
-        withTiming(1, { duration: 90, easing: Easing.out(Easing.quad) }, (done) => {
-          if (done) runOnJS(triggerHaptic)('heavy');
-        }),
-        withTiming(0, { duration: 380, easing: Easing.out(Easing.cubic) }),
-      ),
-    );
-
-    oldOpacity.value = withDelay(
-      CROSSFADE_AT,
-      withTiming(0, { duration: CROSSFADE_MS, easing: Easing.in(Easing.quad) }),
-    );
-    oldScale.value = withDelay(
-      CROSSFADE_AT,
-      withTiming(0.62, { duration: CROSSFADE_MS, easing: Easing.in(Easing.cubic) }),
-    );
-
-    newOpacity.value = withDelay(
-      CROSSFADE_AT + 80,
-      withTiming(1, { duration: CROSSFADE_MS + 200, easing: Easing.out(Easing.cubic) }),
-    );
-    newScale.value = withDelay(
-      CROSSFADE_AT + 80,
-      withSequence(
-        withSpring(1.22, { damping: 7, stiffness: 160 }),
-        withSpring(1, { damping: 11, stiffness: 130 }),
-      ),
-    );
-  }, [charge, flash, glowPulse, newOpacity, newScale, oldOpacity, oldScale]);
-
-  const oldStyle = useAnimatedStyle(() => ({
-    opacity: oldOpacity.value,
-    transform: [{ scale: charge.value * oldScale.value }],
-  }));
-  const newStyle = useAnimatedStyle(() => ({
-    opacity: newOpacity.value,
-    transform: [{ scale: newScale.value }],
-  }));
-  const flashStyle = useAnimatedStyle(() => ({ opacity: flash.value }));
-  const glowStyle = useAnimatedStyle(() => ({ opacity: glowPulse.value }));
-
-  return (
-    <View style={morphStyles.stage}>
-      <RingBurst accent={accent} delay={0} maxScale={1.55} />
-      <RingBurst accent={accent} delay={FLASH_AT - 200} maxScale={1.75} />
-      <RingBurst accent={accent} delay={CROSSFADE_AT} maxScale={1.9} />
-      <Animated.View
-        style={[
-          morphStyles.glow,
-          glowStyle,
-          { backgroundColor: accent },
-          Platform.OS === 'web' && morphStyles.glowBlur,
-        ]}
-      />
-      <Animated.View style={[morphStyles.flash, flashStyle]} />
-      <Animated.View style={[morphStyles.artLayer, oldStyle]}>
-        <Image source={previousArt} style={morphStyles.art} />
-      </Animated.View>
-      <Animated.View style={[morphStyles.artLayer, newStyle]}>
-        <Image source={newArt} style={morphStyles.art} />
-      </Animated.View>
-    </View>
-  );
-}
-
-function LevelUpPop({ art, accent }: { art: ImageSourcePropType; accent: string }) {
-  const pop = useSharedValue(0.88);
-  const ring = useSharedValue(0.6);
-
-  useEffect(() => {
-    triggerHaptic('impact');
-    pop.value = withSequence(
-      withSpring(1.14, { damping: 8, stiffness: 200 }),
-      withSpring(1, { damping: 12, stiffness: 150 }),
-    );
-    ring.value = withTiming(1.35, { duration: 700, easing: Easing.out(Easing.cubic) });
-  }, [pop, ring]);
-
-  const popStyle = useAnimatedStyle(() => ({ transform: [{ scale: pop.value }] }));
-  const ringStyle = useAnimatedStyle(() => ({
-    opacity: 0.35 * (1 - ring.value / 1.35),
-    transform: [{ scale: ring.value }],
-  }));
-
-  return (
-    <View style={morphStyles.stage}>
-      <Animated.View style={[morphStyles.ring, ringStyle, { borderColor: accent }]} />
-      <Animated.View style={popStyle}>
-        <View style={[styles.portraitFrame, { borderColor: `${accent}50` }]}>
-          <Image source={art} style={styles.art} />
-        </View>
-      </Animated.View>
-    </View>
-  );
-}
-
-const morphStyles = StyleSheet.create({
-  stage: {
-    height: 240,
-    width: '100%',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  ring: {
-    position: 'absolute',
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    borderWidth: 2,
-  },
-  glow: {
-    position: 'absolute',
-    width: 300,
-    height: 300,
-    borderRadius: 150,
-  },
-  glowBlur: Platform.select({
-    web: { filter: 'blur(52px)' as unknown as undefined },
-    default: {},
-  }),
-  flash: {
-    ...StyleSheet.absoluteFill,
-    backgroundColor: '#fff',
-    borderRadius: radius.character,
-    marginHorizontal: 32,
-  },
-  artLayer: {
-    position: 'absolute',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  art: { width: 200, height: 200, borderRadius: radius.character },
-});
-
 interface Props {
   visible: boolean;
   profile: Profile;
   evolved: boolean;
   leveledUp?: boolean;
   perkUnlocked?: string | null;
+  levelBefore?: number;
   levelAfter?: number;
   previousStageIndex?: number;
   onDone: () => void;
@@ -316,6 +105,7 @@ export function Celebration({
   evolved,
   leveledUp = false,
   perkUnlocked,
+  levelBefore,
   levelAfter,
   previousStageIndex,
   onDone,
@@ -327,21 +117,20 @@ export function Celebration({
   const level = levelAfter ?? effectiveLevel(progress);
   const stage = stageForXpLevel(level, dragonId);
   const previousStage =
-    evolved && previousStageIndex != null
-      ? dragon.stages[previousStageIndex]
-      : null;
+    evolved && previousStageIndex != null ? dragon.stages[previousStageIndex] : null;
 
-  const [morphDone, setMorphDone] = useState(!evolved);
+  const showEvolution = evolved && previousStage != null && previousStage.index !== stage.index;
+  const isQuickLevelUp = leveledUp && !showEvolution;
+  const prevLevel = levelBefore ?? Math.max(1, level - 1);
+
+  const [ceremonyDone, setCeremonyDone] = useState(!showEvolution);
   const breath = useSharedValue(1);
-  const glow = useSharedValue(0.16);
 
-  const showEvolutionMorph = evolved && previousStage != null && previousStage.index !== stage.index;
-  const isQuickLevelUp = leveledUp && !showEvolutionMorph;
-  const particleDelay = showEvolutionMorph && !morphDone ? MORPH_MS + 200 : isQuickLevelUp ? 200 : 600;
+  const particleDelay = showEvolution && !ceremonyDone ? CARD_UNLOCK_MS + 200 : isQuickLevelUp ? 200 : 600;
 
   useEffect(() => {
     if (!visible) return;
-    setMorphDone(!showEvolutionMorph);
+    setCeremonyDone(!showEvolution);
     breath.value = 1;
     breath.value = withRepeat(
       withSequence(
@@ -350,26 +139,18 @@ export function Celebration({
       ),
       -1,
     );
-    glow.value = withRepeat(
-      withSequence(
-        withTiming(0.24, { duration: 2400, easing: Easing.inOut(Easing.sin) }),
-        withTiming(0.1, { duration: 2400, easing: Easing.inOut(Easing.sin) }),
-      ),
-      -1,
-    );
-  }, [visible, showEvolutionMorph, breath, glow]);
+  }, [visible, showEvolution, breath]);
 
   const characterStyle = useAnimatedStyle(() => ({
     transform: [{ scale: breath.value }],
   }));
-  const glowStyle = useAnimatedStyle(() => ({ opacity: glow.value }));
 
   if (!visible) return null;
 
   return (
     <Modal transparent animationType="fade" visible={visible} onRequestClose={onDone}>
-      <Pressable style={styles.backdrop} onPress={morphDone ? onDone : undefined}>
-        {(morphDone || !showEvolutionMorph) && (
+      <Pressable style={styles.backdrop} onPress={ceremonyDone ? onDone : undefined}>
+        {(ceremonyDone || !showEvolution) && (
           <View style={styles.particles}>
             {Array.from({ length: 24 }).map((_, i) => (
               <Particle key={i} index={i} color={dragon.accent} delayBase={particleDelay} />
@@ -379,43 +160,45 @@ export function Celebration({
 
         <Animated.View entering={FadeIn.duration(400)} style={styles.arena}>
           <Text style={styles.kicker}>
-            {showEvolutionMorph && !morphDone
+            {showEvolution && !ceremonyDone
               ? 'EVOLVING…'
               : isQuickLevelUp
                 ? 'LEVEL UP'
                 : 'REACH YOUR POTENTIAL'}
           </Text>
 
-          {showEvolutionMorph ? (
-            <EvolutionMorph
+          {showEvolution ? (
+            <DragonCardUnlock
               previousArt={previousStage!.art}
               newArt={stage.art}
               accent={dragon.accent}
-              onMorphComplete={() => setMorphDone(true)}
+              dragonId={dragonId}
+              levelBefore={prevLevel}
+              levelAfter={level}
+              onComplete={() => {
+                triggerHaptic('success');
+                setCeremonyDone(true);
+              }}
             />
           ) : isQuickLevelUp ? (
-            <LevelUpPop art={stage.art} accent={dragon.accent} />
+            <LevelUpNudge art={stage.art} accent={dragon.accent} dragonId={dragonId} level={level} />
           ) : (
             <View style={styles.stage}>
-              <Animated.View
-                style={[
-                  styles.glow,
-                  glowStyle,
-                  { backgroundColor: dragon.accent },
-                  Platform.OS === 'web' && styles.glowBlur,
-                ]}
-              />
               <Animated.View style={characterStyle}>
-                <View style={[styles.portraitFrame, { borderColor: `${dragon.accent}50` }]}>
-                  <Image source={stage.art} style={styles.art} />
-                </View>
+                <DragonPortrait
+                  art={stage.art}
+                  accent={dragon.accent}
+                  level={level}
+                  dragonId={dragonId}
+                  showGlow
+                />
               </Animated.View>
             </View>
           )}
 
-          {morphDone ? (
+          {ceremonyDone ? (
             <>
-              {showEvolutionMorph ? (
+              {showEvolution ? (
                 <Animated.Text
                   entering={FadeInUp.delay(40).springify().damping(14)}
                   style={[styles.evolvedBanner, { color: dragon.accent }]}>
@@ -424,9 +207,9 @@ export function Celebration({
               ) : null}
 
               <Animated.Text
-                entering={FadeInUp.delay(showEvolutionMorph ? 120 : 80).springify()}
+                entering={FadeInUp.delay(showEvolution ? 120 : 80).springify()}
                 style={styles.title}>
-                {showEvolutionMorph
+                {showEvolution
                   ? `${dragon.name} evolved`
                   : isQuickLevelUp
                     ? `+Level ${level}`
@@ -435,9 +218,9 @@ export function Celebration({
                       : 'You showed up'}
               </Animated.Text>
               <Animated.Text
-                entering={FadeInUp.delay(showEvolutionMorph ? 200 : 160).springify()}
+                entering={FadeInUp.delay(showEvolution ? 200 : 160).springify()}
                 style={[styles.stageName, { color: dragon.accent }]}>
-                {showEvolutionMorph
+                {showEvolution
                   ? stage.name.toUpperCase()
                   : isQuickLevelUp
                     ? perkUnlocked
@@ -448,9 +231,9 @@ export function Celebration({
                       : 'PROTEIN GOAL HIT'}
               </Animated.Text>
               <Animated.Text
-                entering={FadeInUp.delay(showEvolutionMorph ? 280 : 240).springify()}
+                entering={FadeInUp.delay(showEvolution ? 280 : 240).springify()}
                 style={styles.subline}>
-                {showEvolutionMorph
+                {showEvolution
                   ? `New form unlocked — ${stage.tagline}`
                   : isQuickLevelUp && perkUnlocked
                     ? perkUnlocked
@@ -463,7 +246,7 @@ export function Celebration({
                           : `${dragon.name} is fed. Keep reaching.`}
               </Animated.Text>
 
-              <Animated.View entering={FadeIn.delay(showEvolutionMorph ? 360 : 320)} style={styles.rewardRow}>
+              <Animated.View entering={FadeIn.delay(showEvolution ? 360 : 320)} style={styles.rewardRow}>
                 <View style={styles.rewardChip}>
                   <Text style={[styles.rewardValue, { color: dragon.accent }]}>+{XP_GOAL_BONUS}</Text>
                   <Text style={styles.rewardLabel}>xp</Text>
@@ -474,12 +257,14 @@ export function Celebration({
                 </View>
               </Animated.View>
 
-              <Animated.Text entering={FadeIn.delay(showEvolutionMorph ? 520 : 480)} style={styles.dismiss}>
+              <Animated.Text entering={FadeIn.delay(showEvolution ? 520 : 480)} style={styles.dismiss}>
                 TAP TO CONTINUE
               </Animated.Text>
             </>
           ) : (
-            <Text style={styles.morphHint}>Watch your dragon transform…</Text>
+            <Text style={styles.ceremonyHint}>
+              {showEvolution ? 'New card unlocking…' : 'Level up…'}
+            </Text>
           )}
         </Animated.View>
       </Pressable>
@@ -504,29 +289,11 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   stage: {
-    height: 240,
+    height: 260,
     width: '100%',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  glow: {
-    position: 'absolute',
-    width: 280,
-    height: 280,
-    borderRadius: 140,
-    opacity: 0.14,
-  },
-  glowBlur: Platform.select({
-    web: { filter: 'blur(48px)' as unknown as undefined },
-    default: {},
-  }),
-  portraitFrame: {
-    borderRadius: radius.character,
-    borderWidth: 1,
-    overflow: 'hidden',
-    backgroundColor: colors.bgRaised,
-  },
-  art: { width: 200, height: 200, borderRadius: radius.character },
   evolvedBanner: {
     fontFamily: fonts.displayHeavy,
     fontSize: 42,
@@ -557,7 +324,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
     maxWidth: 300,
   },
-  morphHint: {
+  ceremonyHint: {
     fontFamily: fonts.mono,
     fontSize: 11,
     letterSpacing: 1.5,

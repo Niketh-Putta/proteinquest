@@ -103,6 +103,7 @@ export default function ScanScreen() {
     evolved: boolean;
     leveledUp: boolean;
     perkUnlocked: string | null;
+    levelBefore: number;
     levelAfter: number;
     previousStageIndex?: number;
   } | null>(null);
@@ -250,6 +251,7 @@ export default function ScanScreen() {
         evolved,
         leveledUp,
         perkUnlocked,
+        levelBefore,
         levelAfter,
         stageBeforeIndex,
       } = applyLogToCharacter({
@@ -267,6 +269,7 @@ export default function ScanScreen() {
           evolved,
           leveledUp,
           perkUnlocked,
+          levelBefore,
           levelAfter,
           previousStageIndex: stageBeforeIndex,
         });
@@ -472,6 +475,7 @@ export default function ScanScreen() {
           evolved={celebration?.evolved ?? false}
           leveledUp={celebration?.leveledUp ?? false}
           perkUnlocked={celebration?.perkUnlocked}
+          levelBefore={celebration?.levelBefore}
           levelAfter={celebration?.levelAfter}
           previousStageIndex={celebration?.previousStageIndex}
           onDone={() => {

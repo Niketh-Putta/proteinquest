@@ -9,23 +9,41 @@
       content="Scan meals, track your daily protein goal, and evolve your dragon."
     />
     <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://proteinquest.vercel.app/" />
+    <meta property="og:site_name" content="ProteinQuest" />
+    <meta property="og:url" content="https://proteinquest.app/" />
     <meta property="og:title" content="ProteinQuest" />
     <meta
       property="og:description"
       content="Scan meals, track your daily protein goal, and evolve your dragon."
     />
-    <meta property="og:image" content="https://proteinquest.vercel.app/assets/og-image.png" />
+    <meta
+      property="og:image"
+      content="https://proteinquest.app/assets/share-preview.png"
+    />
+    <meta
+      property="og:image:secure_url"
+      content="https://proteinquest.app/assets/share-preview.png"
+    />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="675" />
+    <meta property="og:image:height" content="1200" />
+    <meta property="og:updated_time" content="2026-06-20T13:00:00Z" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="ProteinQuest" />
+    <meta
+      name="twitter:description"
+      content="Scan meals, track your daily protein goal, and evolve your dragon."
+    />
+    <meta
+      name="twitter:image"
+      content="https://proteinquest.app/assets/share-preview.png"
+    />
     <meta name="theme-color" content="#0C0B10" />
+    <link rel="canonical" href="https://proteinquest.app/" />
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&display=swap"
-      rel="stylesheet"
-    />
+    <link rel="stylesheet" href="/fonts.css" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
@@ -39,7 +57,7 @@
         <section class="hero">
           <h1>Track protein.<br />Grow your dragon.</h1>
           <p class="lead">
-            Snap a meal, hit your protein goal, and evolve your companion — powered by AI.
+            Snap a meal, hit your protein goal, and evolve your companion, powered by AI.
           </p>
 
           <div class="store-badges">
@@ -56,28 +74,31 @@
                 alt="Get it on Google Play"
               />
             </a>
-            <span class="store-badge store-badge--soon" aria-label="App Store — coming soon">
+            <a
+              class="store-badge store-badge--ios"
+              data-store="ios"
+              href="#"
+              aria-label="Download on the App Store"
+            >
               <img
                 src="/assets/badges/app-store.svg"
-                width="250"
-                height="83"
+                width="120"
+                height="40"
                 alt="Download on the App Store"
               />
-              <span class="store-badge__soon">Coming soon</span>
-            </span>
+            </a>
           </div>
         </section>
 
         <figure class="preview">
-          <div class="preview__device">
-            <img
-              src="/assets/app-today.png"
-              width="390"
-              height="844"
-              alt="ProteinQuest daily protein tracking with dragon companion"
-              loading="eager"
-            />
-          </div>
+          <img
+            class="preview__hero"
+            src="/assets/hero-promo.jpg"
+            width="576"
+            height="1024"
+            alt="ProteinQuest app showing daily protein goal with Ember the baby fire dragon"
+            loading="eager"
+          />
         </figure>
       </div>
 
@@ -85,6 +106,7 @@
         <nav aria-label="Legal">
           <a href="/privacy">Privacy</a>
           <a href="/terms">Terms</a>
+          <a href="mailto:niketh13putta@gmail.com">Contact</a>
         </nav>
         <p>© 2026 ProteinQuest</p>
       </footer>

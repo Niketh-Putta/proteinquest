@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { execSync } from 'node:child_process';
 
-const PRODUCTION_DOMAIN = 'proteinquest.vercel.app';
+const PRODUCTION_DOMAIN = 'proteinquest.app';
 const GITHUB_REPO = 'Niketh-Putta/proteinquest';
 
 function run(command, options = {}) {

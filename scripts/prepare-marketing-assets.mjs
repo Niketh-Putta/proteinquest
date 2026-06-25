@@ -8,6 +8,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, '..');
 const outDir = path.join(root, 'marketing', 'assets');
 const badgesDir = path.join(outDir, 'badges');
+const SHARE_PREVIEW = 'share-preview.png';
 
 const PLAY_BADGE_URL =
   'https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png';
@@ -37,15 +38,28 @@ function download(url, dest) {
 }
 
 function main() {
+  fs.rmSync(outDir, { recursive: true, force: true });
   ensureDir(outDir);
   ensureDir(badgesDir);
 
   copyFile('assets/images/icon.png', 'icon.png');
-  copyFile('store/screenshots/01-today.png', 'app-today.png');
-  resizePng('store/screenshots/01-today.png', 'og-image.png', 1200);
+  copyFile('marketing/source/hero-promo.jpg', 'hero-promo.jpg');
+  resizePng('marketing/source/hero-promo.jpg', SHARE_PREVIEW, 1200);
+
+  // Keep legacy OG URLs serving the same current preview image.
+  for (const legacy of ['og-image.png', 'hero-og.png']) {
+    fs.copyFileSync(path.join(outDir, SHARE_PREVIEW), path.join(outDir, legacy));
+  }
 
   download(PLAY_BADGE_URL, path.join(badgesDir, 'google-play.png'));
   download(APP_STORE_BADGE_URL, path.join(badgesDir, 'app-store.svg'));
+
+  const fontsDir = path.join(outDir, 'fonts');
+  ensureDir(fontsDir);
+  download(
+    'https://fonts.gstatic.com/s/sora/v17/xMQ9uFFYT72X5wkB_18qmnndmSdSnh2BAfO5mnuyOo1lfiQAVaW2gaU.woff2',
+    path.join(fontsDir, 'sora-latin.woff2'),
+  );
 
   copyFile('public/favicon.ico', '../favicon.ico');
   copyFile('public/favicon-32.png', '../favicon-32.png');
@@ -60,7 +74,7 @@ function main() {
     );
   }
 
-  console.log('Prepared marketing/assets (icon, app preview, official store badges)');
+  console.log(`Prepared marketing/assets (${SHARE_PREVIEW} + legacy OG aliases)`);
 }
 
 main();

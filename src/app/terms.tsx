@@ -5,10 +5,11 @@ import { Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useLayout } from '@/lib/layout';
+import { SITE_URL } from '@/lib/site';
 import { colors, fonts, spacing } from '@/theme';
 
-const CONTACT_EMAIL = 'hello@proteinquest.app';
-const PRIVACY_URL = 'https://proteinquest.vercel.app/privacy';
+const CONTACT_EMAIL = 'niketh13putta@gmail.com';
+const PRIVACY_URL = `${SITE_URL}/privacy`;
 const LAST_UPDATED = 'June 11, 2026';
 
 function goBack() {
@@ -160,7 +161,7 @@ export default function TermsScreen() {
         </Section>
 
         {Platform.OS === 'web' ? (
-          <Text style={styles.footer}>ProteinQuest · proteinquest.vercel.app</Text>
+          <Text style={styles.footer}>ProteinQuest · proteinquest.app</Text>
         ) : null}
       </ScrollView>
     </SafeAreaView>
