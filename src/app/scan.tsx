@@ -402,7 +402,6 @@ export default function ScanScreen() {
             <Text style={styles.foodName}>{analysis.food_name}</Text>
             <Text style={styles.metaText}>
               {analysis.confidence?.toUpperCase()} CONFIDENCE
-              {analysis.calories ? `  ·  ~${Math.round(analysis.calories)} KCAL` : ''}
             </Text>
           </Animated.View>
 
@@ -449,6 +448,9 @@ export default function ScanScreen() {
                 maxLength={5}
               />
               <Text style={styles.totalUnit}>g</Text>
+              {analysis.calories ? (
+                <Text style={styles.totalCal}> ({Math.round(analysis.calories)} cal)</Text>
+              ) : null}
             </View>
             <Text style={styles.totalHint}>tap to adjust</Text>
           </Animated.View>
@@ -706,6 +708,14 @@ const styles = StyleSheet.create({
     letterSpacing: -2,
   },
   totalUnit: { fontSize: 22, fontFamily: fonts.display, color: colors.textTertiary, marginBottom: 8 },
+  totalCal: {
+    fontSize: 14,
+    fontFamily: fonts.mono,
+    color: colors.textTertiary,
+    marginBottom: 10,
+    letterSpacing: 0.2,
+    fontVariant: ['tabular-nums'],
+  },
   totalHint: {
     fontFamily: fonts.mono,
     fontSize: 10,

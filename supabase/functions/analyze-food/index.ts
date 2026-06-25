@@ -1,6 +1,7 @@
 // Protein analysis via server Gemini key (primary) or OpenAI fallback.
 
 import {
+  lookupCalorieDensity,
   lookupProteinDensity,
   proteinFromDensity,
 } from "../_shared/protein-density.ts";
@@ -9,9 +10,9 @@ const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
 const OPENAI_MODEL = Deno.env.get("OPENAI_MODEL") ?? "gpt-4o";
 const GEMINI_MODELS = [
-  Deno.env.get("GEMINI_MODEL") ?? "gemini-2.5-flash",
+  Deno.env.get("GEMINI_MODEL") ?? "gemini-2.0-flash",
+  "gemini-2.5-flash",
   "gemini-2.5-pro",
-  "gemini-2.0-flash",
   "gemini-2.0-flash-lite",
 ];
 
@@ -47,6 +48,7 @@ WORK IN 5 STEPS (reason internally, output final JSON only):
 3. CALCULATE protein_g = estimated_grams × (protein per 100g for that food) / 100
    Densities: chicken breast 31, ground beef 26, salmon 25, egg 13, greek yogurt 10, tofu 17, kale/spinach 3, rice 2.7, cheese 25, protein bar 30
 4. SUM all item protein_g → total_protein_g (must match within 0.5g)
+5. ESTIMATE total meal calories: read from labels if visible; otherwise sum item kcal from portion weight (typical cooked kcal/100g: chicken 165, beef 250, fish 200, egg 155, rice 130, greens 35, cheese 400)
 
 Rules:
 - protein_source: "label" when nutrition label/packaging/on-screen text provides protein grams; "visual" when estimating from food appearance only; "mixed" when both exist (label wins for total).
@@ -261,7 +263,7 @@ async function callGemini(
   };
 
   if (attempt === 0 && supportsThinking(model)) {
-    generationConfig.thinkingConfig = { thinkingBudget: 768 };
+    generationConfig.thinkingConfig = { thinkingBudget: 256 };
   }
 
   const res = await fetch(url, {
@@ -503,6 +505,23 @@ function deriveOverallConfidence(items: NormalizedItem[]): string {
   return "high";
 }
 
+function deriveCalories(items: NormalizedItem[], rawCalories: unknown, totalProtein: number): number {
+  const fromModel = Math.round(Number(rawCalories) || 0);
+  if (fromModel > 0) return fromModel;
+
+  let sum = 0;
+  for (const item of items) {
+    const grams = item.estimated_grams;
+    if (!grams || grams <= 0) continue;
+    const kcalPer100g = lookupCalorieDensity(item.name);
+    if (kcalPer100g) sum += (grams * kcalPer100g) / 100;
+  }
+  if (sum > 0) return Math.round(sum);
+
+  if (totalProtein > 0) return Math.round(totalProtein * 5.5);
+  return 0;
+}
+
 function normalize(raw: Record<string, unknown>) {
   if (!raw.is_food) {
     return {
@@ -594,7 +613,7 @@ function normalize(raw: Record<string, unknown>) {
     food_name: sanitizeField(raw.food_name, 80) || 'Meal',
     items,
     total_protein_g: total,
-    calories: Math.round(Number(raw.calories) || 0),
+    calories: deriveCalories(items, raw.calories, total),
     confidence,
     notes,
   };

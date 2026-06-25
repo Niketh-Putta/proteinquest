@@ -284,6 +284,9 @@ export default function TodayScreen() {
           <Text style={styles.logProtein}>
             {Math.round(Number(item.protein_g))}
             <Text style={styles.logUnit}>g</Text>
+            {item.calories ? (
+              <Text style={styles.logCal}> ({Math.round(Number(item.calories))} cal)</Text>
+            ) : null}
           </Text>
           <Pressable
             onPress={() => confirmDelete(item)}
@@ -554,6 +557,13 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
   logUnit: { fontSize: 13, color: colors.textTertiary },
+  logCal: {
+    fontSize: 11,
+    fontFamily: fonts.mono,
+    color: colors.textTertiary,
+    letterSpacing: 0.2,
+    fontVariant: ['tabular-nums'],
+  },
   deleteBtn: {
     width: 36,
     height: 36,
