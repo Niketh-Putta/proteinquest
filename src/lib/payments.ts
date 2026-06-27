@@ -86,18 +86,18 @@ const revenueCatProvider: PaymentProvider = {
   name: 'revenuecat',
   isConfigured: isRevenueCatConfigured(),
   plans: PLANS,
-  async purchase(planId: string) {
-    return purchasePlan(planId);
+  async purchase(planId: string, opts?: { userId?: string; email?: string }) {
+    return purchasePlan(planId, opts?.userId);
   },
   async restore() {
     return restorePurchases();
   },
 };
 
-async function loadRevenueCatPlans(): Promise<PaymentPlan[]> {
+async function loadRevenueCatPlans(userId?: string): Promise<PaymentPlan[]> {
   if (!isRevenueCatConfigured()) return PLANS;
   try {
-    const plans = await getRevenueCatPlans();
+    const plans = await getRevenueCatPlans(userId);
     return plans.map(({ id, title, price, caption }) => ({ id, title, price, caption }));
   } catch {
     return PLANS;
@@ -105,18 +105,18 @@ async function loadRevenueCatPlans(): Promise<PaymentPlan[]> {
 }
 
 /** Native provider with live store prices when RevenueCat is configured. */
-export async function getNativePaymentProvider(): Promise<PaymentProvider> {
+export async function getNativePaymentProvider(userId?: string): Promise<PaymentProvider> {
   if (isRevenueCatConfigured()) {
-    const plans = await loadRevenueCatPlans();
+    const plans = await loadRevenueCatPlans(userId);
     return { ...revenueCatProvider, plans };
   }
   return stubProvider;
 }
 
 /** Whether store products are available for purchase (Play/App Store + RC offering linked). */
-export async function nativePurchasesReady(): Promise<boolean> {
+export async function nativePurchasesReady(userId?: string): Promise<boolean> {
   if (!isRevenueCatConfigured()) return false;
-  return hasLiveOfferings();
+  return hasLiveOfferings(userId);
 }
 
 const stubProvider: PaymentProvider = {

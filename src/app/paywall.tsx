@@ -43,20 +43,54 @@ export default function Paywall() {
   const [busy, setBusy] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [purchasesReady, setPurchasesReady] = useState(false);
+  const [checkingPurchases, setCheckingPurchases] = useState(Platform.OS !== 'web');
   const [memberCount, setMemberCount] = useState(PRO_MEMBER_BASE);
+
+  const userId = session?.user.id;
 
   useEffect(() => {
     if (Platform.OS === 'web') return;
-    getNativePaymentProvider()
-      .then((p) => {
+    let active = true;
+
+    async function loadProvider() {
+      try {
+        const p = await getNativePaymentProvider(userId);
+        if (!active) return;
         setProvider(p);
         setPlanId(p.plans[1]?.id ?? p.plans[0]?.id ?? 'pro_yearly');
-      })
-      .catch(() => {});
-    nativePurchasesReady()
-      .then(setPurchasesReady)
-      .catch(() => setPurchasesReady(false));
-  }, []);
+      } catch {
+        /* keep static plans */
+      }
+    }
+
+    async function checkPurchasesReady() {
+      if (!userId) return;
+      setCheckingPurchases(true);
+      for (let attempt = 0; attempt < 4 && active; attempt++) {
+        try {
+          const ready = await nativePurchasesReady(userId);
+          if (!active) return;
+          if (ready) {
+            setPurchasesReady(true);
+            break;
+          }
+        } catch {
+          /* retry */
+        }
+        if (attempt < 3) {
+          await new Promise((r) => setTimeout(r, 750 * (attempt + 1)));
+        }
+      }
+      if (active) setCheckingPurchases(false);
+    }
+
+    void loadProvider();
+    void checkPurchasesReady();
+
+    return () => {
+      active = false;
+    };
+  }, [userId]);
 
   useEffect(() => {
     let active = true;
@@ -200,12 +234,14 @@ export default function Paywall() {
           title={
             !provider.isConfigured
               ? 'Unlock Pro (test mode)'
-              : !purchasesReady
-                ? 'Subscriptions coming soon'
-                : 'Continue'
+              : checkingPurchases
+                ? 'Loading subscriptions…'
+                : !purchasesReady
+                  ? 'Subscriptions coming soon'
+                  : 'Continue'
           }
           onPress={handlePurchase}
-          loading={busy}
+          loading={busy || checkingPurchases}
           disabled={provider.isConfigured && !purchasesReady}
           style={{ marginTop: spacing.md }}
         />

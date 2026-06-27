@@ -19,7 +19,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { uploadAvatar } from '@/lib/api';
-import { BillingSheet } from '@/components/BillingSheet';
+import { BillingSection } from '@/components/BillingSection';
 import { DragonEvolutionGallery } from '@/components/DragonEvolutionGallery';
 import { GoalEditor } from '@/components/GoalEditor';
 import { dragonById, displayDragonId, isDailyDragonLockedForToday } from '@/lib/character';
@@ -31,8 +31,10 @@ import {
   MEAL_REMINDER_SLOTS,
   setMealRemindersEnabled,
 } from '@/lib/meal-reminders';
+import { upgradeHint } from '@/lib/paywall-gate';
 import { todayISODate } from '@/lib/protein';
 import { useSession } from '@/lib/session';
+import { usePaywallProfile } from '@/lib/use-paywall-profile';
 import type { Profile } from '@/lib/types';
 import { setPreferredName } from '@/lib/xp';
 import { colors, fonts, spacing, textInputWeb } from '@/theme';
@@ -43,7 +45,8 @@ function goHome() {
 }
 
 export default function SettingsScreen() {
-  const { profile, session, saveProfile } = useSession();
+  const { session, saveProfile } = useSession();
+  const { profile, authUserCreatedAt } = usePaywallProfile();
   const { contentMaxWidth, horizontalPad, isNarrow } = useLayout();
   const [saving, setSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
@@ -53,7 +56,6 @@ export default function SettingsScreen() {
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [nameFocused, setNameFocused] = useState(false);
   const [nameSaved, setNameSaved] = useState(false);
-  const [billingOpen, setBillingOpen] = useState(false);
   const [remindersOn, setRemindersOn] = useState(true);
   const [remindersBusy, setRemindersBusy] = useState(false);
   const nameInputRef = useRef<TextInput>(null);
@@ -314,23 +316,32 @@ export default function SettingsScreen() {
 
           <View style={styles.section}>
             <Text style={styles.sectionLabel}>BILLING</Text>
-            <Pressable
-              onPress={() => setBillingOpen(true)}
-              android_ripple={{ color: colors.hairlineBright }}
-              style={({ pressed }) => [styles.billingBtn, pressed && styles.billingBtnPressed]}>
-              <View style={styles.billingIcon}>
-                <Ionicons name="card" size={18} color={colors.accent} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.billingTitle}>Manage billing</Text>
-                <Text style={styles.billingHint}>
-                  {profile?.is_premium
-                    ? 'Update payment, restore, or cancel Pro'
-                    : 'Payment method, restore, and plan options'}
-                </Text>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
-            </Pressable>
+            <BillingSection
+              userId={session?.user.id}
+              isPro={!!profile?.is_premium}
+              onRestored={() => {
+                saveProfile({ is_premium: true }).catch(() => {});
+              }}
+            />
+            {!profile?.is_premium ? (
+              <Pressable
+                onPress={() => router.push('/paywall')}
+                android_ripple={{ color: colors.hairlineBright }}
+                style={({ pressed }) => [
+                  styles.billingBtn,
+                  styles.upgradeBtn,
+                  pressed && styles.billingBtnPressed,
+                ]}>
+                <View style={[styles.billingIcon, styles.upgradeIcon]}>
+                  <Ionicons name="star" size={18} color={colors.onAccent} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.upgradeTitle}>Upgrade to premium</Text>
+                  <Text style={styles.billingHint}>{upgradeHint(profile, new Date(), authUserCreatedAt)}</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={colors.accent} />
+              </Pressable>
+            ) : null}
           </View>
 
           {profile && isDailyDragonLockedForToday(profile, todayISODate()) ? (
@@ -354,15 +365,6 @@ export default function SettingsScreen() {
           />
         </ScrollView>
       </KeyboardAvoidingView>
-      <BillingSheet
-        visible={billingOpen}
-        isPro={!!profile?.is_premium}
-        onClose={() => setBillingOpen(false)}
-        onRestored={() => {
-          saveProfile({ is_premium: true }).catch(() => {});
-          setBillingOpen(false);
-        }}
-      />
     </SafeAreaView>
   );
 }
@@ -614,6 +616,19 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     minHeight: 44,
     overflow: 'hidden',
+  },
+  upgradeBtn: {
+    marginTop: spacing.sm,
+    backgroundColor: colors.accentSurface,
+    borderColor: colors.accent,
+  },
+  upgradeIcon: {
+    backgroundColor: colors.accent,
+  },
+  upgradeTitle: {
+    fontFamily: fonts.displayMedium,
+    fontSize: 15,
+    color: colors.accent,
   },
   billingBtnPressed: { opacity: 0.85 },
   billingIcon: {

@@ -41,6 +41,7 @@ import { useLayout } from '@/lib/layout';
 import { canScan } from '@/lib/paywall-gate';
 import { todayISODate } from '@/lib/protein';
 import { useSession } from '@/lib/session';
+import { usePaywallProfile } from '@/lib/use-paywall-profile';
 import type { Analysis } from '@/lib/types';
 import { colors, fonts, spacing, textInputWeb } from '@/theme';
 
@@ -86,7 +87,8 @@ function ScanSweep() {
 }
 
 export default function ScanScreen() {
-  const { session, profile, saveProfile } = useSession();
+  const { session, saveProfile } = useSession();
+  const { profile, authUserCreatedAt } = usePaywallProfile();
   const { horizontalPad, contentWidth, contentMaxWidth } = useLayout();
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
@@ -178,7 +180,7 @@ export default function ScanScreen() {
     }
     if (profile && !profile.is_premium) {
       const used = await countTodayPhotoScans();
-      if (!canScan(profile, used)) {
+      if (!canScan(profile, used, authUserCreatedAt)) {
         router.push('/paywall');
         return;
       }

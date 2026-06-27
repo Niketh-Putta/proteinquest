@@ -9,7 +9,7 @@ import { useLayout } from '@/lib/layout';
 import { canScan } from '@/lib/paywall-gate';
 import { countTodayPhotoScans } from '@/lib/api';
 import { todayISODate } from '@/lib/protein';
-import { useSession } from '@/lib/session';
+import { usePaywallProfile } from '@/lib/use-paywall-profile';
 import { colors, fonts, noTextCaret, pressableWeb, spacing } from '@/theme';
 
 interface TabBarProps {
@@ -20,7 +20,7 @@ interface TabBarProps {
 function ScanTabBar({ state, navigation }: TabBarProps) {
   const insets = useSafeAreaInsets();
   const { contentMaxWidth, isWide } = useLayout();
-  const { profile } = useSession();
+  const { profile, authUserCreatedAt } = usePaywallProfile();
 
   function openScan() {
     if (profile && !isDailyDragonLockedForToday(profile, todayISODate())) {
@@ -30,7 +30,7 @@ function ScanTabBar({ state, navigation }: TabBarProps) {
     if (profile && !profile.is_premium) {
       countTodayPhotoScans()
         .then((used) => {
-          if (!canScan(profile, used)) router.push('/paywall');
+          if (!canScan(profile, used, authUserCreatedAt)) router.push('/paywall');
           else router.push('/scan');
         })
         .catch(() => router.push('/scan'));

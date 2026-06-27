@@ -1,5 +1,6 @@
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
+import type { PurchasesOffering, PurchasesOfferings, PurchasesPackage } from 'react-native-purchases';
 
 /** RevenueCat entitlement identifier — must match dashboard + store/revenuecat-setup.json */
 export const REVENUECAT_ENTITLEMENT_ID = 'pro';
@@ -33,6 +34,54 @@ export function isRevenueCatConfigured(): boolean {
 
 let initPromise: Promise<void> | null = null;
 
+/** Wait until RevenueCat.configure has finished (no-op if never started). */
+export async function ensureRevenueCatReady(): Promise<void> {
+  if (initPromise) await initPromise;
+}
+
+type RcPackage = Pick<PurchasesPackage, 'identifier' | 'packageType'> & {
+  product: { identifier: string; priceString?: string };
+};
+
+function getActiveOffering(offerings: PurchasesOfferings): PurchasesOffering | null {
+  if (offerings.current?.availablePackages.length) return offerings.current;
+  const named = offerings.all.default ?? offerings.all['default'];
+  if (named?.availablePackages.length) return named;
+  return Object.values(offerings.all).find((o) => o.availablePackages.length > 0) ?? null;
+}
+
+function packageMatchesPlan(pkg: RcPackage, planId: 'weekly' | 'yearly'): boolean {
+  if (planId === 'yearly') {
+    return (
+      pkg.product.identifier === REVENUECAT_PRODUCT_IDS.yearly ||
+      pkg.packageType === 'ANNUAL' ||
+      pkg.identifier === '$rc_annual' ||
+      /year|annual/i.test(pkg.product.identifier) ||
+      /year|annual/i.test(pkg.identifier)
+    );
+  }
+  return (
+    pkg.product.identifier === REVENUECAT_PRODUCT_IDS.weekly ||
+    pkg.packageType === 'WEEKLY' ||
+    pkg.identifier === '$rc_weekly' ||
+    /week/i.test(pkg.product.identifier) ||
+    /week/i.test(pkg.identifier)
+  );
+}
+
+function offeringHasPurchasablePackages(offering: PurchasesOffering | null): boolean {
+  if (!offering?.availablePackages.length) return false;
+  return offering.availablePackages.some((p) => {
+    const id = p.product.identifier;
+    return (
+      id === REVENUECAT_PRODUCT_IDS.weekly ||
+      id === REVENUECAT_PRODUCT_IDS.yearly ||
+      /week|year|annual|month/i.test(id) ||
+      !!p.product.priceString
+    );
+  });
+}
+
 /** Configure RevenueCat once per app session. Safe to call multiple times. */
 export async function initRevenueCat(appUserId: string): Promise<void> {
   if (!isRevenueCatConfigured()) return;
@@ -64,31 +113,22 @@ export interface RevenueCatPlan {
 }
 
 /** True when RevenueCat returns a current offering with at least one weekly/yearly package. */
-export async function hasLiveOfferings(): Promise<boolean> {
+export async function hasLiveOfferings(appUserId?: string): Promise<boolean> {
   if (!isRevenueCatConfigured()) return false;
   try {
+    if (appUserId) await initRevenueCat(appUserId);
+    await ensureRevenueCatReady();
     const Purchases = (await import('react-native-purchases')).default;
     const offerings = await Purchases.getOfferings();
-    const current = offerings.current;
-    if (!current?.availablePackages.length) return false;
-    return current.availablePackages.some((p) => {
-      const id = p.product.identifier;
-      return (
-        id === REVENUECAT_PRODUCT_IDS.weekly ||
-        id === REVENUECAT_PRODUCT_IDS.yearly ||
-        p.packageType === 'WEEKLY' ||
-        p.packageType === 'ANNUAL' ||
-        p.identifier === '$rc_weekly' ||
-        p.identifier === '$rc_annual'
-      );
-    });
-  } catch {
+    return offeringHasPurchasablePackages(getActiveOffering(offerings));
+  } catch (e) {
+    console.warn('[RevenueCat] hasLiveOfferings failed:', e);
     return false;
   }
 }
 
 /** Fetch current offering packages mapped to our plan IDs. Falls back to static copy if unavailable. */
-export async function getRevenueCatPlans(): Promise<RevenueCatPlan[]> {
+export async function getRevenueCatPlans(appUserId?: string): Promise<RevenueCatPlan[]> {
   const fallback: RevenueCatPlan[] = [
     {
       id: REVENUECAT_PRODUCT_IDS.weekly,
@@ -109,29 +149,25 @@ export async function getRevenueCatPlans(): Promise<RevenueCatPlan[]> {
   if (!isRevenueCatConfigured()) return fallback;
 
   try {
+    if (appUserId) await initRevenueCat(appUserId);
+    await ensureRevenueCatReady();
     const Purchases = (await import('react-native-purchases')).default;
     const offerings = await Purchases.getOfferings();
-    const current = offerings.current;
+    const current = getActiveOffering(offerings);
     if (!current) return fallback;
 
     const mapped: RevenueCatPlan[] = [];
     for (const pkg of current.availablePackages) {
       const productId = pkg.product.identifier;
-      const isYearly =
-        productId === REVENUECAT_PRODUCT_IDS.yearly ||
-        pkg.packageType === 'ANNUAL' ||
-        pkg.identifier === '$rc_annual';
-      const isWeekly =
-        productId === REVENUECAT_PRODUCT_IDS.weekly ||
-        pkg.packageType === 'WEEKLY' ||
-        pkg.identifier === '$rc_weekly';
+      const isYearly = packageMatchesPlan(pkg, 'yearly');
+      const isWeekly = packageMatchesPlan(pkg, 'weekly');
 
       if (!isYearly && !isWeekly) continue;
 
       mapped.push({
         id: isYearly ? REVENUECAT_PRODUCT_IDS.yearly : REVENUECAT_PRODUCT_IDS.weekly,
         title: isYearly ? 'Yearly' : 'Weekly',
-        price: pkg.product.priceString,
+        price: pkg.product.priceString ?? (isYearly ? '\u00A329.99/yr' : '\u00A36.99/wk'),
         caption: isYearly ? 'Save 92% vs weekly' : 'Flexible — cancel anytime',
         packageIdentifier: pkg.identifier,
       });
@@ -162,30 +198,23 @@ export async function checkProEntitlement(): Promise<boolean> {
 }
 
 /** Purchase a plan by our plan ID (pro_weekly | pro_yearly). Returns true when Pro is active. */
-export async function purchasePlan(planId: string): Promise<boolean> {
+export async function purchasePlan(planId: string, appUserId?: string): Promise<boolean> {
   if (!isRevenueCatConfigured()) {
     throw new Error('RevenueCat is not configured. Set EXPO_PUBLIC_REVENUECAT_* keys.');
   }
 
+  if (appUserId) await initRevenueCat(appUserId);
+  await ensureRevenueCatReady();
+
   const Purchases = (await import('react-native-purchases')).default;
   const offerings = await Purchases.getOfferings();
-  const current = offerings.current;
+  const current = getActiveOffering(offerings);
   if (!current) throw new Error('No subscription offerings available yet.');
 
-  const pkg = current.availablePackages.find((p) => {
-    if (planId === REVENUECAT_PRODUCT_IDS.yearly) {
-      return (
-        p.product.identifier === REVENUECAT_PRODUCT_IDS.yearly ||
-        p.packageType === 'ANNUAL' ||
-        p.identifier === '$rc_annual'
-      );
-    }
-    return (
-      p.product.identifier === REVENUECAT_PRODUCT_IDS.weekly ||
-      p.packageType === 'WEEKLY' ||
-      p.identifier === '$rc_weekly'
-    );
-  });
+  const isYearly = planId === REVENUECAT_PRODUCT_IDS.yearly;
+  const pkg = current.availablePackages.find((p) =>
+    packageMatchesPlan(p, isYearly ? 'yearly' : 'weekly'),
+  );
 
   if (!pkg) throw new Error('Selected plan is not available in the store yet.');
 

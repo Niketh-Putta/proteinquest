@@ -25,6 +25,7 @@ import {
   mergeProfiles,
   saveCachedProfile,
 } from './profile-cache';
+import { enrichProfileSignupAt } from './paywall-gate';
 import { syncPremiumFromRevenueCat } from './payments';
 import { initRevenueCat, subscribeToProEntitlementChanges } from './revenuecat';
 import { supabase } from './supabase';
@@ -88,13 +89,30 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   sessionRef.current = session;
   profileRef.current = profile;
 
-  const applyProfile = useCallback((incoming: Profile | null) => {
+  const applyProfile = useCallback((incoming: Profile | null, authUserCreatedAt?: string | null) => {
     if (!incoming) {
       setProfile(null);
       return;
     }
-    setProfile((prev) => mergeProfiles(prev, incoming));
+    setProfile((prev) => {
+      const merged = mergeProfiles(prev, incoming);
+      const authAt = authUserCreatedAt ?? sessionRef.current?.user?.created_at;
+      return enrichProfileSignupAt(merged, authAt);
+    });
   }, []);
+
+  useEffect(() => {
+    const authAt = session?.user?.created_at;
+    if (!authAt) return;
+    setProfile((prev) => {
+      if (!prev) return prev;
+      if (prev.created_at) {
+        const parsed = new Date(prev.created_at);
+        if (!Number.isNaN(parsed.getTime())) return prev;
+      }
+      return enrichProfileSignupAt(prev, authAt);
+    });
+  }, [session?.user?.created_at]);
 
   const refreshProfile = useCallback(async (userId: string) => {
     const p = await loadProfile(userId);
@@ -127,7 +145,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           fallbackProfile,
         );
         if (!mountedRef.current || !fresh) return;
-        applyProfile(fresh);
+        applyProfile(fresh, validated.user.created_at);
         await saveCachedProfile(fresh);
       } finally {
         bootstrapInFlightRef.current = false;
@@ -165,7 +183,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           const cachedProfile = await loadCachedProfile(cachedSession.user.id);
           if (!mounted) return;
           setSession(cachedSession);
-          if (cachedProfile) applyProfile(cachedProfile);
+          if (cachedProfile) applyProfile(cachedProfile, cachedSession.user.created_at);
 
           if (cachedProfile) {
             // Returning user — restore from disk and open immediately.
@@ -183,7 +201,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           );
           if (!mounted) return;
           if (bootProfile) {
-            applyProfile(bootProfile);
+            applyProfile(bootProfile, cachedSession.user.created_at);
             await saveCachedProfile(bootProfile);
           }
           setLoading(false);
@@ -211,7 +229,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         if (nextSession) {
           const p = await withTimeout(loadProfile(nextSession.user.id), PROFILE_BOOTSTRAP_MS, null);
           if (p) {
-            applyProfile(p);
+            applyProfile(p, nextSession.user.created_at);
             await saveCachedProfile(p);
           }
         }
@@ -222,7 +240,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           setSession(fallbackSession);
           if (fallbackSession) {
             const cached = await loadCachedProfile(fallbackSession.user.id);
-            if (cached) applyProfile(cached);
+            if (cached) applyProfile(cached, fallbackSession.user.created_at);
             else await refreshProfileSafely(fallbackSession.user.id);
           }
         }

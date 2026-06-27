@@ -21,9 +21,10 @@ import { deleteLog, fetchLogsForDate, countTodayPhotoScans } from '@/lib/api';
 import { applyDeleteLogToCharacter, dragonById, isDailyDragonLockedForToday } from '@/lib/character';
 import { confirmDestructive } from '@/lib/confirm';
 import { flexFill, flexScroll, useLayout, useTabBarScrollInset } from '@/lib/layout';
-import { isPro, isInHabitGracePeriod, remainingFreeScans, shouldShowDelayedPaywall } from '@/lib/paywall-gate';
+import { isPro, isInHabitGracePeriod, remainingFreeScans, shouldShowDelayedPaywall, gracePeriodLabel } from '@/lib/paywall-gate';
 import { todayISODate } from '@/lib/protein';
 import { useSession } from '@/lib/session';
+import { usePaywallProfile } from '@/lib/use-paywall-profile';
 import type { ProteinLog } from '@/lib/types';
 import { formatXp } from '@/lib/leaderboard';
 import { xpSnapshot } from '@/lib/xp';
@@ -41,7 +42,8 @@ export default function TodayScreen() {
     isNarrow,
   } = useLayout();
   const tabBarScrollInset = useTabBarScrollInset(isNarrow);
-  const { profile, saveProfile } = useSession();
+  const { saveProfile } = useSession();
+  const { profile, authUserCreatedAt } = usePaywallProfile();
   const [logs, setLogs] = useState<ProteinLog[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -68,17 +70,17 @@ export default function TodayScreen() {
         return;
       }
       countTodayPhotoScans()
-        .then((used) => setScansLeft(remainingFreeScans(used, profile)))
+        .then((used) => setScansLeft(remainingFreeScans(used, profile, authUserCreatedAt)))
         .catch(() => setScansLeft(null));
-    }, [profile?.is_premium, profile?.created_at]),
+    }, [profile?.is_premium, profile?.created_at, authUserCreatedAt]),
   );
 
   useFocusEffect(
     useCallback(() => {
-      if (shouldShowDelayedPaywall(profile)) {
+      if (shouldShowDelayedPaywall(profile, authUserCreatedAt)) {
         router.push('/paywall');
       }
-    }, [profile?.paywall_dismissed, profile?.is_premium, profile?.onboarded, profile]),
+    }, [profile?.paywall_dismissed, profile?.is_premium, profile?.onboarded, profile, authUserCreatedAt]),
   );
 
   const consumed = logs.reduce((sum, l) => sum + Number(l.protein_g), 0);
@@ -187,7 +189,14 @@ export default function TodayScreen() {
           </Pressable>
         </View>
 
-        {!isPro(profile) && !isInHabitGracePeriod(profile) && scansLeft !== null ? (
+        {!isPro(profile) && isInHabitGracePeriod(profile, new Date(), authUserCreatedAt) && gracePeriodLabel(profile, new Date(), authUserCreatedAt) ? (
+          <Pressable onPress={() => router.push('/settings')} style={styles.scansPill}>
+            <Ionicons name="gift-outline" size={14} color={colors.accent} />
+            <Text style={styles.scansPillText}>{gracePeriodLabel(profile, new Date(), authUserCreatedAt)}</Text>
+          </Pressable>
+        ) : null}
+
+        {!isPro(profile) && !isInHabitGracePeriod(profile, new Date(), authUserCreatedAt) && scansLeft !== null ? (
           <Pressable onPress={() => router.push('/paywall')} style={styles.scansPill}>
             <Ionicons name="sparkles" size={14} color={colors.accent} />
             <Text style={styles.scansPillText}>
