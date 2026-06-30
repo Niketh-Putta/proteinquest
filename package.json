@@ -76,7 +76,8 @@
     "payments:create-play-subs": "node scripts/create-play-subscriptions.mjs",
     "ship:android": "node scripts/complete-android-ship.mjs",
     "ship:all": "node scripts/ship-all.mjs",
-    "gemini:refresh": "node scripts/refresh-gemini-secret.mjs --clipboard"
+    "gemini:refresh": "node scripts/refresh-gemini-secret.mjs --clipboard",
+    "deploy:analyze-food": "supabase functions deploy analyze-food --project-ref csxdkvpvcasuknhnprxp --no-verify-jwt"
   },
   "private": true
 }
