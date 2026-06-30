@@ -1,6 +1,10 @@
 // Protein analysis via server Gemini key (primary) or OpenAI fallback.
 
 import {
+  lookupCalorieDensity,
+  caloriesFromDensity,
+} from "../_shared/calorie-density.ts";
+import {
   lookupProteinDensity,
   proteinFromDensity,
 } from "../_shared/protein-density.ts";
@@ -22,14 +26,16 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-requested-with",
 };
 
-const SYSTEM_PROMPT = `You are an expert sports nutritionist who estimates PROTEIN ONLY from food photos.
+const SYSTEM_PROMPT = `You are an expert sports nutritionist who estimates PROTEIN and CALORIES from food photos.
 
 WORK IN 5 STEPS (reason internally, output final JSON only):
 0. LABEL / TEXT DETECTION (do this FIRST — highest priority):
    - Scan the image for ANY readable text: nutrition facts panels, supplement labels, packaging, barcodes, macro-tracking app screenshots, restaurant menus with macros.
    - OCR-style: read every number near "Protein", "PRO", "P:", "prot", or inside a protein row on a nutrition label.
-   - Distinguish "per serving" vs "per container" vs "per 100g". If the whole package/product shown matches one serving, use per-serving protein. If multiple servings visible, multiply accordingly.
+   - Also read "Calories", "Energy", "kcal", "Cal" on labels or macro app screenshots. Set label_calories_g when visible (per serving unless container math is obvious).
+   - Distinguish "per serving" vs "per container" vs "per 100g". If the whole package/product shown matches one serving, use per-serving values. If multiple servings visible, multiply accordingly.
    - If explicit protein grams are visible with high confidence → set protein_source="label", label_protein_g to that value, and USE IT as total_protein_g. Do NOT replace label values with visual portion math.
+   - If explicit calories/kcal are visible with high confidence → use label_calories_g as calories total. Label wins over visual estimation.
    - Label wins over visual estimation. A nutrition label showing "Protein 50g" means total_protein_g≈50 even if the food photo alone looks smaller.
    - Set items to reflect the labeled product (e.g. one item "Protein powder (label)" with protein_g matching label). estimated_grams optional when source is label.
 1. IDENTIFY every visible food component (skip if step 0 found authoritative label text). Separate visible items from likely hidden ingredients (sauce, oil, cheese dust, marinade). Note cooking method (grilled, fried, baked) — affects weight more than protein density.
@@ -43,11 +49,16 @@ WORK IN 5 STEPS (reason internally, output final JSON only):
    - Protein bar ~60g; yogurt cup small ~125g, large ~170g
 3. CALCULATE protein_g = estimated_grams × (protein per 100g for that food) / 100
    Densities: chicken breast 31, ground beef 26, salmon 25, egg 13, greek yogurt 10, tofu 17, kale/spinach 3, rice 2.7, cheese 25, protein bar 30
-4. SUM all item protein_g → total_protein_g (must match within 0.5g)
+4. CALCULATE calories_g per item = estimated_grams × (kcal per 100g for that food) / 100
+   Energy densities: chicken breast 165, ground beef 250, salmon 208, egg 155, greek yogurt 97, tofu 76, kale/spinach 35, rice 130, pasta 131, cheese 350, protein bar 400, bread 265
+   Add ~80-120 kcal for visible cooking oil/butter/fried coating on that item. Saucy curries/stews: use stew density ~120 kcal/100g for sauce portion.
+5. SUM all item protein_g → total_protein_g (must match within 0.5g). SUM all item calories_g → calories (must match within 15 kcal)
 
 Rules:
 - protein_source: "label" when nutrition label/packaging/on-screen text provides protein grams; "visual" when estimating from food appearance only; "mixed" when both exist (label wins for total).
 - label_protein_g: set when step 0 finds explicit protein on a label or screen; null/omit otherwise.
+- label_calories_g: set when step 0 finds explicit Calories/Energy/kcal on a label or screen; null/omit otherwise.
+- Each item must include calories_g (integer kcal for that component).
 - If NOT food: is_food=false, empty food_name, empty items, zeros, protein_source="visual", explain in notes.
 - If food: list protein-bearing components only (chicken, eggs, meat, fish, tofu, beans, cheese, yogurt). Skip zero-protein garnishes (lemon wedge, herbs, pickles).
 - LAYERED PLATES: items share plate space — do NOT assign full plate area to each item. Greens under chicken are typically 60-120g, not equal to the protein portion.
@@ -67,7 +78,9 @@ D) Empty plate or non-food → is_food=false
 E) Nutrition label photo showing "Protein 50g" per serving, whole product visible:
    protein_source="label", label_protein_g=50, one item from label → total_protein_g=50, confidence high
 F) Supplement tub label "24g protein per scoop" with one scoop shown → label_protein_g=24, total 24g
-G) Macro app screenshot showing "Protein: 48g" for logged meal → label_protein_g=48, trust screen text`;
+G) Macro app screenshot showing "Protein: 48g" for logged meal → label_protein_g=48, trust screen text
+H) Nutrition label "Calories 320" per serving → label_calories_g=320, calories=320
+I) Grilled chicken strips (7 strips ~140g) + kale (~80g): protein ~47g, calories ~140×1.65 + 80×0.35 ≈ 260 kcal`;
 
 const OPENAI_SCHEMA = {
   type: "object",
@@ -85,9 +98,10 @@ const OPENAI_SCHEMA = {
           portion: { type: "string" },
           estimated_grams: { type: "number" },
           protein_g: { type: "number" },
+          calories_g: { type: "number" },
           confidence: { type: "string", enum: ["low", "medium", "high"] },
         },
-        required: ["name", "portion", "estimated_grams", "protein_g", "confidence"],
+        required: ["name", "portion", "estimated_grams", "protein_g", "calories_g", "confidence"],
       },
     },
     total_protein_g: { type: "number" },
@@ -95,6 +109,7 @@ const OPENAI_SCHEMA = {
     confidence: { type: "string", enum: ["low", "medium", "high"] },
     notes: { type: "string" },
     label_protein_g: { type: "number" },
+    label_calories_g: { type: "number" },
     protein_source: { type: "string", enum: ["label", "visual", "mixed"] },
   },
   required: [
@@ -123,9 +138,10 @@ const GEMINI_SCHEMA = {
           portion: { type: "STRING" },
           estimated_grams: { type: "NUMBER" },
           protein_g: { type: "NUMBER" },
+          calories_g: { type: "NUMBER" },
           confidence: { type: "STRING", enum: ["low", "medium", "high"] },
         },
-        required: ["name", "portion", "estimated_grams", "protein_g", "confidence"],
+        required: ["name", "portion", "estimated_grams", "protein_g", "calories_g", "confidence"],
       },
     },
     total_protein_g: { type: "NUMBER" },
@@ -133,6 +149,7 @@ const GEMINI_SCHEMA = {
     confidence: { type: "STRING", enum: ["low", "medium", "high"] },
     notes: { type: "STRING" },
     label_protein_g: { type: "NUMBER" },
+    label_calories_g: { type: "NUMBER" },
     protein_source: { type: "STRING", enum: ["label", "visual", "mixed"] },
   },
   required: [
@@ -267,8 +284,8 @@ async function callGemini(
             {
               text:
                 attempt === 0
-                  ? "Analyze this image for protein. Step 0: read any nutrition labels, packaging text, or on-screen macros (OCR). If label shows protein grams, use that as primary source (protein_source=label). Otherwise Step 1-4: identify foods, estimate grams, apply density, sum. Return valid JSON only."
-                  : "Analyze this image for protein. Check labels/text first. Return ONLY compact valid JSON matching the schema. Keep notes under 80 characters. No quotes or newlines inside strings.",
+                  ? "Analyze this image for protein and calories. Step 0: read any nutrition labels, packaging text, or on-screen macros (OCR). If label shows protein or calories, use those as primary source (protein_source=label). Otherwise Step 1-5: identify foods, estimate grams, apply protein and calorie density, sum. Return valid JSON only."
+                  : "Analyze this image for protein and calories. Check labels/text first. Return ONLY compact valid JSON matching the schema. Keep notes under 80 characters. No quotes or newlines inside strings.",
             },
             { inline_data: { mime_type: mimeType, data: imageBase64 } },
           ],
@@ -370,7 +387,7 @@ async function callOpenAI(
           content: [
             {
               type: "text",
-              text: "Analyze this image for protein. First read any nutrition labels, packaging, or on-screen text for explicit protein grams. If found, protein_source=label and use that value. Otherwise estimate from visual portion. Return JSON only.",
+              text: "Analyze this image for protein and calories. First read any nutrition labels, packaging, or on-screen text for explicit protein grams and Calories/kcal. If found, protein_source=label and use those values. Otherwise estimate from visual portion. Return JSON only.",
             },
             {
               type: "image_url",
@@ -419,6 +436,7 @@ type NormalizedItem = {
   portion: string;
   estimated_grams?: number;
   protein_g: number;
+  calories_g: number;
   confidence: string;
 };
 
@@ -428,25 +446,57 @@ function calibrateItem(item: NormalizedItem, skipCalibration = false): Normalize
   const grams = item.estimated_grams;
   if (!grams || grams <= 0) return item;
 
-  const density = lookupProteinDensity(item.name);
-  if (!density) return item;
+  const proteinDensity = lookupProteinDensity(item.name);
+  let next = { ...item };
 
-  const fromDensity = proteinFromDensity(grams, density);
-  const llmProtein = item.protein_g;
+  if (proteinDensity) {
+    const fromDensity = proteinFromDensity(grams, proteinDensity);
+    const llmProtein = item.protein_g;
 
-  // Never pull estimates DOWN — label readings and dense portions can exceed density×grams.
-  if (llmProtein >= fromDensity * 0.85) return item;
+    if (llmProtein < fromDensity * 0.85) {
+      const shortfall = fromDensity > 0 ? (fromDensity - llmProtein) / fromDensity : 0;
+      const densityWeight = shortfall > 0.4 ? 0.6 : 0.4;
+      const blended = round1(fromDensity * densityWeight + llmProtein * (1 - densityWeight));
+      next = {
+        ...next,
+        protein_g: Math.max(blended, llmProtein),
+        confidence: shortfall > 0.5 ? "medium" : item.confidence,
+      };
+    }
+  }
 
-  // Visual underestimate only: blend upward toward USDA density anchor.
-  const shortfall = fromDensity > 0 ? (fromDensity - llmProtein) / fromDensity : 0;
-  const densityWeight = shortfall > 0.4 ? 0.6 : 0.4;
-  const blended = round1(fromDensity * densityWeight + llmProtein * (1 - densityWeight));
+  const calorieDensity = lookupCalorieDensity(item.name);
+  if (!calorieDensity) return next;
+
+  const fromCalories = caloriesFromDensity(grams, calorieDensity);
+  const llmCalories = item.calories_g;
+
+  if (llmCalories >= fromCalories * 0.75) return next;
+
+  const shortfall = fromCalories > 0 ? (fromCalories - llmCalories) / fromCalories : 0;
+  const densityWeight = shortfall > 0.35 ? 0.65 : 0.45;
+  const blendedCalories = Math.round(fromCalories * densityWeight + llmCalories * (1 - densityWeight));
 
   return {
-    ...item,
-    protein_g: Math.max(blended, llmProtein),
-    confidence: shortfall > 0.5 ? "medium" : item.confidence,
+    ...next,
+    calories_g: Math.max(blendedCalories, llmCalories),
+    confidence: shortfall > 0.45 ? "medium" : next.confidence,
   };
+}
+
+function parseLabelCalories(raw: Record<string, unknown>): number | null {
+  const explicit = Number(raw.label_calories_g);
+  if (explicit > 0 && explicit <= 5000) return Math.round(explicit);
+
+  const notes = String(raw.notes ?? "").toLowerCase();
+  const labelMatch = notes.match(
+    /(?:calories|energy|kcal|cal)[:\s]+(\d+(?:\.\d+)?)/i,
+  ) ?? notes.match(/(\d+(?:\.\d+)?)\s*(?:kcal|calories)/i);
+  if (labelMatch) {
+    const v = Math.round(Number(labelMatch[1]));
+    if (v > 0 && v <= 5000) return v;
+  }
+  return null;
 }
 
 function parseLabelProtein(raw: Record<string, unknown>): number | null {
@@ -496,16 +546,24 @@ function normalize(raw: Record<string, unknown>) {
   }
 
   const labelProtein = parseLabelProtein(raw);
-  const fromLabel = isLabelSource(raw) && labelProtein !== null;
+  const labelCalories = parseLabelCalories(raw);
+  const fromLabel = isLabelSource(raw) && (labelProtein !== null || labelCalories !== null);
   const skipCalibration = fromLabel;
 
   const items = ((raw.items as Record<string, unknown>[]) ?? [])
     .map((item) => {
+      const grams = Math.round(Number(item.estimated_grams) || 0) || undefined;
+      const calorieDensity = grams ? lookupCalorieDensity(String(item.name ?? '')) : null;
+      const llmCalories = Math.round(Number(item.calories_g) || 0);
+      const fallbackCalories =
+        grams && calorieDensity ? caloriesFromDensity(grams, calorieDensity) : llmCalories;
+
       const base: NormalizedItem = {
         name: sanitizeField(item.name, 60) || 'Unknown',
         portion: sanitizeField(item.portion, 80),
-        estimated_grams: Math.round(Number(item.estimated_grams) || 0) || undefined,
+        estimated_grams: grams,
         protein_g: round1(Number(item.protein_g) || 0),
+        calories_g: llmCalories > 0 ? llmCalories : fallbackCalories,
         confidence: String(item.confidence ?? 'medium'),
       };
       return calibrateItem(base, skipCalibration);
@@ -568,12 +626,35 @@ function normalize(raw: Record<string, unknown>) {
     if (!notes) notes = "Portion size unclear — adjust total if needed";
   }
 
+  let caloriesSum = items.reduce((s, i) => s + i.calories_g, 0);
+  let calories = Math.round(Number(raw.calories) || caloriesSum || 0);
+
+  if (fromLabel && labelCalories !== null) {
+    calories = labelCalories;
+    if (caloriesSum > 0 && caloriesSum < labelCalories * 0.75) {
+      const ratio = labelCalories / caloriesSum;
+      for (const item of items) {
+        item.calories_g = Math.round(item.calories_g * ratio);
+      }
+      caloriesSum = items.reduce((s, i) => s + i.calories_g, 0);
+    }
+  } else if (labelCalories !== null && calories < labelCalories * 0.75) {
+    calories = labelCalories;
+  } else if (caloriesSum > 0 && Math.abs(calories - caloriesSum) > 25) {
+    calories = caloriesSum;
+  } else if (calories <= 0 && caloriesSum > 0) {
+    calories = caloriesSum;
+  }
+
+  if (calories > 3500) calories = 3500;
+  if (calories < 0) calories = 0;
+
   return {
     is_food: true,
     food_name: sanitizeField(raw.food_name, 80) || 'Meal',
-    items,
+    items: items.map(({ calories_g: _c, ...item }) => item),
     total_protein_g: total,
-    calories: Math.round(Number(raw.calories) || 0),
+    calories,
     confidence,
     notes,
   };
