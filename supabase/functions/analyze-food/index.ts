@@ -19,6 +19,8 @@ const GEMINI_MODELS = [
   "gemini-2.0-flash-lite",
 ];
 
+const VISUAL_CALORIE_BIAS = 0.9;
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -50,8 +52,9 @@ WORK IN 5 STEPS (reason internally, output final JSON only):
 3. CALCULATE protein_g = estimated_grams × (protein per 100g for that food) / 100
    Densities: chicken breast 31, ground beef 26, salmon 25, egg 13, greek yogurt 10, tofu 17, kale/spinach 3, rice 2.7, cheese 25, protein bar 30
 4. CALCULATE calories_g per item = estimated_grams × (kcal per 100g for that food) / 100
-   Energy densities: chicken breast 165, ground beef 250, salmon 208, egg 155, greek yogurt 97, tofu 76, kale/spinach 35, rice 130, pasta 131, cheese 350, protein bar 400, bread 265
-   Add ~80-120 kcal for visible cooking oil/butter/fried coating on that item. Saucy curries/stews: use stew density ~120 kcal/100g for sauce portion.
+   Energy densities (cooked, lean/grilled defaults): chicken breast 165, ground beef 250, salmon 208, egg 155, greek yogurt 97, tofu 76, kale/spinach 35, rice 130, pasta 131, cheese 350, protein bar 400, bread 265
+   Default to grilled/steamed/baked — not deep-fried. Only add extra kcal if oil/butter/frying is clearly visible. Do NOT guess hidden butter or restaurant oil.
+   When portion size is ambiguous, use the LOWER end of the weight range. Bias conservative on calories.
 5. SUM all item protein_g → total_protein_g (must match within 0.5g). SUM all item calories_g → calories (must match within 15 kcal)
 
 Rules:
@@ -80,7 +83,7 @@ E) Nutrition label photo showing "Protein 50g" per serving, whole product visibl
 F) Supplement tub label "24g protein per scoop" with one scoop shown → label_protein_g=24, total 24g
 G) Macro app screenshot showing "Protein: 48g" for logged meal → label_protein_g=48, trust screen text
 H) Nutrition label "Calories 320" per serving → label_calories_g=320, calories=320
-I) Grilled chicken strips (7 strips ~140g) + kale (~80g): protein ~47g, calories ~140×1.65 + 80×0.35 ≈ 260 kcal`;
+I) Grilled chicken strips (7 strips ~140g) + kale (~80g): protein ~47g, calories ~140×1.65 + 80×0.35 ≈ 260 kcal (do not add oil unless visible)`;
 
 const OPENAI_SCHEMA = {
   type: "object",
@@ -451,7 +454,7 @@ function calibrateItem(item: NormalizedItem, skipCalibration = false): Normalize
 
   if (proteinDensity) {
     const fromDensity = proteinFromDensity(grams, proteinDensity);
-    const llmProtein = item.protein_g;
+    const llmProtein = next.protein_g;
 
     if (llmProtein < fromDensity * 0.85) {
       const shortfall = fromDensity > 0 ? (fromDensity - llmProtein) / fromDensity : 0;
@@ -460,28 +463,47 @@ function calibrateItem(item: NormalizedItem, skipCalibration = false): Normalize
       next = {
         ...next,
         protein_g: Math.max(blended, llmProtein),
-        confidence: shortfall > 0.5 ? "medium" : item.confidence,
+        confidence: shortfall > 0.5 ? "medium" : next.confidence,
       };
     }
   }
 
-  const calorieDensity = lookupCalorieDensity(item.name);
-  if (!calorieDensity) return next;
+  return calibrateItemCalories(next, skipCalibration);
+}
 
-  const fromCalories = caloriesFromDensity(grams, calorieDensity);
+/** Pull calorie estimates down toward USDA anchors; never inflate above the model. */
+function calibrateItemCalories(item: NormalizedItem, skipCalibration = false): NormalizedItem {
+  if (skipCalibration) return item;
+
+  const grams = item.estimated_grams;
+  if (!grams || grams <= 0) return item;
+
+  const calorieDensity = lookupCalorieDensity(item.name);
+  if (!calorieDensity) return item;
+
+  const anchor = caloriesFromDensity(grams, calorieDensity);
   const llmCalories = item.calories_g;
 
-  if (llmCalories >= fromCalories * 0.75) return next;
+  if (llmCalories > anchor * 1.1) {
+    const excess = anchor > 0 ? (llmCalories - anchor) / llmCalories : 0;
+    const anchorWeight = excess > 0.3 ? 0.5 : 0.35;
+    const blended = Math.round(anchor * anchorWeight + llmCalories * (1 - anchorWeight));
+    return {
+      ...item,
+      calories_g: Math.min(blended, llmCalories),
+      confidence: excess > 0.35 ? "medium" : item.confidence,
+    };
+  }
 
-  const shortfall = fromCalories > 0 ? (fromCalories - llmCalories) / fromCalories : 0;
-  const densityWeight = shortfall > 0.35 ? 0.65 : 0.45;
-  const blendedCalories = Math.round(fromCalories * densityWeight + llmCalories * (1 - densityWeight));
+  if (llmCalories > 0 && llmCalories < anchor * 0.45) {
+    return {
+      ...item,
+      calories_g: Math.round(anchor * 0.85),
+      confidence: item.confidence === "high" ? "medium" : item.confidence,
+    };
+  }
 
-  return {
-    ...next,
-    calories_g: Math.max(blendedCalories, llmCalories),
-    confidence: shortfall > 0.45 ? "medium" : next.confidence,
-  };
+  return item;
 }
 
 function parseLabelCalories(raw: Record<string, unknown>): number | null {
@@ -640,10 +662,16 @@ function normalize(raw: Record<string, unknown>) {
     }
   } else if (labelCalories !== null && calories < labelCalories * 0.75) {
     calories = labelCalories;
-  } else if (caloriesSum > 0 && Math.abs(calories - caloriesSum) > 25) {
-    calories = caloriesSum;
-  } else if (calories <= 0 && caloriesSum > 0) {
-    calories = caloriesSum;
+  } else if (caloriesSum > 0) {
+    if (calories <= 0 || calories > caloriesSum * 1.15) {
+      calories = caloriesSum;
+    } else if (Math.abs(calories - caloriesSum) > 25) {
+      calories = Math.min(calories, caloriesSum);
+    }
+  }
+
+  if (!fromLabel && calories > 0) {
+    calories = Math.round(calories * VISUAL_CALORIE_BIAS);
   }
 
   if (calories > 3500) calories = 3500;
