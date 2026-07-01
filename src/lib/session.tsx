@@ -26,6 +26,7 @@ import {
   saveCachedProfile,
 } from './profile-cache';
 import { syncPremiumFromRevenueCat } from './payments';
+import { resolvePremiumSync } from './premium-sync';
 import { initRevenueCat, isRevenueCatConfigured, subscribeToProEntitlementChanges } from './revenuecat';
 import { supabase } from './supabase';
 import type { Profile } from './types';
@@ -335,15 +336,12 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
     async function syncPremiumFlag(isProNow: boolean) {
       const current = await loadProfile(uid);
-      const currentlyPro = current?.is_premium === true;
-      if (cancelled || currentlyPro === isProNow) return;
+      const decision = resolvePremiumSync(current?.is_premium === true, isProNow);
+      if (cancelled || !decision.changed) return;
       await upsertProfile({
         id: uid,
-        is_premium: isProNow,
-        // Upgrade → auto-dismiss the paywall. Downgrade (cancelled/expired
-        // subscription) → clear the dismissal so former Pro users get the
-        // same paywalls as everyone else.
-        paywall_dismissed: isProNow,
+        is_premium: decision.is_premium,
+        paywall_dismissed: decision.paywall_dismissed,
       });
       if (!cancelled) await refreshProfile(uid);
     }

@@ -5,6 +5,8 @@
 //   URL: https://<project>.supabase.co/functions/v1/revenuecat-webhook
 //   Authorization header matching REVENUECAT_WEBHOOK_AUTH (recommended)
 
+import { resolveEntitlementState } from "../_shared/entitlement-state.ts";
+
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 const WEBHOOK_AUTH = Deno.env.get("REVENUECAT_WEBHOOK_AUTH");
@@ -51,26 +53,7 @@ Deno.serve(async (req) => {
     return json({ received: true, skipped: "no app_user_id" });
   }
 
-  const grantEvents = new Set([
-    "INITIAL_PURCHASE",
-    "RENEWAL",
-    "UNCANCELLATION",
-    "PRODUCT_CHANGE",
-    "SUBSCRIPTION_EXTENDED",
-  ]);
-  const revokeEvents = new Set([
-    "EXPIRATION",
-    "CANCELLATION",
-    "BILLING_ISSUE",
-  ]);
-
-  let isPremium: boolean | null = null;
-
-  if (grantEvents.has(eventType)) {
-    isPremium = entitlements.length === 0 || entitlements.includes(ENTITLEMENT_ID);
-  } else if (revokeEvents.has(eventType)) {
-    isPremium = false;
-  }
+  const isPremium = resolveEntitlementState(eventType, entitlements, ENTITLEMENT_ID);
 
   if (isPremium !== null) {
     await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${userId}`, {
