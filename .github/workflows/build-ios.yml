@@ -35,7 +35,7 @@ jobs:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
           if [ -z "$EXPO_TOKEN" ]; then
-            echo "::error::Missing GitHub secret EXPO_TOKEN. Add a token from the Expo account that owns the EAS project (owner: nikethputta), then re-run."
+            echo "::error::Missing GitHub secret EXPO_TOKEN. Add a token from the Expo account that owns the EAS project (owner: nikethputta1), then re-run."
             exit 1
           fi
 
