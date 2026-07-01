@@ -9,9 +9,6 @@ import {
   FREE_DAILY_SCANS,
   getNativePaymentProvider,
   getPaymentProvider,
-  getProMemberCount,
-  nativePurchasesReady,
-  PRO_MEMBER_BASE,
   type PaymentPlan,
   type PaymentProvider,
 } from '@/lib/payments';
@@ -42,8 +39,6 @@ export default function Paywall() {
   const [planId, setPlanId] = useState(provider.plans[1]?.id ?? 'pro_yearly');
   const [busy, setBusy] = useState(false);
   const [restoring, setRestoring] = useState(false);
-  const [purchasesReady, setPurchasesReady] = useState(false);
-  const [memberCount, setMemberCount] = useState(PRO_MEMBER_BASE);
 
   useEffect(() => {
     if (Platform.OS === 'web') return;
@@ -53,21 +48,6 @@ export default function Paywall() {
         setPlanId(p.plans[1]?.id ?? p.plans[0]?.id ?? 'pro_yearly');
       })
       .catch(() => {});
-    nativePurchasesReady()
-      .then(setPurchasesReady)
-      .catch(() => setPurchasesReady(false));
-  }, []);
-
-  useEffect(() => {
-    let active = true;
-    getProMemberCount()
-      .then((n) => {
-        if (active) setMemberCount(n);
-      })
-      .catch(() => {});
-    return () => {
-      active = false;
-    };
   }, []);
 
   async function grantPremium() {
@@ -149,14 +129,6 @@ export default function Paywall() {
           Free includes {FREE_DAILY_SCANS} AI scans a day. Go Pro for unlimited scans.
         </Text>
 
-        <View style={styles.socialProof}>
-          <Ionicons name="people" size={16} color={colors.accent} />
-          <Text style={styles.socialProofText}>
-            Join <Text style={styles.socialProofCount}>{memberCount.toLocaleString()}</Text> people
-            already enjoying ProteinQuest Pro
-          </Text>
-        </View>
-
         <View style={styles.perks}>
           {PERKS.map((p) => (
             <View key={p.icon} style={styles.perkRow}>
@@ -167,19 +139,6 @@ export default function Paywall() {
         </View>
 
         <View style={{ gap: spacing.sm }}>{provider.plans.map(renderPlan)}</View>
-
-        {!provider.isConfigured ? (
-          <Text style={styles.devNote}>
-            Payments aren&apos;t connected yet (RevenueCat on iOS/Android, Stripe on web). This
-            button unlocks Pro for testing only.
-          </Text>
-        ) : !purchasesReady ? (
-          <Text style={styles.devNote}>
-            {Platform.OS === 'ios'
-              ? 'Subscriptions are being set up in the App Store. Purchases will work once store products are live — usually within 24 hours of App Store Connect setup.'
-              : 'Subscriptions are being set up in Google Play. Purchases will work once store products are live — usually within 24 hours of Play Console setup.'}
-          </Text>
-        ) : null}
 
         <Text style={styles.legal}>
           Payment will be charged to your {Platform.OS === 'ios' ? 'Apple ID' : Platform.OS === 'android' ? 'Google Play' : 'payment method'} account at confirmation of purchase.
@@ -197,16 +156,9 @@ export default function Paywall() {
         </Text>
 
         <Button
-          title={
-            !provider.isConfigured
-              ? 'Unlock Pro (test mode)'
-              : !purchasesReady
-                ? 'Subscriptions coming soon'
-                : 'Continue'
-          }
+          title="Subscribe"
           onPress={handlePurchase}
           loading={busy}
-          disabled={provider.isConfigured && !purchasesReady}
           style={{ marginTop: spacing.md }}
         />
 
@@ -260,29 +212,6 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     fontFamily: fonts.body,
   },
-  socialProof: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    marginTop: spacing.md,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    borderRadius: radius.md,
-    backgroundColor: colors.accentSurface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.accent,
-  },
-  socialProofText: {
-    flex: 1,
-    fontFamily: fonts.body,
-    fontSize: 13,
-    lineHeight: 18,
-    color: colors.textSecondary,
-  },
-  socialProofCount: {
-    fontFamily: fonts.displayMedium,
-    color: colors.accent,
-  },
   perks: { gap: spacing.md, marginVertical: spacing.xl },
   perkRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   perkText: { fontSize: 15, fontWeight: '600', color: colors.text, fontFamily: fonts.body },
@@ -299,13 +228,6 @@ const styles = StyleSheet.create({
   planTitle: { fontSize: 16, fontWeight: '700', color: colors.text, fontFamily: fonts.displayMedium },
   planCaption: { fontSize: 13, color: colors.textSecondary, marginTop: 2, fontFamily: fonts.body },
   planPrice: { fontSize: 17, fontWeight: '800', color: colors.text, fontFamily: fonts.display },
-  devNote: {
-    fontSize: 12,
-    color: colors.textTertiary,
-    marginTop: spacing.md,
-    lineHeight: 17,
-    fontFamily: fonts.body,
-  },
   legal: {
     fontSize: 11,
     color: colors.textTertiary,

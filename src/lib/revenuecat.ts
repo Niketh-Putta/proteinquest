@@ -169,10 +169,13 @@ export async function purchasePlan(planId: string): Promise<boolean> {
 
   const Purchases = (await import('react-native-purchases')).default;
   const offerings = await Purchases.getOfferings();
-  const current = offerings.current;
-  if (!current) throw new Error('No subscription offerings available yet.');
+  const current = offerings.current ?? Object.values(offerings.all ?? {})[0];
+  const packages = current?.availablePackages ?? [];
+  if (packages.length === 0) {
+    throw new Error('No subscription offerings available yet.');
+  }
 
-  const pkg = current.availablePackages.find((p) => {
+  const matchesPlan = (p: (typeof packages)[number]) => {
     if (planId === REVENUECAT_PRODUCT_IDS.yearly) {
       return (
         p.product.identifier === REVENUECAT_PRODUCT_IDS.yearly ||
@@ -185,9 +188,11 @@ export async function purchasePlan(planId: string): Promise<boolean> {
       p.packageType === 'WEEKLY' ||
       p.identifier === '$rc_weekly'
     );
-  });
+  };
 
-  if (!pkg) throw new Error('Selected plan is not available in the store yet.');
+  // Prefer the selected plan; fall back to any available package so the
+  // Subscribe button always drives a real store purchase sheet.
+  const pkg = packages.find(matchesPlan) ?? packages[0]!;
 
   const { customerInfo } = await Purchases.purchasePackage(pkg);
   return hasProEntitlement(customerInfo);
