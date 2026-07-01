@@ -159,6 +159,30 @@ export default function TodayScreen() {
       <View>
         <View style={styles.header}>
           <View style={{ flex: 1 }}>
+            <Pressable
+              onPress={() => router.push(isPro(profile) ? '/settings' : '/paywall')}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={
+                isPro(profile) ? 'Pro account. Open settings' : 'Free account. Upgrade to Pro'
+              }
+              style={[
+                styles.statusTag,
+                isPro(profile) ? styles.statusTagPro : styles.statusTagFree,
+                pressableWeb,
+              ]}>
+              {isPro(profile) ? (
+                <Ionicons name="sparkles" size={10} color={colors.bg} />
+              ) : null}
+              <Text
+                selectable={false}
+                style={[
+                  styles.statusTagText,
+                  isPro(profile) ? styles.statusTagTextPro : styles.statusTagTextFree,
+                ]}>
+                {isPro(profile) ? 'PRO' : 'FREE'}
+              </Text>
+            </Pressable>
             <Text style={styles.eyebrow}>{dateLabel}</Text>
             <Text style={[styles.title, { fontSize: titleSize }]}>Today</Text>
           </View>
@@ -383,6 +407,32 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: spacing.lg,
   },
+  statusTag: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    marginBottom: 8,
+  },
+  statusTagPro: {
+    backgroundColor: colors.accent,
+  },
+  statusTagFree: {
+    backgroundColor: colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.hairlineBright,
+  },
+  statusTagText: {
+    fontFamily: fonts.mono,
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 1.4,
+  },
+  statusTagTextPro: { color: colors.bg },
+  statusTagTextFree: { color: colors.textSecondary },
   eyebrow: {
     fontFamily: fonts.mono,
     fontSize: 10,
