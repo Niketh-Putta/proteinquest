@@ -26,7 +26,7 @@ import {
   saveCachedProfile,
 } from './profile-cache';
 import { syncPremiumFromRevenueCat } from './payments';
-import { initRevenueCat, subscribeToProEntitlementChanges } from './revenuecat';
+import { initRevenueCat, isRevenueCatConfigured, subscribeToProEntitlementChanges } from './revenuecat';
 import { supabase } from './supabase';
 import type { Profile } from './types';
 
@@ -333,13 +333,17 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
     let cancelled = false;
 
-    async function syncPremiumFlag(isPro: boolean) {
+    async function syncPremiumFlag(isProNow: boolean) {
       const current = await loadProfile(uid);
-      if (cancelled || current?.is_premium === isPro) return;
+      const currentlyPro = current?.is_premium === true;
+      if (cancelled || currentlyPro === isProNow) return;
       await upsertProfile({
         id: uid,
-        is_premium: isPro,
-        ...(isPro ? { paywall_dismissed: true } : {}),
+        is_premium: isProNow,
+        // Upgrade → auto-dismiss the paywall. Downgrade (cancelled/expired
+        // subscription) → clear the dismissal so former Pro users get the
+        // same paywalls as everyone else.
+        paywall_dismissed: isProNow,
       });
       if (!cancelled) await refreshProfile(uid);
     }
@@ -347,8 +351,12 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     (async () => {
       try {
         await initRevenueCat(uid);
-        const isPro = await syncPremiumFromRevenueCat();
-        if (!cancelled && isPro) await syncPremiumFlag(true);
+        // Only trust the RevenueCat entitlement when RC is actually configured
+        // (native build + keys). On web/Expo Go, premium is owned by Stripe
+        // webhooks — never downgrade based on an unconfigured RC returning false.
+        if (!isRevenueCatConfigured()) return;
+        const isProNow = await syncPremiumFromRevenueCat();
+        if (!cancelled) await syncPremiumFlag(isProNow);
       } catch (e) {
         console.warn('[RevenueCat] init/sync skipped:', e);
       }
