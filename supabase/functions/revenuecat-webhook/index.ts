@@ -82,8 +82,10 @@ Deno.serve(async (req) => {
         Prefer: "return=minimal",
       },
       body: JSON.stringify({
+        // Grant → dismiss the paywall. Revoke (cancel/expire/billing issue) →
+        // clear the dismissal so former subscribers get paywalls like everyone else.
         is_premium: isPremium,
-        ...(isPremium ? { paywall_dismissed: true } : {}),
+        paywall_dismissed: isPremium,
       }),
     });
   }
