@@ -1,0 +1,70 @@
+name: Build and submit iOS
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'app.json'
+      - 'eas.json'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/build-ios.yml'
+
+concurrency:
+  group: ios-production
+  cancel-in-progress: true
+
+jobs:
+  build-and-submit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify EXPO_TOKEN is configured
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::error::Missing GitHub secret EXPO_TOKEN. Add a token from the Expo account that owns the EAS project (owner: nikethputta), then re-run."
+            exit 1
+          fi
+
+      - name: Configure App Store Connect API key
+        env:
+          APPLE_ASC_API_KEY_P8: ${{ secrets.APPLE_ASC_API_KEY_P8 }}
+        run: |
+          if [ -z "$APPLE_ASC_API_KEY_P8" ]; then
+            echo "No APPLE_ASC_API_KEY_P8 secret — submit step will be skipped (build still uploads to EAS)."
+            exit 0
+          fi
+          mkdir -p store
+          printf '%s' "$APPLE_ASC_API_KEY_P8" > store/AuthKey_U5KW7AP443.p8
+
+      - name: Build iOS (EAS production)
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+          EXPO_PUBLIC_SUPABASE_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_KEY }}
+          EXPO_PUBLIC_REVENUECAT_IOS_KEY: ${{ secrets.EXPO_PUBLIC_REVENUECAT_IOS_KEY }}
+          EXPO_PUBLIC_REVENUECAT_ANDROID_KEY: ${{ secrets.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY }}
+        run: npx eas-cli build --platform ios --profile production --non-interactive --wait
+
+      - name: Submit to App Store (production review)
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ ! -f store/AuthKey_U5KW7AP443.p8 ]; then
+            echo "Build finished. No ASC API key — submit the latest build manually from expo.dev or via Transporter."
+            exit 0
+          fi
+          npx eas-cli submit --platform ios --profile production --latest --non-interactive
