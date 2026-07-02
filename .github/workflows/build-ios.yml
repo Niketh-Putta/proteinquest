@@ -71,7 +71,7 @@ jobs:
             echo "::warning::APPLE_ASC_API_KEY_P8 missing"
             exit 0
           fi
-          KEY_ID="${APPLE_ASC_KEY_ID:-JZ3C87NKB9}"
+          KEY_ID="$(node -e "const {normalizeKeyId}=require('./scripts/normalize-p8.cjs'); process.stdout.write(normalizeKeyId(process.env.APPLE_ASC_KEY_ID||'JZ3C87NKB9'));")"
           export KEY_ID
           mkdir -p store
           node -e "
@@ -84,6 +84,7 @@ jobs:
           "
           echo "present=true" >> "$GITHUB_OUTPUT"
           echo "key_id=$KEY_ID" >> "$GITHUB_OUTPUT"
+          echo "Using ASC Key ID: $KEY_ID"
 
       - name: Sync ASC key ID into eas.json
         if: steps.asc.outputs.present == 'true'
@@ -102,6 +103,7 @@ jobs:
         if: steps.asc.outputs.present == 'true'
         env:
           APPLE_ASC_API_KEY_P8: ${{ secrets.APPLE_ASC_API_KEY_P8 }}
+          APPLE_ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
           EXPO_ASC_KEY_ID: ${{ steps.asc.outputs.key_id }}
           EXPO_ASC_API_KEY_PATH: ./store/AuthKey_${{ steps.asc.outputs.key_id }}.p8
         run: node scripts/validate-asc-key.mjs
@@ -113,7 +115,7 @@ jobs:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           APPLE_ASC_API_KEY_P8: ${{ secrets.APPLE_ASC_API_KEY_P8 }}
           EXPO_ASC_KEY_ID: ${{ steps.asc.outputs.key_id }}
-          EXPO_ASC_ISSUER_ID: 75ae36fa-911c-462c-818e-f1bcc4222c24
+          EXPO_ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID || '75ae36fa-911c-462c-818e-f1bcc4222c24' }}
           EXPO_ASC_API_KEY_PATH: ./store/AuthKey_${{ steps.asc.outputs.key_id }}.p8
           EXPO_APPLE_TEAM_ID: JU9C3N64F8
           EXPO_APPLE_TEAM_TYPE: COMPANY_OR_ORGANIZATION
@@ -132,7 +134,7 @@ jobs:
           EXPO_PUBLIC_REVENUECAT_ANDROID_KEY: ${{ secrets.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY }}
           EXPO_ASC_API_KEY_PATH: ./store/AuthKey_${{ steps.asc.outputs.key_id }}.p8
           EXPO_ASC_KEY_ID: ${{ steps.asc.outputs.key_id }}
-          EXPO_ASC_ISSUER_ID: 75ae36fa-911c-462c-818e-f1bcc4222c24
+          EXPO_ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID || '75ae36fa-911c-462c-818e-f1bcc4222c24' }}
           EXPO_APPLE_TEAM_ID: JU9C3N64F8
           EXPO_APPLE_TEAM_TYPE: COMPANY_OR_ORGANIZATION
         run: |
