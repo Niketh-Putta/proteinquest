@@ -1,0 +1,198 @@
+# iOS App Store build + submit via GitHub EXPO_TOKEN + APPLE_ASC_API_KEY_P8.
+# Phone-only: set EXPO_APPLE_ID + EXPO_APPLE_APP_SPECIFIC_PASSWORD secrets for credential bootstrap.
+# Retrigger after ASC issuer ID + key secrets corrected.
+name: Build and submit iOS
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'app.json'
+      - 'eas.json'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/build-ios.yml'
+      - 'scripts/setup-expo-ios-credentials.cjs'
+      - 'scripts/validate-asc-key.mjs'
+      - 'scripts/check-ios-ship-status.mjs'
+      - 'scripts/submit-ios-app-store-version.mjs'
+
+concurrency:
+  group: ios-production
+  cancel-in-progress: true
+
+jobs:
+  build-and-submit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify EXPO_TOKEN is configured
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::error::Missing EXPO_TOKEN GitHub secret."
+            exit 1
+          fi
+          npx eas-cli whoami
+
+      - name: Sync EAS production env vars
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+          EXPO_PUBLIC_SUPABASE_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_KEY }}
+          EXPO_PUBLIC_REVENUECAT_IOS_KEY: ${{ secrets.EXPO_PUBLIC_REVENUECAT_IOS_KEY }}
+          EXPO_PUBLIC_REVENUECAT_ANDROID_KEY: ${{ secrets.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY }}
+        run: |
+          for name in EXPO_PUBLIC_SUPABASE_URL EXPO_PUBLIC_SUPABASE_KEY EXPO_PUBLIC_REVENUECAT_IOS_KEY EXPO_PUBLIC_REVENUECAT_ANDROID_KEY; do
+            val="${!name:-}"
+            if [ -n "$val" ]; then
+              npx eas-cli env:create --name "$name" --value "$val" --environment production --visibility sensitive --force --non-interactive || true
+            fi
+          done
+
+      - name: Configure App Store Connect API key
+        id: asc
+        env:
+          APPLE_ASC_KEY_ID: ${{ secrets.APPLE_ASC_KEY_ID }}
+          APPLE_ASC_API_KEY_P8: ${{ secrets.APPLE_ASC_API_KEY_P8 }}
+        run: |
+          if [ -z "$APPLE_ASC_API_KEY_P8" ]; then
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::APPLE_ASC_API_KEY_P8 missing"
+            exit 0
+          fi
+          KEY_ID="$(node -e "const {normalizeKeyId}=require('./scripts/normalize-p8.cjs'); process.stdout.write(normalizeKeyId(process.env.APPLE_ASC_KEY_ID||'JZ3C87NKB9'));")"
+          export KEY_ID
+          mkdir -p store
+          node -e "
+            const fs=require('fs');
+            const {normalizeP8}=require('./scripts/normalize-p8.cjs');
+            const keyId=process.env.KEY_ID;
+            const key=normalizeP8(process.env.APPLE_ASC_API_KEY_P8||'');
+            if(!key) { console.error('APPLE_ASC_API_KEY_P8 empty'); process.exit(1); }
+            fs.writeFileSync('store/AuthKey_'+keyId+'.p8', key);
+          "
+          echo "present=true" >> "$GITHUB_OUTPUT"
+          echo "key_id=$KEY_ID" >> "$GITHUB_OUTPUT"
+          echo "Using ASC Key ID: $KEY_ID"
+
+      - name: Sync ASC credentials into eas.json
+        if: steps.asc.outputs.present == 'true'
+        env:
+          APPLE_ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
+        run: |
+          export KEY_ID="${{ steps.asc.outputs.key_id }}"
+          export ISSUER_ID="${APPLE_ASC_ISSUER_ID:-75ae36fa-911c-462c-818e-f1bcc4222c24}"
+          node -e "
+            const fs=require('fs');
+            const j=JSON.parse(fs.readFileSync('eas.json','utf8'));
+            const ios=j.submit.production.ios;
+            ios.ascApiKeyId=process.env.KEY_ID;
+            ios.ascApiKeyPath='./store/AuthKey_'+process.env.KEY_ID+'.p8';
+            ios.ascApiKeyIssuerId=process.env.ISSUER_ID;
+            if(!ios.ascApiKeyId||!ios.ascApiKeyPath||!ios.ascApiKeyIssuerId){
+              console.error('eas.json submit config incomplete', ios);
+              process.exit(1);
+            }
+            fs.writeFileSync('eas.json', JSON.stringify(j, null, 2)+'\n');
+            console.log('eas.json submit ios: keyId='+ios.ascApiKeyId+', issuer='+ios.ascApiKeyIssuerId.slice(0,8)+'…');
+          "
+
+      - name: Validate ASC API key with Apple
+        if: steps.asc.outputs.present == 'true'
+        env:
+          APPLE_ASC_API_KEY_P8: ${{ secrets.APPLE_ASC_API_KEY_P8 }}
+          APPLE_ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
+          EXPO_ASC_KEY_ID: ${{ steps.asc.outputs.key_id }}
+          EXPO_ASC_API_KEY_PATH: ./store/AuthKey_${{ steps.asc.outputs.key_id }}.p8
+        run: node scripts/validate-asc-key.mjs
+
+      - name: Bootstrap iOS credentials on EAS
+        id: ios_bootstrap
+        if: steps.asc.outputs.present == 'true'
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          APPLE_ASC_API_KEY_P8: ${{ secrets.APPLE_ASC_API_KEY_P8 }}
+          APPLE_ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
+          EXPO_ASC_KEY_ID: ${{ steps.asc.outputs.key_id }}
+          EXPO_ASC_API_KEY_PATH: ./store/AuthKey_${{ steps.asc.outputs.key_id }}.p8
+          EXPO_APPLE_TEAM_ID: JU9C3N64F8
+          EXPO_APPLE_TEAM_TYPE: COMPANY_OR_ORGANIZATION
+          EXPO_NO_KEYCHAIN: '1'
+          NO_COLOR: '1'
+        run: |
+          export EXPO_ASC_ISSUER_ID="${APPLE_ASC_ISSUER_ID:-75ae36fa-911c-462c-818e-f1bcc4222c24}"
+          node scripts/setup-expo-ios-credentials.cjs
+
+      - name: Build iOS production
+        id: ios_build
+        env:
+          EAS_BUILD_NO_EXPO_GO_WARNING: 'true'
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+          EXPO_PUBLIC_SUPABASE_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_KEY }}
+          EXPO_PUBLIC_REVENUECAT_IOS_KEY: ${{ secrets.EXPO_PUBLIC_REVENUECAT_IOS_KEY }}
+          EXPO_PUBLIC_REVENUECAT_ANDROID_KEY: ${{ secrets.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY }}
+          APPLE_ASC_API_KEY_P8: ${{ secrets.APPLE_ASC_API_KEY_P8 }}
+          APPLE_ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
+          EXPO_ASC_KEY_ID: ${{ steps.asc.outputs.key_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p store
+          export KEY_ID="${{ steps.asc.outputs.key_id }}"
+          node -e "
+            const fs=require('fs');
+            const {normalizeP8}=require('./scripts/normalize-p8.cjs');
+            const key=normalizeP8(process.env.APPLE_ASC_API_KEY_P8||'');
+            if(!key) { console.error('Missing APPLE_ASC_API_KEY_P8'); process.exit(1); }
+            fs.writeFileSync('store/AuthKey_'+process.env.KEY_ID+'.p8', key);
+          "
+          ARGS=(--platform ios --profile production --non-interactive --wait --json)
+          if [ "${{ steps.asc.outputs.present }}" = "true" ]; then
+            ARGS+=(--auto-submit)
+          fi
+          npx eas-cli build "${ARGS[@]}" > store/eas-ios-build.json
+          BUILD_ID="$(node -e "const j=require('./store/eas-ios-build.json'); const b=Array.isArray(j)?j[0]:j; process.stdout.write(b?.id||'');")"
+          echo "build_id=$BUILD_ID" >> "$GITHUB_OUTPUT"
+          echo "Build: https://expo.dev/accounts/nikethputta1/projects/proteinquest/builds/$BUILD_ID"
+
+      - name: Check App Store ship status (post-upload)
+        if: steps.asc.outputs.present == 'true' && steps.ios_build.outputs.build_id != ''
+        env:
+          APPLE_ASC_API_KEY_P8: ${{ secrets.APPLE_ASC_API_KEY_P8 }}
+          APPLE_ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
+          EXPO_ASC_KEY_ID: ${{ steps.asc.outputs.key_id }}
+          EXPO_ASC_API_KEY_PATH: ./store/AuthKey_${{ steps.asc.outputs.key_id }}.p8
+        run: |
+          export ASC_KEY_ID="${{ steps.asc.outputs.key_id }}"
+          export ASC_KEY_PATH="./store/AuthKey_${{ steps.asc.outputs.key_id }}.p8"
+          export ASC_ISSUER_ID="${APPLE_ASC_ISSUER_ID:-75ae36fa-911c-462c-818e-f1bcc4222c24}"
+          node scripts/check-ios-ship-status.mjs || true
+
+      - name: Summary
+        if: steps.ios_build.outputs.build_id != ''
+        run: |
+          echo "## iOS pipeline" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Stage | Status |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|-------|--------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| EAS build | Finished — [open build](https://expo.dev/accounts/nikethputta1/projects/proteinquest/builds/${{ steps.ios_build.outputs.build_id }}) |" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ steps.asc.outputs.present }}" = "true" ]; then
+            echo "| TestFlight upload | Submitted to App Store Connect (wait for Processing → Ready to Test) |" >> "$GITHUB_STEP_SUMMARY"
+            echo "| App Store review | **Not automatic** — run \`node scripts/submit-ios-app-store-version.mjs --wait-build\` after build is VALID, or use [phone checklist](store/IOS-SHIP-PHONE.md) |" >> "$GITHUB_STEP_SUMMARY"
+            echo "| Production release | After Apple approval → Release in App Store Connect |" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "| TestFlight upload | Skipped — add APPLE_ASC_API_KEY_P8 secret |" >> "$GITHUB_STEP_SUMMARY"
+          fi

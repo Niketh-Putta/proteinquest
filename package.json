@@ -69,6 +69,8 @@
     "build:android": "eas build --platform android --profile production",
     "build:ios": "eas build --platform ios --profile production",
     "ship:ios": "node scripts/ios-app-store-ship.mjs",
+    "ios:ship:status": "node scripts/check-ios-ship-status.mjs",
+    "ios:ship:submit": "node scripts/submit-ios-app-store-version.mjs --wait-build",
     "build:all": "eas build --platform all --profile production",
     "play-store:prep": "node scripts/play-store-prep.mjs",
     "play-store:submit": "node scripts/play-store-submit.mjs",
