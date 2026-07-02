@@ -9,10 +9,10 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 
-const KEY_ID = process.env.ASC_KEY_ID || 'U5KW7AP443';
-const ISSUER_ID = process.env.ASC_ISSUER_ID || '75ae36fa-911c-462c-818e-f1bcc4222c24';
+const KEY_ID = process.env.ASC_KEY_ID || process.env.EXPO_ASC_KEY_ID || 'JZ3C87NKB9';
+const ISSUER_ID = process.env.ASC_ISSUER_ID || process.env.EXPO_ASC_ISSUER_ID || '75ae36fa-911c-462c-818e-f1bcc4222c24';
 const KEY_PATH =
-  process.env.ASC_KEY_PATH || '/Users/nikethputta/proteinlens/store/AuthKey_U5KW7AP443.p8';
+  process.env.ASC_KEY_PATH || process.env.EXPO_ASC_API_KEY_PATH || './store/AuthKey_JZ3C87NKB9.p8';
 
 function b64url(input) {
   return Buffer.from(input)

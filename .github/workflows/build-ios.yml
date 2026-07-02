@@ -14,6 +14,7 @@ on:
       - 'package-lock.json'
       - '.github/workflows/build-ios.yml'
       - 'scripts/setup-expo-ios-credentials.cjs'
+      - 'scripts/validate-asc-key.mjs'
 
 concurrency:
   group: ios-production
@@ -75,45 +76,18 @@ jobs:
           echo "present=true" >> "$GITHUB_OUTPUT"
           echo "key_id=$KEY_ID" >> "$GITHUB_OUTPUT"
 
-      - name: Configure iOS credentials via Apple ID (no laptop)
-        id: apple_creds
+      - name: Validate ASC API key with Apple
+        if: steps.asc.outputs.present == 'true'
         env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-          EXPO_APPLE_ID: ${{ secrets.EXPO_APPLE_ID }}
-          EXPO_APPLE_PASSWORD: ${{ secrets.EXPO_APPLE_APP_SPECIFIC_PASSWORD }}
-          EXPO_APPLE_TEAM_ID: JU9C3N64F8
-          EXPO_APPLE_TEAM_TYPE: COMPANY_OR_ORGANIZATION
-          EXPO_NO_KEYCHAIN: '1'
-          NO_COLOR: '1'
-          TERM: dumb
-        run: |
-          if [ -z "$EXPO_APPLE_ID" ] || [ -z "$EXPO_APPLE_PASSWORD" ]; then
-            echo "configured=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Add EXPO_APPLE_ID + EXPO_APPLE_APP_SPECIFIC_PASSWORD GitHub secrets"
-            exit 0
-          fi
-          unset CI GITHUB_ACTIONS
-          unset EXPO_ASC_API_KEY_PATH EXPO_ASC_KEY_ID EXPO_ASC_ISSUER_ID
-          set +e
-          timeout 600 bash -c "printf '\n\n\n\n\n\n\n' | script -q -c 'npx eas-cli credentials:configure-build -p ios -e production' /dev/null"
-          status=$?
-          set -e
-          if [ "$status" -eq 0 ]; then
-            echo "configured=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "configured=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::Apple ID credential setup exited $status — check app-specific password and account role"
-            exit "$status"
-          fi
+          EXPO_ASC_KEY_ID: ${{ steps.asc.outputs.key_id }}
+          EXPO_ASC_API_KEY_PATH: ./store/AuthKey_${{ steps.asc.outputs.key_id }}.p8
+        run: node scripts/validate-asc-key.mjs
 
       - name: Bootstrap iOS credentials on EAS
         id: ios_bootstrap
-        if: steps.asc.outputs.present == 'true' && steps.apple_creds.outputs.configured != 'true'
-        continue-on-error: true
+        if: steps.asc.outputs.present == 'true'
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-          EXPO_APPLE_ID: ${{ secrets.EXPO_APPLE_ID }}
-          EXPO_APPLE_PASSWORD: ${{ secrets.EXPO_APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_ASC_API_KEY_P8: ${{ secrets.APPLE_ASC_API_KEY_P8 }}
           EXPO_ASC_KEY_ID: ${{ steps.asc.outputs.key_id }}
           EXPO_ASC_ISSUER_ID: 75ae36fa-911c-462c-818e-f1bcc4222c24

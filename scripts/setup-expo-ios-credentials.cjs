@@ -132,14 +132,6 @@ async function ensureAscAppConnected(expoAscKeyId) {
 }
 
 async function getAppleAuthCtx(keyP8) {
-  if (process.env.EXPO_APPLE_ID && process.env.EXPO_APPLE_PASSWORD) {
-    process.env.EXPO_APPLE_TEAM_ID = TEAM_ID;
-    process.env.EXPO_APPLE_TEAM_TYPE = TEAM_TYPE;
-    delete process.env.EXPO_ASC_API_KEY_PATH;
-    delete process.env.EXPO_ASC_KEY_ID;
-    delete process.env.EXPO_ASC_ISSUER_ID;
-    return authenticateAsync({ mode: AuthenticationMode.USER, teamId: TEAM_ID, teamType: TEAM_TYPE });
-  }
   process.env.EXPO_ASC_API_KEY_PATH = process.env.EXPO_ASC_API_KEY_PATH || path.join(ROOT, 'store', `AuthKey_${KEY_ID}.p8`);
   process.env.EXPO_ASC_KEY_ID = KEY_ID;
   process.env.EXPO_ASC_ISSUER_ID = ISSUER_ID;
