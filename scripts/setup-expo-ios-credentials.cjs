@@ -169,6 +169,9 @@ async function ensureBuildCredentials(graphqlClient, account, keyP8) {
   }
 
   log('Setting up iOS distribution certificate and provisioning profile');
+  // GitHub Actions sets CI=true which makes @expo/apple-utils refuse API-key cert creation.
+  delete process.env.CI;
+  delete process.env.GITHUB_ACTIONS;
   const authCtx = await getAppleAuthCtx(keyP8);
   const appleTeam = await IosGraphql.createOrGetExistingAppleTeamAndUpdateNameIfChangedAsync(
     graphqlClient,
