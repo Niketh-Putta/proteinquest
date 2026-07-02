@@ -13,6 +13,7 @@
  *   EXPO_APPLE_TEAM_ID (default JU9C3N64F8)
  *   EXPO_APPLE_TEAM_TYPE (default COMPANY_OR_ORGANIZATION)
  */
+const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -33,8 +34,6 @@ const { createGraphqlClient } = require('eas-cli/build/commandUtils/context/cont
 const { getOwnerAccountForProjectIdAsync } = require('eas-cli/build/project/projectUtils');
 const AppStoreConnectApiKeyQuery = require('eas-cli/build/credentials/ios/api/graphql/queries/AppStoreConnectApiKeyQuery');
 const AppStoreConnectApiKeyMutation = require('eas-cli/build/credentials/ios/api/graphql/mutations/AppStoreConnectApiKeyMutation');
-const AscAppLinkQuery = require('eas-cli/build/graphql/queries/AscAppLinkQuery');
-const AscAppLinkMutation = require('eas-cli/build/graphql/mutations/AscAppLinkMutation');
 const IosGraphql = require('eas-cli/build/credentials/ios/api/GraphqlClient');
 const AppStoreApi = require('eas-cli/build/credentials/ios/appstore/AppStoreApi').default;
 const { authenticateAsync } = require('eas-cli/build/credentials/ios/appstore/authenticate');
@@ -92,30 +91,32 @@ async function ensureAscKeyOnExpoAccount(graphqlClient, account, keyP8) {
   return created;
 }
 
-async function ensureAscAppConnected(graphqlClient, expoAscKeyId) {
-  const metadata = await AscAppLinkQuery.AscAppLinkQuery.getAppMetadataAsync(graphqlClient, PROJECT_ID);
-  if (metadata.appStoreConnectApp) {
-    log('ASC app already connected', metadata.appStoreConnectApp.ascAppIdentifier);
-    return;
+async function ensureAscAppConnected(expoAscKeyId) {
+  try {
+    execFileSync(
+      'npx',
+      [
+        'eas-cli',
+        'integrations:asc:connect',
+        '--non-interactive',
+        '--api-key-id',
+        KEY_ID,
+        '--asc-app-id',
+        ASC_APP_ID,
+        '--bundle-id',
+        BUNDLE_ID,
+      ],
+      { cwd: ROOT, stdio: 'pipe', env: process.env },
+    );
+    log('ASC app connected via eas-cli', ASC_APP_ID);
+  } catch (err) {
+    const out = `${err.stdout?.toString() ?? ''}${err.stderr?.toString() ?? ''}${err.message ?? ''}`;
+    if (/already connected/i.test(out)) {
+      log('ASC app already connected', ASC_APP_ID);
+      return;
+    }
+    log('warning', `ASC app connect skipped (${out.slice(0, 200) || 'unknown error'})`);
   }
-
-  log('Connecting App Store Connect app', ASC_APP_ID);
-  const remoteApps = await AscAppLinkQuery.AscAppLinkQuery.discoverAccessibleAppsAsync(
-    graphqlClient,
-    expoAscKeyId,
-    BUNDLE_ID,
-  );
-  const match = remoteApps.find((app) => app.ascAppIdentifier === ASC_APP_ID);
-  if (!match) {
-    fail(`ASC app ${ASC_APP_ID} not found for key ${KEY_ID}. Apps: ${remoteApps.map((a) => a.ascAppIdentifier).join(', ') || 'none'}`);
-  }
-
-  await AscAppLinkMutation.AscAppLinkMutation.createAppStoreConnectAppAsync(graphqlClient, {
-    appId: metadata.id,
-    ascAppIdentifier: ASC_APP_ID,
-    appStoreConnectApiKeyId: expoAscKeyId,
-  });
-  log('ASC app connected', ASC_APP_ID);
 }
 
 async function getAppleAuthCtx(keyP8) {
@@ -259,7 +260,7 @@ async function main() {
   }
 
   const ascKey = await ensureAscKeyOnExpoAccount(graphqlClient, account, keyP8);
-  await ensureAscAppConnected(graphqlClient, ascKey.id);
+  await ensureAscAppConnected(ascKey.id);
   await ensureBuildCredentials(graphqlClient, account, keyP8);
 
   log('Done — iOS credentials ready for non-interactive EAS build');
