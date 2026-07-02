@@ -42,8 +42,15 @@ jobs:
           for name in EXPO_PUBLIC_SUPABASE_URL EXPO_PUBLIC_SUPABASE_KEY EXPO_PUBLIC_REVENUECAT_IOS_KEY EXPO_PUBLIC_REVENUECAT_ANDROID_KEY; do
             val="${!name:-}"
             if [ -n "$val" ]; then
-              echo "Syncing EAS secret: $name"
-              npx eas-cli secret:create --name "$name" --value "$val" --force --non-interactive
+              echo "Syncing EAS env: $name"
+              npx eas-cli env:create \
+                --name "$name" \
+                --value "$val" \
+                --environment production \
+                --environment preview \
+                --visibility sensitive \
+                --force \
+                --non-interactive || echo "Warning: could not sync $name"
             else
               echo "Skipping $name (not in GitHub secrets)"
             fi
