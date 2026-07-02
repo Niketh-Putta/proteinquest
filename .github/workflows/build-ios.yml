@@ -1,4 +1,5 @@
 # iOS App Store build + submit via GitHub EXPO_TOKEN + APPLE_ASC_API_KEY_P8.
+# Phone-only: set EXPO_APPLE_ID + EXPO_APPLE_APP_SPECIFIC_PASSWORD secrets for credential bootstrap.
 name: Build and submit iOS
 
 on:
