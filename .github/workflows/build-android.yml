@@ -11,6 +11,7 @@ on:
       - 'eas.json'
       - 'package.json'
       - 'package-lock.json'
+      - 'scripts/download-eas-aab.mjs'
       - 'scripts/upload-aab-to-play.mjs'
       - '.github/workflows/build-android.yml'
 
@@ -83,15 +84,7 @@ jobs:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
           set -euo pipefail
-          npx eas-cli build:download \
-            --build-id "${{ steps.eas_build.outputs.build_id }}" \
-            --non-interactive
-          AAB="$(find . -maxdepth 2 -name '*.aab' -type f | head -1)"
-          if [ -z "$AAB" ]; then
-            echo "::error::Download finished but no .aab file found."
-            exit 1
-          fi
-          cp "$AAB" store/proteinquest.aab
+          node scripts/download-eas-aab.mjs "${{ steps.eas_build.outputs.build_id }}" --out=store/proteinquest.aab
           ls -lh store/proteinquest.aab
 
       - name: Upload AAB artifact
