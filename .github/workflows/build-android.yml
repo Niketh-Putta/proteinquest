@@ -52,35 +52,18 @@ jobs:
           mkdir -p store
           printf '%s' "$GOOGLE_PLAY_SERVICE_ACCOUNT_JSON" > store/google-play-service-account.json
 
-      - name: Build Android AAB (EAS production)
+      - name: Build Android AAB (and auto-submit if Play creds present)
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
           EXPO_PUBLIC_SUPABASE_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_KEY }}
           EXPO_PUBLIC_REVENUECAT_IOS_KEY: ${{ secrets.EXPO_PUBLIC_REVENUECAT_IOS_KEY }}
           EXPO_PUBLIC_REVENUECAT_ANDROID_KEY: ${{ secrets.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY }}
-        run: npx eas-cli build --platform android --profile production --non-interactive --wait
-
-      - name: Download AAB artifact
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
-          mkdir -p store
-          npx eas-cli build:download --platform android --latest --non-interactive --output store/proteinquest.aab
-
-      - name: Upload AAB for manual Play Console upload
-        uses: actions/upload-artifact@v4
-        with:
-          name: proteinquest-aab
-          path: store/proteinquest.aab
-          retention-days: 30
-
-      - name: Submit to Play Console (internal track)
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        run: |
-          if [ ! -f store/google-play-service-account.json ]; then
-            echo "Build finished. Upload latest AAB from expo.dev → Play Console internal testing."
-            exit 0
+          if [ -f store/google-play-service-account.json ]; then
+            echo "Google Play credentials present — building and submitting to production."
+            npx eas-cli build --platform android --profile production --non-interactive --wait --auto-submit
+          else
+            echo "No GOOGLE_PLAY_SERVICE_ACCOUNT_JSON secret — building only. Download the AAB from expo.dev and upload to Play Console manually."
+            npx eas-cli build --platform android --profile production --non-interactive --wait
           fi
-          npx eas-cli submit --platform android --profile production --latest --non-interactive
