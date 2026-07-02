@@ -1,0 +1,174 @@
+# Full Expo ship pipeline — runs on push to main (uses GitHub EXPO_TOKEN).
+name: Expo ship all
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'app.json'
+      - 'eas.json'
+      - '.github/workflows/expo-ship-all.yml'
+
+concurrency:
+  group: expo-ship-all
+  cancel-in-progress: false
+
+jobs:
+  sync-eas-secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Sync GitHub secrets → EAS project secrets
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+          EXPO_PUBLIC_SUPABASE_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_KEY }}
+          EXPO_PUBLIC_REVENUECAT_IOS_KEY: ${{ secrets.EXPO_PUBLIC_REVENUECAT_IOS_KEY }}
+          EXPO_PUBLIC_REVENUECAT_ANDROID_KEY: ${{ secrets.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::error::EXPO_TOKEN missing"
+            exit 1
+          fi
+          npx eas-cli whoami
+          for name in EXPO_PUBLIC_SUPABASE_URL EXPO_PUBLIC_SUPABASE_KEY EXPO_PUBLIC_REVENUECAT_IOS_KEY EXPO_PUBLIC_REVENUECAT_ANDROID_KEY; do
+            val="${!name:-}"
+            if [ -n "$val" ]; then
+              echo "Syncing EAS secret: $name"
+              npx eas-cli secret:create --name "$name" --value "$val" --force --non-interactive
+            else
+              echo "Skipping $name (not in GitHub secrets)"
+            fi
+          done
+
+  android-preview-apk:
+    needs: sync-eas-secrets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Build preview APK (install without Play Store)
+        id: build
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+          EXPO_PUBLIC_SUPABASE_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_KEY }}
+          EXPO_PUBLIC_REVENUECAT_IOS_KEY: ${{ secrets.EXPO_PUBLIC_REVENUECAT_IOS_KEY }}
+          EXPO_PUBLIC_REVENUECAT_ANDROID_KEY: ${{ secrets.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY }}
+        run: |
+          set -euo pipefail
+          npx eas-cli build --platform android --profile preview --non-interactive --wait --json > store/eas-preview.json
+          BUILD_ID="$(node -e "const j=require('./store/eas-preview.json'); const b=Array.isArray(j)?j[0]:j; process.stdout.write(b?.id||'');")"
+          ARTIFACT_URL="$(node -e "const j=require('./store/eas-preview.json'); const b=Array.isArray(j)?j[0]:j; process.stdout.write(b?.artifacts?.applicationArchiveUrl||'');")"
+          echo "build_id=$BUILD_ID" >> "$GITHUB_OUTPUT"
+          echo "artifact_url=$ARTIFACT_URL" >> "$GITHUB_OUTPUT"
+      - name: Download APK
+        if: steps.build.outputs.artifact_url != ''
+        run: curl -fsSL "${{ steps.build.outputs.artifact_url }}" -o store/proteinquest-preview.apk
+      - name: Upload APK artifact
+        if: steps.build.outputs.build_id != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: proteinquest-preview-apk
+          path: store/proteinquest-preview.apk
+          retention-days: 30
+      - name: Summary
+        run: |
+          echo "## Android preview APK (paywall test build)" >> "$GITHUB_STEP_SUMMARY"
+          echo "Install on phone: https://expo.dev/accounts/nikethputta1/projects/proteinquest/builds/${{ steps.build.outputs.build_id }}" >> "$GITHUB_STEP_SUMMARY"
+
+  android-production:
+    needs: sync-eas-secrets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Configure Google Play service account
+        id: play_creds
+        env:
+          GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          if [ -z "$GOOGLE_PLAY_SERVICE_ACCOUNT_JSON" ]; then
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          mkdir -p store
+          printf '%s' "$GOOGLE_PLAY_SERVICE_ACCOUNT_JSON" > store/google-play-service-account.json
+          echo "present=true" >> "$GITHUB_OUTPUT"
+      - name: Build production AAB
+        id: eas_build
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+          EXPO_PUBLIC_SUPABASE_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_KEY }}
+          EXPO_PUBLIC_REVENUECAT_IOS_KEY: ${{ secrets.EXPO_PUBLIC_REVENUECAT_IOS_KEY }}
+          EXPO_PUBLIC_REVENUECAT_ANDROID_KEY: ${{ secrets.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p store
+          npx eas-cli build --platform android --profile production --non-interactive --wait --json > store/eas-build.json
+          BUILD_ID="$(node -e "const j=require('./store/eas-build.json'); const b=Array.isArray(j)?j[0]:j; process.stdout.write(b?.id||'');")"
+          ARTIFACT_URL="$(node -e "const j=require('./store/eas-build.json'); const b=Array.isArray(j)?j[0]:j; process.stdout.write(b?.artifacts?.applicationArchiveUrl||'');")"
+          echo "build_id=$BUILD_ID" >> "$GITHUB_OUTPUT"
+          echo "artifact_url=$ARTIFACT_URL" >> "$GITHUB_OUTPUT"
+      - name: Download AAB
+        if: steps.eas_build.outputs.artifact_url != ''
+        run: curl -fsSL "${{ steps.eas_build.outputs.artifact_url }}" -o store/proteinquest.aab
+      - name: Upload AAB artifact
+        if: steps.eas_build.outputs.build_id != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: proteinquest-aab-${{ steps.eas_build.outputs.build_id }}
+          path: store/proteinquest.aab
+          retention-days: 30
+      - name: Submit to Play production
+        if: steps.play_creds.outputs.present == 'true'
+        run: node scripts/upload-aab-to-play.mjs --track=production || npx eas-cli submit --platform android --profile production --path store/proteinquest.aab --non-interactive
+
+  ios-production:
+    needs: sync-eas-secrets
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Configure App Store Connect API key
+        env:
+          APPLE_ASC_API_KEY_P8: ${{ secrets.APPLE_ASC_API_KEY_P8 }}
+        run: |
+          if [ -z "$APPLE_ASC_API_KEY_P8" ]; then exit 0; fi
+          mkdir -p store
+          printf '%s' "$APPLE_ASC_API_KEY_P8" > store/AuthKey_U5KW7AP443.p8
+      - name: Build iOS
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+          EXPO_PUBLIC_SUPABASE_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_KEY }}
+          EXPO_PUBLIC_REVENUECAT_IOS_KEY: ${{ secrets.EXPO_PUBLIC_REVENUECAT_IOS_KEY }}
+          EXPO_PUBLIC_REVENUECAT_ANDROID_KEY: ${{ secrets.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY }}
+        run: |
+          if [ -f store/AuthKey_U5KW7AP443.p8 ]; then
+            npx eas-cli build --platform ios --profile production --non-interactive --wait --auto-submit
+          else
+            npx eas-cli build --platform ios --profile production --non-interactive --wait
+          fi
