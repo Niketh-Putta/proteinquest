@@ -1,0 +1,43 @@
+# Direct-install APK for testing paywall + payments without Play Store update.
+name: Build Android preview APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'src/app/paywall.tsx'
+      - 'src/lib/payments.ts'
+      - 'src/lib/revenuecat.ts'
+      - '.github/workflows/build-android-preview.yml'
+
+jobs:
+  build-preview-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build preview APK
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+          EXPO_PUBLIC_SUPABASE_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_KEY }}
+          EXPO_PUBLIC_REVENUECAT_IOS_KEY: ${{ secrets.EXPO_PUBLIC_REVENUECAT_IOS_KEY }}
+          EXPO_PUBLIC_REVENUECAT_ANDROID_KEY: ${{ secrets.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY }}
+        run: |
+          npx eas-cli build --platform android --profile preview --non-interactive --wait --json > store/eas-preview.json
+          BUILD_ID="$(node -e "const j=require('./store/eas-preview.json'); const b=Array.isArray(j)?j[0]:j; process.stdout.write(b?.id||'');")"
+          echo "build_id=$BUILD_ID" >> "$GITHUB_ENV"
+          echo "Install page: https://expo.dev/accounts/nikethputta1/projects/proteinquest/builds/$BUILD_ID"
+
+      - name: Print install link
+        run: |
+          echo "## Preview APK ready" >> "$GITHUB_STEP_SUMMARY"
+          echo "Open on your phone: https://expo.dev/accounts/nikethputta1/projects/proteinquest/builds/${{ env.build_id }}" >> "$GITHUB_STEP_SUMMARY"
