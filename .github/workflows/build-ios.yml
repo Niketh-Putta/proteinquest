@@ -75,7 +75,9 @@ jobs:
           echo "key_id=$KEY_ID" >> "$GITHUB_OUTPUT"
 
       - name: Bootstrap iOS credentials on EAS
+        id: ios_bootstrap
         if: steps.asc.outputs.present == 'true'
+        continue-on-error: true
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           APPLE_ASC_API_KEY_P8: ${{ secrets.APPLE_ASC_API_KEY_P8 }}
@@ -84,6 +86,8 @@ jobs:
           EXPO_ASC_API_KEY_PATH: ./store/AuthKey_${{ steps.asc.outputs.key_id }}.p8
           EXPO_APPLE_TEAM_ID: JU9C3N64F8
           EXPO_APPLE_TEAM_TYPE: COMPANY_OR_ORGANIZATION
+          EXPO_NO_KEYCHAIN: '1'
+          NO_COLOR: '1'
         run: node scripts/setup-expo-ios-credentials.cjs
 
       - name: Build iOS production

@@ -52,9 +52,21 @@ function fail(message) {
   process.exit(1);
 }
 
+function normalizeP8(raw) {
+  let key = raw.trim();
+  if (key.includes('\\n')) {
+    key = key.replace(/\\n/g, '\n');
+  }
+  if (key.includes('BEGIN PRIVATE KEY')) {
+    return key;
+  }
+  const body = key.replace(/[^A-Za-z0-9+/=]/g, '');
+  return `-----BEGIN PRIVATE KEY-----\n${body}\n-----END PRIVATE KEY-----`;
+}
+
 function readKeyP8() {
   if (process.env.APPLE_ASC_API_KEY_P8?.trim()) {
-    return process.env.APPLE_ASC_API_KEY_P8.trim();
+    return normalizeP8(process.env.APPLE_ASC_API_KEY_P8);
   }
   const keyPath = process.env.EXPO_ASC_API_KEY_PATH;
   if (keyPath && fs.existsSync(keyPath)) {
@@ -250,6 +262,10 @@ async function main() {
   if (!process.env.EXPO_TOKEN?.trim()) {
     fail('EXPO_TOKEN is required');
   }
+
+  process.env.EXPO_NO_KEYCHAIN = '1';
+  process.env.NO_COLOR = '1';
+  process.env.FORCE_COLOR = '0';
 
   const keyP8 = readKeyP8();
   const graphqlClient = createGraphqlClient({ accessToken: process.env.EXPO_TOKEN.trim() });
