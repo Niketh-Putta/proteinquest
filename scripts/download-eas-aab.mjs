@@ -29,7 +29,7 @@ if (!process.env.EXPO_TOKEN?.trim()) {
 
 const viewJson = execFileSync(
   'npx',
-  ['eas-cli', 'build:view', buildId, '--non-interactive', '--json'],
+  ['eas-cli', 'build:view', buildId, '--json'],
   { cwd: ROOT, encoding: 'utf8', env: process.env },
 );
 
