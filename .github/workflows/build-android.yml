@@ -1,3 +1,4 @@
+# Uses GitHub secret EXPO_TOKEN (nikethputta1). Add GOOGLE_PLAY_SERVICE_ACCOUNT_JSON for auto-submit.
 name: Build and submit Android
 
 on:
