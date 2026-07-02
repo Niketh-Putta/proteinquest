@@ -73,6 +73,7 @@
     "build:all": "eas build --platform all --profile production",
     "play-store:prep": "node scripts/play-store-prep.mjs",
     "play-store:submit": "node scripts/play-store-submit.mjs",
+    "play-store:upload": "node scripts/upload-aab-to-play.mjs",
     "payments:verify": "node scripts/verify-revenuecat-setup.mjs",
     "payments:create-play-subs": "node scripts/create-play-subscriptions.mjs",
     "ship:android": "node scripts/complete-android-ship.mjs",
