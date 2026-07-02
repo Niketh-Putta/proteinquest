@@ -52,17 +52,7 @@ function fail(message) {
   process.exit(1);
 }
 
-function normalizeP8(raw) {
-  let key = raw.trim();
-  if (key.includes('\\n')) {
-    key = key.replace(/\\n/g, '\n');
-  }
-  if (key.includes('BEGIN PRIVATE KEY')) {
-    return key;
-  }
-  const body = key.replace(/[^A-Za-z0-9+/=]/g, '');
-  return `-----BEGIN PRIVATE KEY-----\n${body}\n-----END PRIVATE KEY-----`;
-}
+const { normalizeP8 } = require('./normalize-p8.cjs');
 
 function readKeyP8() {
   if (process.env.APPLE_ASC_API_KEY_P8?.trim()) {
@@ -70,7 +60,7 @@ function readKeyP8() {
   }
   const keyPath = process.env.EXPO_ASC_API_KEY_PATH;
   if (keyPath && fs.existsSync(keyPath)) {
-    return fs.readFileSync(keyPath, 'utf8');
+    return normalizeP8(fs.readFileSync(keyPath, 'utf8'));
   }
   fail('Missing APPLE_ASC_API_KEY_P8 or EXPO_ASC_API_KEY_PATH');
 }

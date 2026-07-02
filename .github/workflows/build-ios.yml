@@ -62,8 +62,8 @@ jobs:
       - name: Configure App Store Connect API key
         id: asc
         env:
-          APPLE_ASC_API_KEY_P8: ${{ secrets.APPLE_ASC_API_KEY_P8 }}
           APPLE_ASC_KEY_ID: ${{ secrets.APPLE_ASC_KEY_ID }}
+          APPLE_ASC_API_KEY_P8: ${{ secrets.APPLE_ASC_API_KEY_P8 }}
         run: |
           if [ -z "$APPLE_ASC_API_KEY_P8" ]; then
             echo "present=false" >> "$GITHUB_OUTPUT"
@@ -71,14 +71,23 @@ jobs:
             exit 0
           fi
           KEY_ID="${APPLE_ASC_KEY_ID:-JZ3C87NKB9}"
+          export KEY_ID
           mkdir -p store
-          printf '%s' "$APPLE_ASC_API_KEY_P8" > "store/AuthKey_${KEY_ID}.p8"
+          node -e "
+            const fs=require('fs');
+            const {normalizeP8}=require('./scripts/normalize-p8.cjs');
+            const keyId=process.env.KEY_ID;
+            const key=normalizeP8(process.env.APPLE_ASC_API_KEY_P8||'');
+            if(!key) { console.error('APPLE_ASC_API_KEY_P8 empty'); process.exit(1); }
+            fs.writeFileSync('store/AuthKey_'+keyId+'.p8', key);
+          "
           echo "present=true" >> "$GITHUB_OUTPUT"
           echo "key_id=$KEY_ID" >> "$GITHUB_OUTPUT"
 
       - name: Validate ASC API key with Apple
         if: steps.asc.outputs.present == 'true'
         env:
+          APPLE_ASC_API_KEY_P8: ${{ secrets.APPLE_ASC_API_KEY_P8 }}
           EXPO_ASC_KEY_ID: ${{ steps.asc.outputs.key_id }}
           EXPO_ASC_API_KEY_PATH: ./store/AuthKey_${{ steps.asc.outputs.key_id }}.p8
         run: node scripts/validate-asc-key.mjs
