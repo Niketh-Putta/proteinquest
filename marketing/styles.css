@@ -139,8 +139,24 @@ a {
 }
 
 .store-badge--play:hover,
-.store-badge--ios:hover {
+.store-badge--ios:hover,
+.store-badge--web:hover {
   opacity: 0.85;
+}
+
+.store-badge--web {
+  padding: 0 1rem;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  font-family: 'Sora', system-ui, sans-serif;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.store-badge__web-label {
+  line-height: 1;
 }
 
 .store-badge img {

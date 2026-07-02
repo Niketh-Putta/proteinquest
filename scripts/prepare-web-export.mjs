@@ -54,6 +54,12 @@ function main() {
   html = html.replace('</head>', `  ${block}\n</head>`);
   fs.writeFileSync(indexPath, html);
   console.log('Updated dist/index.html with branded favicon links');
+
+  const vercelConfig = {
+    rewrites: [{ source: '/(.*)', destination: '/index.html' }],
+  };
+  fs.writeFileSync(path.join(root, 'dist', 'vercel.json'), `${JSON.stringify(vercelConfig, null, 2)}\n`);
+  console.log('Wrote dist/vercel.json for SPA routing');
 }
 
 main();
