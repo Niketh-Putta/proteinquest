@@ -86,17 +86,26 @@ jobs:
           echo "key_id=$KEY_ID" >> "$GITHUB_OUTPUT"
           echo "Using ASC Key ID: $KEY_ID"
 
-      - name: Sync ASC key ID into eas.json
+      - name: Sync ASC credentials into eas.json
         if: steps.asc.outputs.present == 'true'
+        env:
+          APPLE_ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
         run: |
-          KEY_ID="${{ steps.asc.outputs.key_id }}"
+          export KEY_ID="${{ steps.asc.outputs.key_id }}"
+          export ISSUER_ID="${APPLE_ASC_ISSUER_ID:-75ae36fa-911c-462c-818e-f1bcc4222c24}"
           node -e "
             const fs=require('fs');
-            const p='eas.json';
-            const j=JSON.parse(fs.readFileSync(p,'utf8'));
-            j.submit.production.ios.ascApiKeyId=process.env.KEY_ID;
-            j.submit.production.ios.ascApiKeyPath='./store/AuthKey_'+process.env.KEY_ID+'.p8';
-            fs.writeFileSync(p, JSON.stringify(j, null, 2)+'\n');
+            const j=JSON.parse(fs.readFileSync('eas.json','utf8'));
+            const ios=j.submit.production.ios;
+            ios.ascApiKeyId=process.env.KEY_ID;
+            ios.ascApiKeyPath='./store/AuthKey_'+process.env.KEY_ID+'.p8';
+            ios.ascApiKeyIssuerId=process.env.ISSUER_ID;
+            if(!ios.ascApiKeyId||!ios.ascApiKeyPath||!ios.ascApiKeyIssuerId){
+              console.error('eas.json submit config incomplete', ios);
+              process.exit(1);
+            }
+            fs.writeFileSync('eas.json', JSON.stringify(j, null, 2)+'\n');
+            console.log('eas.json submit ios: keyId='+ios.ascApiKeyId+', issuer='+ios.ascApiKeyIssuerId.slice(0,8)+'…');
           "
 
       - name: Validate ASC API key with Apple
@@ -114,14 +123,16 @@ jobs:
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           APPLE_ASC_API_KEY_P8: ${{ secrets.APPLE_ASC_API_KEY_P8 }}
+          APPLE_ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
           EXPO_ASC_KEY_ID: ${{ steps.asc.outputs.key_id }}
-          EXPO_ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID || '75ae36fa-911c-462c-818e-f1bcc4222c24' }}
           EXPO_ASC_API_KEY_PATH: ./store/AuthKey_${{ steps.asc.outputs.key_id }}.p8
           EXPO_APPLE_TEAM_ID: JU9C3N64F8
           EXPO_APPLE_TEAM_TYPE: COMPANY_OR_ORGANIZATION
           EXPO_NO_KEYCHAIN: '1'
           NO_COLOR: '1'
-        run: node scripts/setup-expo-ios-credentials.cjs
+        run: |
+          export EXPO_ASC_ISSUER_ID="${APPLE_ASC_ISSUER_ID:-75ae36fa-911c-462c-818e-f1bcc4222c24}"
+          node scripts/setup-expo-ios-credentials.cjs
 
       - name: Build iOS production
         id: ios_build
@@ -132,14 +143,20 @@ jobs:
           EXPO_PUBLIC_SUPABASE_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_KEY }}
           EXPO_PUBLIC_REVENUECAT_IOS_KEY: ${{ secrets.EXPO_PUBLIC_REVENUECAT_IOS_KEY }}
           EXPO_PUBLIC_REVENUECAT_ANDROID_KEY: ${{ secrets.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY }}
-          EXPO_ASC_API_KEY_PATH: ./store/AuthKey_${{ steps.asc.outputs.key_id }}.p8
+          APPLE_ASC_API_KEY_P8: ${{ secrets.APPLE_ASC_API_KEY_P8 }}
+          APPLE_ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
           EXPO_ASC_KEY_ID: ${{ steps.asc.outputs.key_id }}
-          EXPO_ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID || '75ae36fa-911c-462c-818e-f1bcc4222c24' }}
-          EXPO_APPLE_TEAM_ID: JU9C3N64F8
-          EXPO_APPLE_TEAM_TYPE: COMPANY_OR_ORGANIZATION
         run: |
           set -euo pipefail
           mkdir -p store
+          export KEY_ID="${{ steps.asc.outputs.key_id }}"
+          node -e "
+            const fs=require('fs');
+            const {normalizeP8}=require('./scripts/normalize-p8.cjs');
+            const key=normalizeP8(process.env.APPLE_ASC_API_KEY_P8||'');
+            if(!key) { console.error('Missing APPLE_ASC_API_KEY_P8'); process.exit(1); }
+            fs.writeFileSync('store/AuthKey_'+process.env.KEY_ID+'.p8', key);
+          "
           ARGS=(--platform ios --profile production --non-interactive --wait --json)
           if [ "${{ steps.asc.outputs.present }}" = "true" ]; then
             ARGS+=(--auto-submit)
