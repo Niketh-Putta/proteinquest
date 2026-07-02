@@ -12,6 +12,7 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - '.github/workflows/build-ios.yml'
+      - 'scripts/setup-expo-ios-credentials.cjs'
 
 concurrency:
   group: ios-production
@@ -72,6 +73,18 @@ jobs:
           printf '%s' "$APPLE_ASC_API_KEY_P8" > "store/AuthKey_${KEY_ID}.p8"
           echo "present=true" >> "$GITHUB_OUTPUT"
           echo "key_id=$KEY_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Bootstrap iOS credentials on EAS
+        if: steps.asc.outputs.present == 'true'
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          APPLE_ASC_API_KEY_P8: ${{ secrets.APPLE_ASC_API_KEY_P8 }}
+          EXPO_ASC_KEY_ID: ${{ steps.asc.outputs.key_id }}
+          EXPO_ASC_ISSUER_ID: 75ae36fa-911c-462c-818e-f1bcc4222c24
+          EXPO_ASC_API_KEY_PATH: ./store/AuthKey_${{ steps.asc.outputs.key_id }}.p8
+          EXPO_APPLE_TEAM_ID: JU9C3N64F8
+          EXPO_APPLE_TEAM_TYPE: COMPANY_OR_ORGANIZATION
+        run: node scripts/setup-expo-ios-credentials.cjs
 
       - name: Build iOS production
         id: ios_build
