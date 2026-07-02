@@ -1,4 +1,4 @@
-# Uses GitHub secret EXPO_TOKEN (nikethputta1). Add APPLE_ASC_API_KEY_P8 for auto-submit.
+# iOS App Store build + submit via GitHub EXPO_TOKEN + APPLE_ASC_API_KEY_P8.
 name: Build and submit iOS
 
 on:
@@ -36,22 +36,12 @@ jobs:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
           if [ -z "$EXPO_TOKEN" ]; then
-            echo "::error::Missing GitHub secret EXPO_TOKEN. Add a token from the Expo account that owns the EAS project (owner: nikethputta1), then re-run."
+            echo "::error::Missing EXPO_TOKEN GitHub secret."
             exit 1
           fi
+          npx eas-cli whoami
 
-      - name: Configure App Store Connect API key
-        env:
-          APPLE_ASC_API_KEY_P8: ${{ secrets.APPLE_ASC_API_KEY_P8 }}
-        run: |
-          if [ -z "$APPLE_ASC_API_KEY_P8" ]; then
-            echo "No APPLE_ASC_API_KEY_P8 secret — submit step will be skipped (build still uploads to EAS)."
-            exit 0
-          fi
-          mkdir -p store
-          printf '%s' "$APPLE_ASC_API_KEY_P8" > store/AuthKey_U5KW7AP443.p8
-
-      - name: Build iOS (and auto-submit if ASC key present)
+      - name: Sync EAS production env vars
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
@@ -59,10 +49,55 @@ jobs:
           EXPO_PUBLIC_REVENUECAT_IOS_KEY: ${{ secrets.EXPO_PUBLIC_REVENUECAT_IOS_KEY }}
           EXPO_PUBLIC_REVENUECAT_ANDROID_KEY: ${{ secrets.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY }}
         run: |
-          if [ -f store/AuthKey_U5KW7AP443.p8 ]; then
-            echo "ASC API key present — building and submitting to App Store review."
-            npx eas-cli build --platform ios --profile production --non-interactive --wait --auto-submit
-          else
-            echo "No APPLE_ASC_API_KEY_P8 secret — building only. Submit the latest build from expo.dev or via Transporter."
-            npx eas-cli build --platform ios --profile production --non-interactive --wait
+          for name in EXPO_PUBLIC_SUPABASE_URL EXPO_PUBLIC_SUPABASE_KEY EXPO_PUBLIC_REVENUECAT_IOS_KEY EXPO_PUBLIC_REVENUECAT_ANDROID_KEY; do
+            val="${!name:-}"
+            if [ -n "$val" ]; then
+              npx eas-cli env:create --name "$name" --value "$val" --environment production --visibility sensitive --force --non-interactive || true
+            fi
+          done
+
+      - name: Configure App Store Connect API key
+        id: asc
+        env:
+          APPLE_ASC_API_KEY_P8: ${{ secrets.APPLE_ASC_API_KEY_P8 }}
+        run: |
+          if [ -z "$APPLE_ASC_API_KEY_P8" ]; then
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::APPLE_ASC_API_KEY_P8 missing — iOS build will likely fail until Apple credentials are set up once."
+            exit 0
           fi
+          mkdir -p store
+          printf '%s' "$APPLE_ASC_API_KEY_P8" > store/AuthKey_U5KW7AP443.p8
+          echo "present=true" >> "$GITHUB_OUTPUT"
+
+      - name: Build iOS production
+        id: ios_build
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+          EXPO_PUBLIC_SUPABASE_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_KEY }}
+          EXPO_PUBLIC_REVENUECAT_IOS_KEY: ${{ secrets.EXPO_PUBLIC_REVENUECAT_IOS_KEY }}
+          EXPO_PUBLIC_REVENUECAT_ANDROID_KEY: ${{ secrets.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY }}
+          EXPO_ASC_API_KEY_PATH: ./store/AuthKey_U5KW7AP443.p8
+          EXPO_ASC_KEY_ID: U5KW7AP443
+          EXPO_ASC_ISSUER_ID: 75ae36fa-911c-462c-818e-f1bcc4222c24
+          EXPO_APPLE_TEAM_ID: JU9C3N64F8
+          EXPO_APPLE_TEAM_TYPE: COMPANY_OR_ORGANIZATION
+        run: |
+          set -euo pipefail
+          mkdir -p store
+          ARGS=(--platform ios --profile production --non-interactive --wait --json)
+          if [ "${{ steps.asc.outputs.present }}" = "true" ]; then
+            ARGS+=(--auto-submit)
+          fi
+          npx eas-cli build "${ARGS[@]}" > store/eas-ios-build.json
+          BUILD_ID="$(node -e "const j=require('./store/eas-ios-build.json'); const b=Array.isArray(j)?j[0]:j; process.stdout.write(b?.id||'');")"
+          echo "build_id=$BUILD_ID" >> "$GITHUB_OUTPUT"
+          echo "Build: https://expo.dev/accounts/nikethputta1/projects/proteinquest/builds/$BUILD_ID"
+
+      - name: Summary
+        if: steps.ios_build.outputs.build_id != ''
+        run: |
+          echo "## iOS build finished" >> "$GITHUB_STEP_SUMMARY"
+          echo "https://expo.dev/accounts/nikethputta1/projects/proteinquest/builds/${{ steps.ios_build.outputs.build_id }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Submit in App Store Connect → TestFlight when processing completes." >> "$GITHUB_STEP_SUMMARY"

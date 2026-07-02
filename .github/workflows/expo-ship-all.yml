@@ -58,6 +58,7 @@ jobs:
 
   android-preview-apk:
     needs: sync-eas-secrets
+    if: ${{ always() && needs.sync-eas-secrets.result != 'cancelled' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -98,6 +99,7 @@ jobs:
 
   android-production:
     needs: sync-eas-secrets
+    if: ${{ always() && needs.sync-eas-secrets.result != 'cancelled' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -150,6 +152,7 @@ jobs:
 
   ios-production:
     needs: sync-eas-secrets
+    if: ${{ always() && needs.sync-eas-secrets.result != 'cancelled' }}
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
@@ -173,9 +176,18 @@ jobs:
           EXPO_PUBLIC_SUPABASE_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_KEY }}
           EXPO_PUBLIC_REVENUECAT_IOS_KEY: ${{ secrets.EXPO_PUBLIC_REVENUECAT_IOS_KEY }}
           EXPO_PUBLIC_REVENUECAT_ANDROID_KEY: ${{ secrets.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY }}
+          APPLE_ASC_API_KEY_P8: ${{ secrets.APPLE_ASC_API_KEY_P8 }}
+          EXPO_ASC_KEY_ID: U5KW7AP443
+          EXPO_ASC_ISSUER_ID: 75ae36fa-911c-462c-818e-f1bcc4222c24
+          EXPO_APPLE_TEAM_ID: JU9C3N64F8
+          EXPO_APPLE_TEAM_TYPE: COMPANY_OR_ORGANIZATION
         run: |
-          if [ -f store/AuthKey_U5KW7AP443.p8 ]; then
+          set -euo pipefail
+          if [ -n "$APPLE_ASC_API_KEY_P8" ]; then
+            mkdir -p store
+            printf '%s' "$APPLE_ASC_API_KEY_P8" > store/AuthKey_U5KW7AP443.p8
+            export EXPO_ASC_API_KEY_PATH=./store/AuthKey_U5KW7AP443.p8
             npx eas-cli build --platform ios --profile production --non-interactive --wait --auto-submit
           else
-            npx eas-cli build --platform ios --profile production --non-interactive --wait
+            npx eas-cli build --platform ios --profile production --non-interactive --wait || true
           fi
