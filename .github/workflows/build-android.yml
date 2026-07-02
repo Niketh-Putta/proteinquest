@@ -19,6 +19,8 @@ concurrency:
   group: android-production
   cancel-in-progress: true
 
+# Retrigger after GOOGLE_PLAY_SERVICE_ACCOUNT_JSON secret is configured.
+
 jobs:
   build-and-submit:
     runs-on: ubuntu-latest
