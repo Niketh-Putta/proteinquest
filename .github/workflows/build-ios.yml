@@ -84,6 +84,19 @@ jobs:
           echo "present=true" >> "$GITHUB_OUTPUT"
           echo "key_id=$KEY_ID" >> "$GITHUB_OUTPUT"
 
+      - name: Sync ASC key ID into eas.json
+        if: steps.asc.outputs.present == 'true'
+        run: |
+          KEY_ID="${{ steps.asc.outputs.key_id }}"
+          node -e "
+            const fs=require('fs');
+            const p='eas.json';
+            const j=JSON.parse(fs.readFileSync(p,'utf8'));
+            j.submit.production.ios.ascApiKeyId=process.env.KEY_ID;
+            j.submit.production.ios.ascApiKeyPath='./store/AuthKey_'+process.env.KEY_ID+'.p8';
+            fs.writeFileSync(p, JSON.stringify(j, null, 2)+'\n');
+          "
+
       - name: Validate ASC API key with Apple
         if: steps.asc.outputs.present == 'true'
         env:
