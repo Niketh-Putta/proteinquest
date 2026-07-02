@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import sharp from 'sharp';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, '..');
@@ -26,25 +27,25 @@ function copyFile(srcRel, destRel) {
   fs.copyFileSync(src, dest);
 }
 
-function resizePng(srcRel, destRel, maxPx) {
+async function resizePreview(srcRel, destRel, maxPx) {
   const src = path.join(root, srcRel);
   const dest = path.join(outDir, destRel);
   ensureDir(path.dirname(dest));
-  execFileSync('sips', ['-Z', String(maxPx), src, '--out', dest], { stdio: 'pipe' });
+  await sharp(src).resize(maxPx, maxPx, { fit: 'inside' }).png().toFile(dest);
 }
 
 function download(url, dest) {
   execFileSync('curl', ['-fsSL', url, '-o', dest], { stdio: 'pipe' });
 }
 
-function main() {
+async function main() {
   fs.rmSync(outDir, { recursive: true, force: true });
   ensureDir(outDir);
   ensureDir(badgesDir);
 
   copyFile('assets/images/icon.png', 'icon.png');
   copyFile('marketing/source/hero-promo.jpg', 'hero-promo.jpg');
-  resizePng('marketing/source/hero-promo.jpg', SHARE_PREVIEW, 1200);
+  await resizePreview('marketing/source/hero-promo.jpg', SHARE_PREVIEW, 1200);
 
   // Keep legacy OG URLs serving the same current preview image.
   for (const legacy of ['og-image.png', 'hero-og.png']) {
@@ -77,4 +78,4 @@ function main() {
   console.log(`Prepared marketing/assets (${SHARE_PREVIEW} + legacy OG aliases)`);
 }
 
-main();
+await main();
