@@ -95,7 +95,7 @@ jobs:
           unset CI GITHUB_ACTIONS
           unset EXPO_ASC_API_KEY_PATH EXPO_ASC_KEY_ID EXPO_ASC_ISSUER_ID
           set +e
-          printf '\n\n\n\n\n\n\n' | script -q -c "npx eas-cli credentials:configure-build -p ios -e production" /dev/null
+          timeout 600 bash -c "printf '\n\n\n\n\n\n\n' | script -q -c 'npx eas-cli credentials:configure-build -p ios -e production' /dev/null"
           status=$?
           set -e
           if [ "$status" -eq 0 ]; then
