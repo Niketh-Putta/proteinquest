@@ -59,9 +59,25 @@ jobs:
           echo "present=true" >> "$GITHUB_OUTPUT"
           echo "Google Play service account configured."
 
+      - name: Sync EAS production env vars
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+          EXPO_PUBLIC_SUPABASE_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_KEY }}
+          EXPO_PUBLIC_REVENUECAT_IOS_KEY: ${{ secrets.EXPO_PUBLIC_REVENUECAT_IOS_KEY }}
+          EXPO_PUBLIC_REVENUECAT_ANDROID_KEY: ${{ secrets.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY }}
+        run: |
+          for name in EXPO_PUBLIC_SUPABASE_URL EXPO_PUBLIC_SUPABASE_KEY EXPO_PUBLIC_REVENUECAT_IOS_KEY EXPO_PUBLIC_REVENUECAT_ANDROID_KEY; do
+            val="${!name:-}"
+            if [ -n "$val" ]; then
+              npx eas-cli env:create --name "$name" --value "$val" --environment production --visibility sensitive --force --non-interactive || true
+            fi
+          done
+
       - name: Build Android AAB
         id: eas_build
         env:
+          EAS_BUILD_NO_EXPO_GO_WARNING: 'true'
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
           EXPO_PUBLIC_SUPABASE_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_KEY }}
