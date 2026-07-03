@@ -13,6 +13,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     env:
+      VERCEL_ORG_ID: team_RHLmvpeNG6AR3YddwMwPy6mq
       VERCEL_PROJECT_ID: prj_rTOSsuDcEPLN4UlIGo0OFuzvCJCt
       EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
       EXPO_PUBLIC_SUPABASE_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_KEY }}
@@ -46,6 +47,8 @@ jobs:
 
       - name: Build web app (Expo export)
         run: |
+          test -n "$EXPO_PUBLIC_SUPABASE_URL" || (echo "::error::Missing EXPO_PUBLIC_SUPABASE_URL" && exit 1)
+          test -n "$EXPO_PUBLIC_SUPABASE_KEY" || (echo "::error::Missing EXPO_PUBLIC_SUPABASE_KEY" && exit 1)
           npx expo export --platform web
           node scripts/prepare-web-export.mjs
 
