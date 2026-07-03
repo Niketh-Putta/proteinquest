@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { asc } from './asc-api.mjs';
 
-const VERSION_LOC_ID = 'a6f1128d-d5dc-42ef-80a5-dd06b4dee586';
+const VERSION_LOC_ID = 'c5402307-79de-48e1-90b5-13e6133ff144';
 const sets = [
   {
     displayType: 'APP_IPHONE_67',

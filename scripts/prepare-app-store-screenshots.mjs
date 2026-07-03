@@ -16,21 +16,18 @@ const BG = '#0C0B10';
 const BG_END = '#151320';
 
 const SCREENS = [
-  { src: '01-today.png', headline: 'Hit your protein goal today', sub: 'One clear daily target' },
-  { src: '02-scan.png', headline: 'Scan any meal instantly', sub: 'AI estimates protein in seconds' },
-  { src: '03-breakdown.png', headline: 'See every macro at a glance', sub: 'Calories, protein, and more' },
-  { src: '04-evolve.png', headline: 'Evolve your daily dragon', sub: 'Earn XP when you hit your goal' },
-  { src: '05-dragons.png', headline: 'Pick your dragon each morning', sub: 'Ember, Frost, or Moss' },
+  { src: '01-today.png' },
+  { src: '02-scan.png' },
+  { src: '03-breakdown.png' },
+  { src: '04-evolve.png' },
+  { src: '05-dragons.png' },
 ];
 
 const FORMATS = {
-  iphone67: { width: 1290, height: 2796, phoneMaxW: 920, headlineSize: 72, subSize: 36, topPad: 180 },
-  ipad13: { width: 2064, height: 2752, phoneMaxW: 1100, headlineSize: 88, subSize: 42, topPad: 220 },
+  iphone67: { width: 1290, height: 2796, phoneMaxW: 1180, edgePad: 56 },
+  ipad13: { width: 2064, height: 2752, phoneMaxW: 1400, edgePad: 72 },
 };
 
-function escapeXml(s) {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
 
 function gradientSvg(w, h) {
   return Buffer.from(
@@ -47,20 +44,6 @@ function gradientSvg(w, h) {
       </defs>
       <rect width="${w}" height="${h}" fill="url(#g)"/>
       <rect width="${w}" height="${h}" fill="url(#glow)"/>
-    </svg>`,
-  );
-}
-
-function headlineSvg(w, { headline, sub, headlineSize, subSize, topPad }) {
-  const cx = w / 2;
-  return Buffer.from(
-    `<svg width="${w}" height="${topPad + 120}" xmlns="http://www.w3.org/2000/svg">
-      <text x="${cx}" y="${topPad}" text-anchor="middle"
-        font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif"
-        font-weight="700" font-size="${headlineSize}" fill="#FFFFFF">${escapeXml(headline)}</text>
-      <text x="${cx}" y="${topPad + headlineSize + 16}" text-anchor="middle"
-        font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif"
-        font-weight="400" font-size="${subSize}" fill="#9CA3AF">${escapeXml(sub)}</text>
     </svg>`,
   );
 }
@@ -91,11 +74,10 @@ async function renderScreen(screen, formatKey, outDir) {
   const srcPath = path.join(root, 'store/screenshots', screen.src);
   if (!fs.existsSync(srcPath)) throw new Error(`missing source: ${srcPath}`);
 
-  const headlineH = fmt.topPad + fmt.headlineSize + fmt.subSize + 60;
-  const phoneAreaH = fmt.height - headlineH - 80;
-  const phoneMaxH = phoneAreaH - 40;
+  const phoneMaxW = fmt.width - fmt.edgePad * 2;
+  const phoneMaxH = fmt.height - fmt.edgePad * 2;
 
-  const { buf: phoneBuf, w: phoneW, h: phoneH } = await containPhone(srcPath, fmt.phoneMaxW, phoneMaxH);
+  const { buf: phoneBuf, w: phoneW, h: phoneH } = await containPhone(srcPath, phoneMaxW, phoneMaxH);
   const radius = Math.round(Math.min(phoneW, phoneH) * 0.045);
   const frameW = phoneW + 24;
   const frameH = phoneH + 24;
@@ -117,17 +99,14 @@ async function renderScreen(screen, formatKey, outDir) {
     .toBuffer();
 
   const phoneX = Math.round((fmt.width - frameW) / 2);
-  const phoneY = headlineH + Math.round((phoneAreaH - frameH) / 2);
+  const phoneY = Math.round((fmt.height - frameH) / 2);
 
   const idx = SCREENS.indexOf(screen) + 1;
   const outFile = `${String(idx).padStart(2, '0')}.png`;
   const outPath = path.join(outDir, outFile);
 
   await sharp(gradientSvg(fmt.width, fmt.height))
-    .composite([
-      { input: headlineSvg(fmt.width, { ...screen, ...fmt }), top: 0, left: 0 },
-      { input: framed, top: phoneY, left: phoneX },
-    ])
+    .composite([{ input: framed, top: phoneY, left: phoneX }])
     .png()
     .toFile(outPath);
 
