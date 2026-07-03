@@ -83,24 +83,43 @@ export async function continueAsGuest(): Promise<Session | null> {
   return data.session;
 }
 
-/** Validate JWT with Supabase; replace stale local sessions (e.g. after auth.users purge). */
-export async function ensureAuthSession(): Promise<Session | null> {
+/** Validate JWT with Supabase; refresh stale tokens without wiping local storage. */
+export async function recoverPersistedSession(): Promise<Session | null> {
   const { data: sessionData } = await supabase.auth.getSession();
-  const existing = sessionData.session;
-
-  if (existing?.access_token) {
+  const active = sessionData.session;
+  if (active?.access_token) {
     const { data: userData, error: userError } = await supabase.auth.getUser();
-    if (!userError && userData.user?.id === existing.user.id) {
-      return existing;
-    }
+    if (!userError && userData.user?.id === active.user.id) return active;
 
     const userMsg = userError?.message ?? '';
-    if (!isStaleAuthError(userMsg)) {
-      return existing;
-    }
+    if (!isStaleAuthError(userMsg)) return active;
 
-    await supabase.auth.signOut({ scope: 'local' });
+    const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
+    if (!refreshError && refreshed.session) return refreshed.session;
   }
+
+  const persisted = await readPersistedSession();
+  if (!persisted?.access_token) return active ?? null;
+
+  const { data: setData, error: setError } = await supabase.auth.setSession({
+    access_token: persisted.access_token,
+    refresh_token: persisted.refresh_token ?? '',
+  });
+  if (!setError && setData.session) return setData.session;
+
+  if (persisted.refresh_token) {
+    const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
+    if (!refreshError && refreshed.session) return refreshed.session;
+  }
+
+  // Offline or slow network after an app update — keep the on-disk session.
+  return persisted;
+}
+
+/** Validate JWT with Supabase; replace stale local sessions (e.g. after auth.users purge). */
+export async function ensureAuthSession(): Promise<Session | null> {
+  const recovered = await recoverPersistedSession();
+  if (recovered) return recovered;
 
   if (anonymousSignupAttempted) {
     const { data } = await supabase.auth.getSession();
@@ -116,6 +135,6 @@ export async function ensureAuthSession(): Promise<Session | null> {
       return data.session;
     }
     console.error('[ensureAuthSession]', error);
-    return null;
+    return readPersistedSession();
   }
 }

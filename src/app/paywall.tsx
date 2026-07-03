@@ -140,6 +140,13 @@ export default function Paywall() {
 
         <View style={{ gap: spacing.sm }}>{provider.plans.map(renderPlan)}</View>
 
+        {provider.isConfigured && provider.offeringsReady === false ? (
+          <Text style={styles.offeringsWarning}>
+            {provider.offeringsMessage ??
+              'Subscriptions are not available yet. Products must be approved in App Store Connect and linked in RevenueCat.'}
+          </Text>
+        ) : null}
+
         <Text style={styles.legal}>
           Payment will be charged to your {Platform.OS === 'ios' ? 'Apple ID' : Platform.OS === 'android' ? 'Google Play' : 'payment method'} account at confirmation of purchase.
           Subscription automatically renews unless cancelled at least 24 hours before the end of the
@@ -159,11 +166,15 @@ export default function Paywall() {
           title={
             !provider.isConfigured && !__DEV__
               ? 'Subscriptions unavailable'
-              : 'Subscribe'
+              : provider.offeringsReady === false
+                ? 'Subscriptions unavailable'
+                : 'Subscribe'
           }
           onPress={handlePurchase}
           loading={busy}
-          disabled={!provider.isConfigured && !__DEV__}
+          disabled={
+            (!provider.isConfigured && !__DEV__) || provider.offeringsReady === false
+          }
           style={{ marginTop: spacing.md }}
         />
 
@@ -233,6 +244,13 @@ const styles = StyleSheet.create({
   planTitle: { fontSize: 16, fontWeight: '700', color: colors.text, fontFamily: fonts.displayMedium },
   planCaption: { fontSize: 13, color: colors.textSecondary, marginTop: 2, fontFamily: fonts.body },
   planPrice: { fontSize: 17, fontWeight: '800', color: colors.text, fontFamily: fonts.display },
+  offeringsWarning: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginTop: spacing.sm,
+    lineHeight: 18,
+    fontFamily: fonts.body,
+  },
   legal: {
     fontSize: 11,
     color: colors.textTertiary,

@@ -19,7 +19,8 @@ const GEMINI_MODELS = [
   "gemini-2.0-flash-lite",
 ];
 
-const VISUAL_CALORIE_BIAS = 0.9;
+/** Final downward nudge on visual scans after USDA anchor calibration. */
+const VISUAL_CALORIE_BIAS = 0.88;
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -55,7 +56,8 @@ WORK IN 5 STEPS (reason internally, output final JSON only):
    Energy densities (cooked, lean/grilled defaults): chicken breast 165, ground beef 250, salmon 208, egg 155, greek yogurt 97, tofu 76, kale/spinach 35, rice 130, pasta 131, cheese 350, protein bar 400, bread 265
    Default to grilled/steamed/baked — not deep-fried. Only add extra kcal if oil/butter/frying is clearly visible. Do NOT guess hidden butter or restaurant oil.
    When portion size is ambiguous, use the LOWER end of the weight range. Bias conservative on calories.
-5. SUM all item protein_g → total_protein_g (must match within 0.5g). SUM all item calories_g → calories (must match within 15 kcal)
+   Calories MUST equal estimated_grams × density / 100 per item — do not guess extra oil, butter, or restaurant fat unless clearly visible.
+5. SUM all item protein_g → total_protein_g (must match within 0.5g). SUM all item calories_g → calories (must match within 15 kcal). Round estimated_grams to nearest 5g.
 
 Rules:
 - protein_source: "label" when nutrition label/packaging/on-screen text provides protein grams; "visual" when estimating from food appearance only; "mixed" when both exist (label wins for total).
@@ -266,7 +268,7 @@ async function callGemini(
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
 
   const generationConfig: Record<string, unknown> = {
-    temperature: attempt === 0 ? 0.15 : 0.1,
+    temperature: 0,
     maxOutputTokens: 2048,
     responseMimeType: "application/json",
     responseSchema: GEMINI_SCHEMA,
@@ -374,7 +376,7 @@ async function callOpenAI(
     body: JSON.stringify({
       model: OPENAI_MODEL,
       max_tokens: 1200,
-      temperature: 0.15,
+      temperature: 0,
       response_format: {
         type: "json_schema",
         json_schema: {
@@ -471,7 +473,12 @@ function calibrateItem(item: NormalizedItem, skipCalibration = false): Normalize
   return calibrateItemCalories(next, skipCalibration);
 }
 
-/** Pull calorie estimates down toward USDA anchors; never inflate above the model. */
+function snapGrams(grams: number): number {
+  if (grams <= 0) return 0;
+  return Math.max(5, Math.round(grams / 5) * 5);
+}
+
+/** Anchor calories to USDA densities; pull down LLM overestimates, never inflate above model. */
 function calibrateItemCalories(item: NormalizedItem, skipCalibration = false): NormalizedItem {
   if (skipCalibration) return item;
 
@@ -482,28 +489,28 @@ function calibrateItemCalories(item: NormalizedItem, skipCalibration = false): N
   if (!calorieDensity) return item;
 
   const anchor = caloriesFromDensity(grams, calorieDensity);
-  const llmCalories = item.calories_g;
+  const llmCalories = item.calories_g > 0 ? item.calories_g : anchor;
 
-  if (llmCalories > anchor * 1.1) {
+  if (llmCalories > anchor * 1.02) {
     const excess = anchor > 0 ? (llmCalories - anchor) / llmCalories : 0;
-    const anchorWeight = excess > 0.3 ? 0.5 : 0.35;
+    const anchorWeight = Math.min(0.8, 0.45 + excess * 0.5);
     const blended = Math.round(anchor * anchorWeight + llmCalories * (1 - anchorWeight));
     return {
       ...item,
-      calories_g: Math.min(blended, llmCalories),
-      confidence: excess > 0.35 ? "medium" : item.confidence,
+      calories_g: Math.min(blended, llmCalories, Math.round(anchor * 1.05)),
+      confidence: excess > 0.25 ? "medium" : item.confidence,
     };
   }
 
-  if (llmCalories > 0 && llmCalories < anchor * 0.45) {
+  if (llmCalories < anchor * 0.55) {
     return {
       ...item,
-      calories_g: Math.round(anchor * 0.85),
+      calories_g: Math.round(anchor * 0.92),
       confidence: item.confidence === "high" ? "medium" : item.confidence,
     };
   }
 
-  return item;
+  return { ...item, calories_g: Math.round(anchor * 0.55 + llmCalories * 0.45) };
 }
 
 function parseLabelCalories(raw: Record<string, unknown>): number | null {
@@ -574,7 +581,8 @@ function normalize(raw: Record<string, unknown>) {
 
   const items = ((raw.items as Record<string, unknown>[]) ?? [])
     .map((item) => {
-      const grams = Math.round(Number(item.estimated_grams) || 0) || undefined;
+      const rawGrams = Math.round(Number(item.estimated_grams) || 0);
+      const grams = rawGrams > 0 ? snapGrams(rawGrams) : undefined;
       const calorieDensity = grams ? lookupCalorieDensity(String(item.name ?? '')) : null;
       const llmCalories = Math.round(Number(item.calories_g) || 0);
       const fallbackCalories =
@@ -663,11 +671,8 @@ function normalize(raw: Record<string, unknown>) {
   } else if (labelCalories !== null && calories < labelCalories * 0.75) {
     calories = labelCalories;
   } else if (caloriesSum > 0) {
-    if (calories <= 0 || calories > caloriesSum * 1.15) {
-      calories = caloriesSum;
-    } else if (Math.abs(calories - caloriesSum) > 25) {
-      calories = Math.min(calories, caloriesSum);
-    }
+    // Density-calibrated item sum wins over volatile model total.
+    calories = caloriesSum;
   }
 
   if (!fromLabel && calories > 0) {

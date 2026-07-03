@@ -25,7 +25,7 @@ function cleanBase64(imageBase64: string): string {
 }
 
 function friendlyAnalysisError(message: string): string {
-  if (/failed to send|network|fetch/i.test(message)) {
+  if (/failed to send|network|fetch|timeout|aborted/i.test(message)) {
     return 'Could not reach the analysis server. Check your connection and try again.';
   }
   if (/too large/i.test(message)) return message;
@@ -44,6 +44,30 @@ function friendlyAnalysisError(message: string): string {
   return message;
 }
 
+function isRetryableNetworkError(message: string): boolean {
+  return /failed to send|network|fetch|timeout|aborted|ECONNRESET|ETIMEDOUT/i.test(message);
+}
+
+async function postAnalyzeFood(
+  url: string,
+  headers: Record<string, string>,
+  body: string,
+): Promise<Response> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      return await fetch(url, { method: 'POST', headers, body });
+    } catch (err) {
+      lastErr = err;
+      const msg = err instanceof Error ? err.message : 'Network error';
+      if (!isRetryableNetworkError(msg) || attempt === 2) break;
+      await new Promise((r) => setTimeout(r, 600 * (attempt + 1)));
+    }
+  }
+  const msg = lastErr instanceof Error ? lastErr.message : 'Network error';
+  throw new Error(friendlyAnalysisError(msg));
+}
+
 export async function analyzeFoodPhoto(
   imageBase64: string,
   mimeType = 'image/jpeg',
@@ -58,14 +82,10 @@ export async function analyzeFoodPhoto(
 
   let res: Response;
   try {
-    res = await fetch(url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ image_base64: cleaned, mime_type: mimeType }),
-    });
+    res = await postAnalyzeFood(url, headers, JSON.stringify({ image_base64: cleaned, mime_type: mimeType }));
   } catch (err) {
-    const msg = err instanceof Error ? err.message : 'Network error';
-    throw new Error(friendlyAnalysisError(msg));
+    if (err instanceof Error) throw err;
+    throw new Error(friendlyAnalysisError('Network error'));
   }
 
   let body: { analysis?: Analysis; error?: string } | null = null;
@@ -153,9 +173,23 @@ export async function fetchLogsForDate(date: string): Promise<ProteinLog[]> {
     .from('protein_logs')
     .select('*')
     .eq('logged_date', date)
+    .in('source', ['photo', 'manual'])
     .order('created_at', { ascending: false });
   if (error) throw error;
   return (data ?? []) as ProteinLog[];
+}
+
+/** Records one AI analysis for free-tier daily scan limits (not a logged meal). */
+export async function recordPhotoScan(userId: string, date = todayISODate()): Promise<void> {
+  const { error } = await supabase.from('protein_logs').insert({
+    user_id: userId,
+    logged_date: date,
+    food_name: 'Scan',
+    items: [],
+    protein_g: 0,
+    source: 'photo_scan',
+  });
+  if (error) throw error;
 }
 
 export async function countTodayPhotoScans(date = todayISODate()): Promise<number> {
@@ -163,7 +197,7 @@ export async function countTodayPhotoScans(date = todayISODate()): Promise<numbe
     .from('protein_logs')
     .select('*', { count: 'exact', head: true })
     .eq('logged_date', date)
-    .eq('source', 'photo');
+    .eq('source', 'photo_scan');
   if (error) throw error;
   return count ?? 0;
 }

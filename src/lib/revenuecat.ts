@@ -68,31 +68,68 @@ export interface RevenueCatPlan {
   packageIdentifier: string;
 }
 
+function isWeeklyOrYearlyPackage(p: {
+  product: { identifier: string };
+  packageType: string;
+  identifier: string;
+}): boolean {
+  const id = p.product.identifier;
+  return (
+    id === REVENUECAT_PRODUCT_IDS.weekly ||
+    id === REVENUECAT_PRODUCT_IDS.yearly ||
+    p.packageType === 'WEEKLY' ||
+    p.packageType === 'ANNUAL' ||
+    p.identifier === '$rc_weekly' ||
+    p.identifier === '$rc_annual'
+  );
+}
+
+export interface OfferingsStatus {
+  ready: boolean;
+  /** User-facing hint when offerings are empty (ASC / RevenueCat dashboard issue). */
+  message?: string;
+}
+
+const OFFERINGS_UNAVAILABLE_MESSAGE =
+  'Subscriptions are not available yet. In App Store Connect, ensure pro_weekly and pro_yearly are Ready to Submit (metadata, pricing, review screenshot), linked in RevenueCat, and the In-App Purchase API key is uploaded. See store/PAYMENTS.md.';
+
+function offeringsConfigurationError(e: unknown): string | null {
+  const message = e instanceof Error ? e.message : String(e);
+  if (/configuration|could not be fetched|offerings empty|why-are-offerings-empty/i.test(message)) {
+    return OFFERINGS_UNAVAILABLE_MESSAGE;
+  }
+  return null;
+}
+
 /** True when RevenueCat returns a current offering with at least one weekly/yearly package. */
 export async function hasLiveOfferings(): Promise<boolean> {
-  if (!isRevenueCatConfigured()) return false;
+  const status = await getOfferingsStatus();
+  return status.ready;
+}
+
+/** Whether store products are reachable via RevenueCat (distinct from SDK key being set). */
+export async function getOfferingsStatus(): Promise<OfferingsStatus> {
+  if (!isRevenueCatConfigured()) {
+    return { ready: false, message: 'RevenueCat is not configured in this build.' };
+  }
   try {
     const Purchases = (await import('react-native-purchases')).default;
     const offerings = await Purchases.getOfferings();
     const current = offerings.current;
-    if (!current?.availablePackages.length) return false;
-    return current.availablePackages.some((p) => {
-      const id = p.product.identifier;
-      return (
-        id === REVENUECAT_PRODUCT_IDS.weekly ||
-        id === REVENUECAT_PRODUCT_IDS.yearly ||
-        p.packageType === 'WEEKLY' ||
-        p.packageType === 'ANNUAL' ||
-        p.identifier === '$rc_weekly' ||
-        p.identifier === '$rc_annual'
-      );
-    });
-  } catch {
-    return false;
+    const packages = current?.availablePackages ?? [];
+    const hasPlans = packages.some(isWeeklyOrYearlyPackage);
+    if (hasPlans) return { ready: true };
+    return { ready: false, message: OFFERINGS_UNAVAILABLE_MESSAGE };
+  } catch (e) {
+    console.warn('[RevenueCat] getOfferings failed:', e);
+    return {
+      ready: false,
+      message: offeringsConfigurationError(e) ?? OFFERINGS_UNAVAILABLE_MESSAGE,
+    };
   }
 }
 
-/** Fetch current offering packages mapped to our plan IDs. Falls back to static copy if unavailable. */
+/** Fetch current offering packages mapped to our plan IDs. Static copy only when RC is unconfigured. */
 export async function getRevenueCatPlans(): Promise<RevenueCatPlan[]> {
   const fallback: RevenueCatPlan[] = [
     {
@@ -117,7 +154,7 @@ export async function getRevenueCatPlans(): Promise<RevenueCatPlan[]> {
     const Purchases = (await import('react-native-purchases')).default;
     const offerings = await Purchases.getOfferings();
     const current = offerings.current;
-    if (!current) return fallback;
+    if (!current) return [];
 
     const mapped: RevenueCatPlan[] = [];
     for (const pkg of current.availablePackages) {
@@ -142,11 +179,11 @@ export async function getRevenueCatPlans(): Promise<RevenueCatPlan[]> {
       });
     }
 
-    if (mapped.length === 0) return fallback;
+    if (mapped.length === 0) return [];
     return mapped.sort((a, b) => (a.id === REVENUECAT_PRODUCT_IDS.yearly ? 1 : -1));
   } catch (e) {
     console.warn('[RevenueCat] getOfferings failed:', e);
-    return fallback;
+    return [];
   }
 }
 
@@ -172,12 +209,17 @@ export async function purchasePlan(planId: string): Promise<boolean> {
     throw new Error('RevenueCat is not configured. Set EXPO_PUBLIC_REVENUECAT_* keys.');
   }
 
+  const status = await getOfferingsStatus();
+  if (!status.ready) {
+    throw new Error(status.message ?? OFFERINGS_UNAVAILABLE_MESSAGE);
+  }
+
   const Purchases = (await import('react-native-purchases')).default;
   const offerings = await Purchases.getOfferings();
   const current = offerings.current ?? Object.values(offerings.all ?? {})[0];
-  const packages = current?.availablePackages ?? [];
+  const packages = (current?.availablePackages ?? []).filter(isWeeklyOrYearlyPackage);
   if (packages.length === 0) {
-    throw new Error('No subscription offerings available yet.');
+    throw new Error(OFFERINGS_UNAVAILABLE_MESSAGE);
   }
 
   const matchesPlan = (p: (typeof packages)[number]) => {
@@ -199,8 +241,14 @@ export async function purchasePlan(planId: string): Promise<boolean> {
   // Subscribe button always drives a real store purchase sheet.
   const pkg = packages.find(matchesPlan) ?? packages[0]!;
 
-  const { customerInfo } = await Purchases.purchasePackage(pkg);
-  return hasProEntitlement(customerInfo);
+  try {
+    const { customerInfo } = await Purchases.purchasePackage(pkg);
+    return hasProEntitlement(customerInfo);
+  } catch (e) {
+    const configMsg = offeringsConfigurationError(e);
+    if (configMsg) throw new Error(configMsg);
+    throw e;
+  }
 }
 
 /** Restore previous App Store / Play Store purchases. Returns true when Pro is active. */

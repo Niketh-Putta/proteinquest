@@ -1,0 +1,61 @@
+{
+  "identifier": "ProteinQuest",
+  "nonRenewingSubscriptions": [],
+  "products": [],
+  "settings": {
+    "_failTransactionsEnabled": false,
+    "_locale": "en_GB",
+    "_storefront": "GBR",
+    "_applicationInternalID": "6781790996",
+    "_developerTeamID": "JU9C3N64F8"
+  },
+  "subscriptionGroups": [
+    {
+      "id": "ProteinQuestPro",
+      "localizations": [],
+      "name": "ProteinQuest Pro",
+      "subscriptions": [
+        {
+          "adGroupDisplayName": "ProteinQuest Pro Weekly",
+          "displayPrice": "6.99",
+          "familyShareable": false,
+          "groupNumber": 1,
+          "internalID": "6781793893",
+          "localizations": [
+            {
+              "description": "Unlimited AI meal scans and full trends.",
+              "displayName": "ProteinQuest Pro Weekly",
+              "locale": "en_GB"
+            }
+          ],
+          "productID": "pro_weekly",
+          "recurringSubscriptionPeriod": "P1W",
+          "referenceName": "ProteinQuest Pro Weekly",
+          "type": "RecurringSubscription"
+        },
+        {
+          "adGroupDisplayName": "ProteinQuest Pro Yearly",
+          "displayPrice": "29.99",
+          "familyShareable": false,
+          "groupNumber": 2,
+          "internalID": "6781793936",
+          "localizations": [
+            {
+              "description": "Unlimited AI meal scans and full trends. Best value.",
+              "displayName": "ProteinQuest Pro Yearly",
+              "locale": "en_GB"
+            }
+          ],
+          "productID": "pro_yearly",
+          "recurringSubscriptionPeriod": "P1Y",
+          "referenceName": "ProteinQuest Pro Yearly",
+          "type": "RecurringSubscription"
+        }
+      ]
+    }
+  ],
+  "version": {
+    "major": 3,
+    "minor": 0
+  }
+}

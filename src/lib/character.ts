@@ -168,41 +168,68 @@ const BETWEEN_LEVEL_PERKS: Record<DragonId, Partial<Record<number, string>>> = {
   },
 };
 
-const ART: Record<DragonId, ImageSourcePropType[]> = {
+type ArtLoader = () => ImageSourcePropType;
+
+const DRAGON_ART_LOADERS: Record<DragonId, ArtLoader[]> = {
   fire: [
-    require('@/assets/character/dragons/fire-1.png'),
-    require('@/assets/character/dragons/fire-2.png'),
-    require('@/assets/character/dragons/fire-3.png'),
-    require('@/assets/character/dragons/fire-4.png'),
-    require('@/assets/character/dragons/fire-5.png'),
+    () => require('@/assets/character/dragons/fire-1.png'),
+    () => require('@/assets/character/dragons/fire-2.png'),
+    () => require('@/assets/character/dragons/fire-3.png'),
+    () => require('@/assets/character/dragons/fire-4.png'),
+    () => require('@/assets/character/dragons/fire-5.png'),
   ],
   ice: [
-    require('@/assets/character/dragons/ice-1.png'),
-    require('@/assets/character/dragons/ice-2.png'),
-    require('@/assets/character/dragons/ice-3.png'),
-    require('@/assets/character/dragons/ice-4.png'),
-    require('@/assets/character/dragons/ice-5.png'),
+    () => require('@/assets/character/dragons/ice-1.png'),
+    () => require('@/assets/character/dragons/ice-2.png'),
+    () => require('@/assets/character/dragons/ice-3.png'),
+    () => require('@/assets/character/dragons/ice-4.png'),
+    () => require('@/assets/character/dragons/ice-5.png'),
   ],
   forest: [
-    require('@/assets/character/dragons/forest-1.png'),
-    require('@/assets/character/dragons/forest-2.png'),
-    require('@/assets/character/dragons/forest-3.png'),
-    require('@/assets/character/dragons/forest-4.png'),
-    require('@/assets/character/dragons/forest-5.png'),
+    () => require('@/assets/character/dragons/forest-1.png'),
+    () => require('@/assets/character/dragons/forest-2.png'),
+    () => require('@/assets/character/dragons/forest-3.png'),
+    () => require('@/assets/character/dragons/forest-4.png'),
+    () => require('@/assets/character/dragons/forest-5.png'),
   ],
 };
 
+/** Eager-loaded baby forms only — used by DailyDragonPicker previews. */
+const PREVIEW_ART: Record<DragonId, ImageSourcePropType> = {
+  fire: require('@/assets/character/dragons/fire-1.png'),
+  ice: require('@/assets/character/dragons/ice-1.png'),
+  forest: require('@/assets/character/dragons/forest-1.png'),
+};
+
+const artCache: Partial<Record<DragonId, ImageSourcePropType[]>> = {};
+
+export function getDragonArt(dragonId: DragonId, stageIndex: number): ImageSourcePropType {
+  if (!artCache[dragonId]) {
+    artCache[dragonId] = DRAGON_ART_LOADERS[dragonId].map((load) => load());
+  }
+  return artCache[dragonId]![stageIndex];
+}
+
 function buildStages(id: DragonId): DragonStage[] {
-  return STAGE_NAMES.map((name, index) => ({
-    index,
-    name,
-    levelRequired: VISUAL_EVOLUTION_LEVELS[index],
-    goalsRequired: STAGE_GOALS[index],
-    art: ART[id][index],
-    tagline: STAGE_TAGLINES[index],
-    perk: STAGE_PERKS[id][index],
-    levelPerks: BETWEEN_LEVEL_PERKS[id],
-  }));
+  return STAGE_NAMES.map((name, index) => {
+    const stage = {
+      index,
+      name,
+      levelRequired: VISUAL_EVOLUTION_LEVELS[index],
+      goalsRequired: STAGE_GOALS[index],
+      tagline: STAGE_TAGLINES[index],
+      perk: STAGE_PERKS[id][index],
+      levelPerks: BETWEEN_LEVEL_PERKS[id],
+    } as DragonStage;
+    Object.defineProperty(stage, 'art', {
+      get() {
+        return getDragonArt(id, index);
+      },
+      enumerable: true,
+      configurable: true,
+    });
+    return stage;
+  });
 }
 
 export const DRAGONS: DragonType[] = [
@@ -212,7 +239,7 @@ export const DRAGONS: DragonType[] = [
     title: 'Fire Dragon',
     element: 'Fire',
     accent: '#FF6B3D',
-    previewArt: ART.fire[0],
+    previewArt: PREVIEW_ART.fire,
     stages: buildStages('fire'),
     motto: 'Burn bright. Eat protein.',
   },
@@ -222,7 +249,7 @@ export const DRAGONS: DragonType[] = [
     title: 'Ice Dragon',
     element: 'Ice',
     accent: '#5BC8F5',
-    previewArt: ART.ice[0],
+    previewArt: PREVIEW_ART.ice,
     stages: buildStages('ice'),
     motto: 'Stay cool. Stay consistent.',
   },
@@ -232,7 +259,7 @@ export const DRAGONS: DragonType[] = [
     title: 'Forest Dragon',
     element: 'Forest',
     accent: '#5AD67A',
-    previewArt: ART.forest[0],
+    previewArt: PREVIEW_ART.forest,
     stages: buildStages('forest'),
     motto: 'Grow roots. Grow muscle.',
   },

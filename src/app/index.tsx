@@ -31,11 +31,28 @@ export default function Index() {
     return <Redirect href="/intro" />;
   }
 
-  if (!profile?.intro_completed) {
+  if (!profile) {
+    return (
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bg }}>
+        <ActivityIndicator color={colors.accent} size="large" />
+        <Text
+          style={{
+            marginTop: spacing.md,
+            color: colors.textSecondary,
+            fontFamily: fonts.body,
+            fontSize: 14,
+          }}>
+          {authMessage ?? 'Restoring your account…'}
+        </Text>
+      </View>
+    );
+  }
+
+  if (!profile.intro_completed) {
     return <Redirect href="/intro" />;
   }
 
-  if (!profile?.onboarded) {
+  if (!profile.onboarded) {
     return <Redirect href="/onboarding" />;
   }
 

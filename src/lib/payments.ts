@@ -3,6 +3,7 @@ import { Platform } from 'react-native';
 import { SITE_URL } from '@/lib/site';
 import {
   checkProEntitlement,
+  getOfferingsStatus,
   getRevenueCatPlans,
   isRevenueCatConfigured,
   purchasePlan,
@@ -20,6 +21,9 @@ export interface PaymentPlan {
 export interface PaymentProvider {
   name: string;
   isConfigured: boolean;
+  /** Store products loaded from RevenueCat offerings (false = ASC/RC dashboard issue). */
+  offeringsReady?: boolean;
+  offeringsMessage?: string;
   plans: PaymentPlan[];
   purchase(
     planId: string,
@@ -102,8 +106,17 @@ async function loadRevenueCatPlans(): Promise<PaymentPlan[]> {
 /** Native provider with live store prices when RevenueCat is configured. */
 export async function getNativePaymentProvider(): Promise<PaymentProvider> {
   if (isRevenueCatConfigured()) {
-    const plans = await loadRevenueCatPlans();
-    return { ...revenueCatProvider, plans };
+    const [plans, offerings] = await Promise.all([
+      loadRevenueCatPlans(),
+      getOfferingsStatus(),
+    ]);
+    const livePlans = offerings.ready && plans.length > 0 ? plans : PLANS;
+    return {
+      ...revenueCatProvider,
+      plans: livePlans,
+      offeringsReady: offerings.ready,
+      offeringsMessage: offerings.message,
+    };
   }
   return stubProvider;
 }

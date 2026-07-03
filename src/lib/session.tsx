@@ -6,6 +6,7 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
@@ -14,13 +15,13 @@ import {
   continueAsGuest,
   ensureAuthSession,
   readPersistedSession,
+  recoverPersistedSession,
   resetAnonymousSignupAttempt,
 } from './auth';
 import { fetchProfile, isStaleProfileSaveError, upsertProfile } from './api';
 import { withTimeout } from './async-utils';
 import { acceptFriendInvite } from './leaderboard';
 import {
-  clearCachedProfile,
   loadCachedProfile,
   mergeProfiles,
   saveCachedProfile,
@@ -71,7 +72,9 @@ async function resolveLocalSession(): Promise<Session | null> {
   const empty = { data: { session: null as Session | null } };
   const { data } = await withTimeout(supabase.auth.getSession(), GET_SESSION_MS, empty);
   if (data.session) return data.session;
-  return readPersistedSession();
+  const persisted = await readPersistedSession();
+  if (persisted) return persisted;
+  return null;
 }
 
 export function SessionProvider({ children }: { children: React.ReactNode }) {
@@ -113,17 +116,16 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       bootstrapInFlightRef.current = true;
 
       try {
-        const validated = await withTimeout(ensureAuthSession(), AUTH_VALIDATE_MS, cachedSession);
+        const validated = await withTimeout(
+          recoverPersistedSession(),
+          AUTH_VALIDATE_MS,
+          cachedSession,
+        );
         if (!mountedRef.current) return;
-        setSession(validated);
-        if (!validated) {
-          await clearCachedProfile();
-          setProfile(null);
-          return;
-        }
+        if (validated) setSession(validated);
 
         const fresh = await withTimeout(
-          loadProfile(validated.user.id),
+          loadProfile((validated ?? cachedSession).user.id),
           PROFILE_VALIDATE_MS,
           fallbackProfile,
         );
@@ -237,12 +239,14 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
     init();
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, next) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event, next) => {
       if (!mountedRef.current) return;
+      // Ignore transient sign-out during token refresh — keep cached account.
+      if (!next && event === 'SIGNED_OUT' && profileRef.current) return;
       setSession(next);
       if (next?.user) {
         void refreshProfileSafely(next.user.id);
-      } else {
+      } else if (!profileRef.current) {
         setProfile(null);
       }
     });
@@ -259,7 +263,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     const timer = setTimeout(() => {
       resetAnonymousSignupAttempt();
       void (async () => {
-        const next = await withTimeout(ensureAuthSession(), AUTH_COLD_START_MS, null);
+        const persisted = await readPersistedSession();
+        const next = persisted
+          ? await withTimeout(recoverPersistedSession(), AUTH_COLD_START_MS, persisted)
+          : await withTimeout(ensureAuthSession(), AUTH_COLD_START_MS, null);
         if (!mountedRef.current || !next) return;
         setSession(next);
         await refreshProfileSafely(next.user.id);
@@ -270,6 +277,17 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       clearTimeout(timer);
     };
   }, [loading, refreshProfileSafely, session]);
+
+  useEffect(() => {
+    if (loading || !session?.user.id || profile) return;
+
+    const userId = session.user.id;
+    const timer = setInterval(() => {
+      void refreshProfileSafely(userId);
+    }, AUTH_RETRY_MS);
+
+    return () => clearInterval(timer);
+  }, [loading, profile, refreshProfileSafely, session?.user.id]);
 
   useEffect(() => {
     let previousState = AppState.currentState;
@@ -335,7 +353,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     let cancelled = false;
 
     async function syncPremiumFlag(isProNow: boolean) {
-      const current = await loadProfile(uid);
+      const current = profileRef.current;
       const decision = resolvePremiumSync(current?.is_premium === true, isProNow);
       if (cancelled || !decision.changed) return;
       await upsertProfile({
@@ -343,7 +361,16 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         is_premium: decision.is_premium,
         paywall_dismissed: decision.paywall_dismissed,
       });
-      if (!cancelled) await refreshProfile(uid);
+      if (cancelled) return;
+      if (current) {
+        const merged: Profile = {
+          ...current,
+          is_premium: decision.is_premium,
+          paywall_dismissed: decision.paywall_dismissed,
+        };
+        await saveCachedProfile(merged);
+        applyProfile(merged);
+      }
     }
 
     (async () => {
@@ -370,14 +397,17 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       cancelled = true;
       unsubscribe();
     };
-  }, [session?.user.id, refreshProfile]);
+  }, [session?.user.id, applyProfile]);
 
   const saveProfile = useCallback(async (updates: Partial<Profile>) => {
-    const nextSession = await withTimeout(ensureAuthSession(), AUTH_VALIDATE_MS, null);
+    let nextSession = sessionRef.current;
+    if (!nextSession) {
+      nextSession = await withTimeout(ensureAuthSession(), AUTH_VALIDATE_MS, null);
+    }
     if (!nextSession) {
       throw new Error('Still connecting. Please wait a moment and try again.');
     }
-    setSession(nextSession);
+    if (nextSession !== sessionRef.current) setSession(nextSession);
     const userId = nextSession.user.id;
 
     try {
@@ -399,18 +429,18 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     }
   }, [applyProfile]);
 
-  return (
-    <SessionContext.Provider
-      value={{
-        session,
-        profile,
-        loading,
-        authMessage,
-        saveProfile,
-      }}>
-      {children}
-    </SessionContext.Provider>
+  const value = useMemo(
+    () => ({
+      session,
+      profile,
+      loading,
+      authMessage,
+      saveProfile,
+    }),
+    [session, profile, loading, authMessage, saveProfile],
   );
+
+  return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
 
 export function useSession() {

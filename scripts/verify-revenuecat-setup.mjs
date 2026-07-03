@@ -32,10 +32,10 @@ loadEnv();
 console.log('ProteinQuest — RevenueCat readiness\n');
 
 let score = 0;
-const total = 7;
+const total = 8;
 
 if (ok('Android RC key in .env', !!process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY?.startsWith('goog_'))) score++;
-if (ok('iOS RC key in .env', !!process.env.EXPO_PUBLIC_REVENUECAT_IOS_KEY?.startsWith('appl_'), 'optional until App Store')) score++;
+if (ok('iOS RC key in .env', !!process.env.EXPO_PUBLIC_REVENUECAT_IOS_KEY?.startsWith('appl_'))) score++;
 if (ok('Play service account JSON', existsSync(join(ROOT, 'store/google-play-service-account.json')))) score++;
 if (ok('react-native-purchases in package.json', readFileSync(join(ROOT, 'package.json'), 'utf8').includes('react-native-purchases'))) score++;
 if (ok('Paywall + gating code', existsSync(join(ROOT, 'src/app/paywall.tsx')) && existsSync(join(ROOT, 'src/lib/revenuecat.ts')))) score++;
@@ -47,9 +47,12 @@ if (process.env.EXPO_TOKEN) {
     env: process.env,
   });
   const hasAndroid = r.stdout?.includes('EXPO_PUBLIC_REVENUECAT_ANDROID_KEY');
+  const hasIos = r.stdout?.includes('EXPO_PUBLIC_REVENUECAT_IOS_KEY');
   if (ok('EAS production env has Android RC key', !!hasAndroid)) score++;
+  if (ok('EAS production env has iOS RC key', !!hasIos)) score++;
 } else {
   ok('EAS production env has Android RC key', false, 'set EXPO_TOKEN');
+  ok('EAS production env has iOS RC key', false, 'set EXPO_TOKEN');
 }
 
 const fn = join(ROOT, 'supabase/functions/revenuecat-webhook/index.ts');

@@ -201,3 +201,41 @@ supabase secrets set REVENUECAT_WEBHOOK_AUTH=$(openssl rand -hex 32)
 ## Current gap (manual)
 
 Until dashboard secrets are set, native builds show **“Payments aren’t connected yet”** and use test-mode unlock. Complete the checklists above to go live.
+
+---
+
+## iOS: “Empty offerings” / configuration error
+
+RevenueCat error: *None of the products registered in the RevenueCat dashboard could be fetched from App Store Connect.*
+
+**Root cause:** StoreKit cannot load `pro_weekly` / `pro_yearly` from ASC. Code IDs are correct (`com.proteinquest.app`, entitlement `pro`, offering `default`). iOS 1.0.5 build **does** bake in `EXPO_PUBLIC_REVENUECAT_IOS_KEY` (CI syncs it to EAS production).
+
+### App Store Connect (required)
+
+1. **Agreements** — App Store Connect → Agreements, Tax, and Banking → **Paid Apps Agreement** must be Active.
+2. **Subscriptions** — Monetization → Subscriptions → group **ProteinQuest Pro**:
+   - `pro_weekly` (ASC id `6781793893`) — state must be **Ready to Submit** or **Approved**
+   - `pro_yearly` (ASC id `6781793936`) — same
+   - Each needs: display name, description, **review screenshot**, GBP pricing propagated to all territories.
+3. **Submit subscriptions with the app** — On version **1.0.5**, manually add both subscriptions to the submission in ASC (automated API attach failed in CI with `'subscription' is not a relationship on reviewSubmissionItems`).
+4. **Sandbox test** — Settings → App Store → Sandbox Account; purchase in TestFlight build.
+
+Check status: `node scripts/check-asc-review.mjs` (requires `store/AuthKey_JZ3C87NKB9.p8`).
+
+### RevenueCat dashboard (required)
+
+1. **iOS app** — bundle `com.proteinquest.app` (must match `app.json`).
+2. **In-App Purchase API key** — App Store Connect → Users and Access → Integrations → **In-App Purchase** → generate P8 → upload to RevenueCat iOS app settings (not just the ASC API key used for builds).
+3. **Products** — `pro_weekly`, `pro_yearly` linked to same App Store product IDs.
+4. **Entitlement** — `pro` attached to both products.
+5. **Offering** — `default` (current) with `$rc_weekly` → `pro_weekly`, `$rc_annual` → `pro_yearly`.
+6. **Verify** — RevenueCat → Customers → test device → Offerings should show both packages.
+
+### Local simulator testing
+
+Use `store/ProteinQuest.storekit` in Xcode: Product → Scheme → Edit Scheme → Run → Options → StoreKit Configuration → select this file. Rebuild with `expo run:ios` (dev client), not Expo Go.
+
+### After fixing ASC / RC
+
+No code change needed if IDs unchanged. Reinstall TestFlight build or wait a few minutes for RC to sync products, then retry Subscribe.
+

@@ -80,5 +80,5 @@ export interface ProteinLog {
   calories: number | null;
   confidence: Confidence | null;
   image_path: string | null;
-  source: 'photo' | 'manual';
+  source: 'photo' | 'manual' | 'photo_scan';
 }

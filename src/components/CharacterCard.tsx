@@ -41,7 +41,7 @@ interface Props {
   scale?: number;
 }
 
-export function CharacterCard({
+function CharacterCardInner({
   profile,
   bleed,
   showSwitcher = true,
@@ -235,6 +235,8 @@ export function CharacterCard({
     </View>
   );
 }
+
+export const CharacterCard = React.memo(CharacterCardInner);
 
 const styles = StyleSheet.create({
   arena: {

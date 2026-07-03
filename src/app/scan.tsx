@@ -6,7 +6,6 @@ import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Image,
   Platform,
   Pressable,
   ScrollView,
@@ -29,16 +28,18 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { Button } from '@/components/Button';
 import { Celebration } from '@/components/Celebration';
+import { MealPhotoPreview } from '@/components/MealPhotoPreview';
 import {
   analyzeFoodPhoto,
   countTodayPhotoScans,
   fetchLogsForDate,
   insertLog,
+  recordPhotoScan,
   uploadFoodPhoto,
 } from '@/lib/api';
 import { applyLogToCharacter, isDailyDragonLockedForToday } from '@/lib/character';
 import { useLayout } from '@/lib/layout';
-import { canScan } from '@/lib/paywall-gate';
+import { canScan, isInHabitGracePeriod, isPro, remainingFreeScans } from '@/lib/paywall-gate';
 import { todayISODate } from '@/lib/protein';
 import { useSession } from '@/lib/session';
 import type { Analysis } from '@/lib/types';
@@ -96,12 +97,14 @@ export default function ScanScreen() {
 
   const [phase, setPhase] = useState<Phase>('camera');
   const [error, setError] = useState<string | null>(null);
-  const [imageUri, setImageUri] = useState<string | null>(null);
+  const [displayUri, setDisplayUri] = useState<string | null>(null);
   const [imageBase64, setImageBase64] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [proteinOverride, setProteinOverride] = useState('');
+  const [calorieOverride, setCalorieOverride] = useState('');
   const [analyzeStep, setAnalyzeStep] = useState(0);
   const [saving, setSaving] = useState(false);
+  const [scansLeft, setScansLeft] = useState<number | null>(null);
   const [celebration, setCelebration] = useState<{
     evolved: boolean;
     leveledUp: boolean;
@@ -179,29 +182,36 @@ export default function ScanScreen() {
       router.replace('/(tabs)/today');
       return;
     }
-    if (profile && !profile.is_premium) {
-      const used = await countTodayPhotoScans();
-      if (!canScan(profile, used)) {
+    const needsScanCheck = profile && !isPro(profile) && !isInHabitGracePeriod(profile);
+    const scanCountPromise = needsScanCheck ? countTodayPhotoScans() : null;
+
+    setPhase('analyzing');
+    setDisplayUri(uri);
+    try {
+      const imagePromise = (async () => {
+        const ctx = ImageManipulator.manipulate(uri).resize({ width: 768 });
+        const rendered = await ctx.renderAsync();
+        return rendered.saveAsync({
+          format: SaveFormat.JPEG,
+          compress: 0.65,
+          base64: true,
+        });
+      })();
+
+      const [saved, used] = await Promise.all([
+        imagePromise,
+        scanCountPromise ?? Promise.resolve(null),
+      ]);
+
+      if (needsScanCheck && used !== null && !canScan(profile!, used)) {
         router.push('/paywall');
         return;
       }
-    }
-    setPhase('analyzing');
-    setImageUri(uri);
-    try {
-      const ctx = ImageManipulator.manipulate(uri).resize({ width: 768 });
-      const rendered = await ctx.renderAsync();
-      const saved = await rendered.saveAsync({
-        format: SaveFormat.JPEG,
-        compress: 0.65,
-        base64: true,
-      });
       if (!saved.base64) {
         throw new Error(
           'Could not read that image. If it came from your library, try a JPEG or PNG.',
         );
       }
-      setImageUri(saved.uri);
       setImageBase64(saved.base64);
 
       const res = await analyzeFoodPhoto(saved.base64);
@@ -212,6 +222,15 @@ export default function ScanScreen() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       setAnalysis(res);
       setProteinOverride(String(Math.round(res.total_protein_g)));
+      setCalorieOverride(res.calories ? String(Math.round(res.calories)) : '');
+
+      const tracksScanQuota =
+        profile && session?.user.id && !isPro(profile) && !isInHabitGracePeriod(profile);
+      if (tracksScanQuota) {
+        await recordPhotoScan(session.user.id);
+        setScansLeft(remainingFreeScans((used ?? 0) + 1, profile));
+      }
+
       setPhase('result');
     } catch (e: any) {
       showError(e.message ?? 'Analysis failed. Check your connection and try again.');
@@ -229,20 +248,35 @@ export default function ScanScreen() {
       setError('Enter the protein amount in grams.');
       return;
     }
+    const calorieRaw = calorieOverride.trim();
+    const calories =
+      calorieRaw.length > 0
+        ? (() => {
+            const v = parseFloat(calorieRaw);
+            return Number.isNaN(v) || v < 0 ? null : Math.round(v);
+          })()
+        : analysis.calories
+          ? Math.round(analysis.calories)
+          : null;
+    if (calorieRaw.length > 0 && calories === null) {
+      setError('Enter calories as a number, or leave blank.');
+      return;
+    }
     setSaving(true);
     try {
-      const todayLogs = await fetchLogsForDate(todayISODate());
+      const [todayLogs, imagePath] = await Promise.all([
+        fetchLogsForDate(todayISODate()),
+        imageBase64
+          ? uploadFoodPhoto(session.user.id, imageBase64)
+          : Promise.resolve(null),
+      ]);
       const todayTotalBefore = todayLogs.reduce((s, l) => s + Number(l.protein_g), 0);
-
-      const imagePath = imageBase64
-        ? await uploadFoodPhoto(session.user.id, imageBase64)
-        : null;
       await insertLog({
         userId: session.user.id,
         foodName: analysis.food_name,
         items: analysis.items,
         proteinG,
-        calories: analysis.calories ? Math.round(analysis.calories) : null,
+        calories,
         confidence: analysis.confidence,
         imagePath,
         source: 'photo',
@@ -385,8 +419,12 @@ export default function ScanScreen() {
       {phase === 'analyzing' && (
         <Animated.View entering={FadeIn} style={styles.analyzingWrap}>
           <View style={styles.analyzingImageWrap}>
-            {imageUri ? <Image source={{ uri: imageUri }} style={styles.analyzingImage} /> : null}
-            <ScanSweep />
+            {displayUri ? (
+              <View style={styles.analyzingPreviewShell}>
+                <MealPhotoPreview uri={displayUri} maxHeightRatio={0.38} bordered />
+                <ScanSweep />
+              </View>
+            ) : null}
           </View>
           <Text style={styles.analyzingTitle}>{ANALYZING_STEPS[analyzeStep]}</Text>
           <Text style={styles.analyzingSub}>AI is reading your plate</Text>
@@ -405,12 +443,10 @@ export default function ScanScreen() {
             },
           ]}
           showsVerticalScrollIndicator={false}>
-          {imageUri ? (
-            <Animated.Image
-              entering={FadeIn}
-              source={{ uri: imageUri }}
-              style={styles.resultImage}
-            />
+          {displayUri ? (
+            <Animated.View entering={FadeIn} style={styles.resultImageWrap}>
+              <MealPhotoPreview uri={displayUri} maxHeightRatio={0.42} bordered />
+            </Animated.View>
           ) : null}
 
           <Animated.View entering={FadeInDown.delay(80).duration(400)}>
@@ -418,6 +454,16 @@ export default function ScanScreen() {
             <Text style={styles.metaText}>
               {analysis.confidence?.toUpperCase()} CONFIDENCE
             </Text>
+            {scansLeft !== null ? (
+              <Pressable onPress={() => router.push('/paywall')} style={styles.scansPill}>
+                <Ionicons name="sparkles" size={14} color={colors.accent} />
+                <Text style={styles.scansPillText}>
+                  {scansLeft > 0
+                    ? `${scansLeft} free scan${scansLeft === 1 ? '' : 's'} left today`
+                    : 'Out of free scans. Go Pro'}
+                </Text>
+              </Pressable>
+            ) : null}
           </Animated.View>
 
           <View style={styles.rule} />
@@ -463,11 +509,25 @@ export default function ScanScreen() {
                 maxLength={5}
               />
               <Text style={styles.totalUnit}>g</Text>
-              {analysis.calories ? (
-                <Text style={styles.totalCal}> ({Math.round(analysis.calories)} cal)</Text>
-              ) : null}
             </View>
-            <Text style={styles.totalHint}>tap to adjust</Text>
+            <Text style={styles.totalHint}>tap to adjust protein</Text>
+          </Animated.View>
+
+          <Animated.View entering={FadeInDown.delay(280).duration(400)} style={styles.totalBlock}>
+            <Text style={styles.totalLabel}>CALORIES</Text>
+            <View style={styles.totalInputRow}>
+              <TextInput
+                style={[styles.totalInput, textInputWeb]}
+                value={calorieOverride}
+                onChangeText={(t) => setCalorieOverride(t.replace(/[^0-9.]/g, ''))}
+                keyboardType="numeric"
+                maxLength={5}
+                placeholder="—"
+                placeholderTextColor={colors.textMuted}
+              />
+              <Text style={styles.totalUnit}>cal</Text>
+            </View>
+            <Text style={styles.totalHint}>tap to adjust calories</Text>
           </Animated.View>
 
           <Animated.View entering={FadeInDown.delay(320)} style={{ gap: 4, marginTop: spacing.lg }}>
@@ -477,6 +537,8 @@ export default function ScanScreen() {
               variant="ghost"
               onPress={() => {
                 setAnalysis(null);
+                setDisplayUri(null);
+                setImageBase64(null);
                 setError(null);
                 setPhase('camera');
               }}
@@ -629,14 +691,14 @@ const styles = StyleSheet.create({
   },
   analyzingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.lg },
   analyzingImageWrap: {
-    width: 220,
-    height: 220,
-    overflow: 'hidden',
+    width: '100%',
+    maxWidth: 360,
     marginBottom: spacing.xl,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.hairlineBright,
   },
-  analyzingImage: { width: '100%', height: '100%' },
+  analyzingPreviewShell: {
+    width: '100%',
+    position: 'relative',
+  },
   sweepLine: {
     position: 'absolute',
     left: 0,
@@ -658,9 +720,8 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   resultScroll: { paddingTop: spacing.sm, paddingBottom: spacing.xxl },
-  resultImage: {
+  resultImageWrap: {
     width: '100%',
-    height: 200,
     marginBottom: spacing.lg,
   },
   foodName: {
@@ -675,6 +736,25 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     color: colors.textTertiary,
     marginTop: 6,
+  },
+  scansPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    marginTop: spacing.sm,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.hairlineBright,
+    backgroundColor: colors.surface,
+  },
+  scansPillText: {
+    fontFamily: fonts.mono,
+    fontSize: 10,
+    letterSpacing: 0.4,
+    color: colors.textSecondary,
   },
   rule: {
     height: StyleSheet.hairlineWidth,

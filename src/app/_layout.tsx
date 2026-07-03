@@ -16,11 +16,27 @@ import { View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { MealRemindersBootstrap } from '@/components/MealRemindersBootstrap';
-import { SessionProvider } from '@/lib/session';
+import { SessionProvider, useSession } from '@/lib/session';
 import { trackPageVisitOnce } from '@/lib/track-visit';
 import { colors } from '@/theme';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
+
+function SplashGate({
+  fontsLoaded,
+  children,
+}: {
+  fontsLoaded: boolean;
+  children: React.ReactNode;
+}) {
+  const { loading } = useSession();
+
+  useEffect(() => {
+    if (fontsLoaded && !loading) SplashScreen.hideAsync().catch(() => {});
+  }, [fontsLoaded, loading]);
+
+  return <>{children}</>;
+}
 
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({
@@ -32,48 +48,48 @@ export default function RootLayout() {
   });
 
   useEffect(() => {
-    if (fontsLoaded) SplashScreen.hideAsync().catch(() => {});
-  }, [fontsLoaded]);
-
-  useEffect(() => {
     trackPageVisitOnce();
   }, []);
-
-  if (!fontsLoaded) {
-    return <View style={{ flex: 1, backgroundColor: colors.bg }} />;
-  }
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SessionProvider>
-        <MealRemindersBootstrap />
-        <StatusBar style="light" />
-        <Stack
-          screenOptions={{
-            headerShown: false,
-            contentStyle: { backgroundColor: colors.bg },
-            animation: 'fade_from_bottom',
-          }}>
-          <Stack.Screen name="index" />
-          <Stack.Screen name="intro" />
-          <Stack.Screen name="onboarding" />
-          <Stack.Screen
-            name="paywall"
-            options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
-          />
-          <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
-          <Stack.Screen
-            name="scan"
-            options={{ presentation: 'fullScreenModal', animation: 'slide_from_bottom' }}
-          />
-          <Stack.Screen
-            name="settings"
-            options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
-          />
-          <Stack.Screen name="admin" options={{ animation: 'fade' }} />
-          <Stack.Screen name="privacy" options={{ animation: 'fade' }} />
-          <Stack.Screen name="terms" options={{ animation: 'fade' }} />
-        </Stack>
+        <SplashGate fontsLoaded={!!fontsLoaded}>
+          {fontsLoaded ? (
+            <>
+              <MealRemindersBootstrap />
+              <StatusBar style="light" />
+              <Stack
+                screenOptions={{
+                  headerShown: false,
+                  contentStyle: { backgroundColor: colors.bg },
+                  animation: 'fade_from_bottom',
+                }}>
+                <Stack.Screen name="index" />
+                <Stack.Screen name="intro" />
+                <Stack.Screen name="onboarding" />
+                <Stack.Screen
+                  name="paywall"
+                  options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+                />
+                <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
+                <Stack.Screen
+                  name="scan"
+                  options={{ presentation: 'fullScreenModal', animation: 'slide_from_bottom' }}
+                />
+                <Stack.Screen
+                  name="settings"
+                  options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+                />
+                <Stack.Screen name="admin" options={{ animation: 'fade' }} />
+                <Stack.Screen name="privacy" options={{ animation: 'fade' }} />
+                <Stack.Screen name="terms" options={{ animation: 'fade' }} />
+              </Stack>
+            </>
+          ) : (
+            <View style={{ flex: 1, backgroundColor: colors.bg }} />
+          )}
+        </SplashGate>
       </SessionProvider>
     </GestureHandlerRootView>
   );

@@ -49,28 +49,26 @@ export default function TodayScreen() {
 
   const load = useCallback(async () => {
     try {
-      setLogs(await fetchLogsForDate(todayISODate()));
+      if (isPro(profile)) {
+        setScansLeft(null);
+        setLogs(await fetchLogsForDate(todayISODate()));
+      } else {
+        const [logsData, used] = await Promise.all([
+          fetchLogsForDate(todayISODate()),
+          countTodayPhotoScans(),
+        ]);
+        setLogs(logsData);
+        setScansLeft(remainingFreeScans(used, profile));
+      }
     } catch (e) {
       console.error('Failed to load logs:', e);
     }
-  }, []);
+  }, [profile?.is_premium, profile?.created_at]);
 
   useFocusEffect(
     useCallback(() => {
       load();
     }, [load]),
-  );
-
-  useFocusEffect(
-    useCallback(() => {
-      if (isPro(profile)) {
-        setScansLeft(null);
-        return;
-      }
-      countTodayPhotoScans()
-        .then((used) => setScansLeft(remainingFreeScans(used, profile)))
-        .catch(() => setScansLeft(null));
-    }, [profile?.is_premium, profile?.created_at]),
   );
 
   useFocusEffect(

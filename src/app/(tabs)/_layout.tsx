@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { isDailyDragonLockedForToday } from '@/lib/character';
 import { useLayout } from '@/lib/layout';
-import { canScan } from '@/lib/paywall-gate';
+import { canScan, isInHabitGracePeriod, isPro } from '@/lib/paywall-gate';
 import { countTodayPhotoScans } from '@/lib/api';
 import { todayISODate } from '@/lib/protein';
 import { useSession } from '@/lib/session';
@@ -27,7 +27,7 @@ function ScanTabBar({ state, navigation }: TabBarProps) {
       router.push('/(tabs)/today');
       return;
     }
-    if (profile && !profile.is_premium) {
+    if (profile && !isPro(profile) && !isInHabitGracePeriod(profile)) {
       countTodayPhotoScans()
         .then((used) => {
           if (!canScan(profile, used)) router.push('/paywall');
