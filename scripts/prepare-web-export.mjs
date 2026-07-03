@@ -56,6 +56,9 @@ function main() {
   console.log('Updated dist/index.html with branded favicon links');
 
   const vercelConfig = {
+    buildCommand: '',
+    installCommand: '',
+    framework: null,
     rewrites: [{ source: '/(.*)', destination: '/index.html' }],
   };
   fs.writeFileSync(path.join(root, 'dist', 'vercel.json'), `${JSON.stringify(vercelConfig, null, 2)}\n`);

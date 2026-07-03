@@ -38,12 +38,16 @@ jobs:
         run: |
           set -euo pipefail
           SCOPE="${VERCEL_SCOPE:-niketh-puttas-projects}"
-          DEPLOY_URL="$(npx vercel deploy --prod --yes --prebuilt --token "${{ secrets.VERCEL_TOKEN }}" --scope "$SCOPE" 2>/dev/null | tail -n 1 || npx vercel deploy --prod --yes --prebuilt --token "${{ secrets.VERCEL_TOKEN }}" | tail -n 1)"
+          DEPLOY_URL="$(npx vercel deploy --prod --yes --prebuilt --token "${{ secrets.VERCEL_TOKEN }}" --scope "$SCOPE" 2>&1 | rg -o 'https://[a-z0-9-]+\.vercel\.app' | tail -n 1)"
+          if [ -z "$DEPLOY_URL" ]; then
+            echo "::error::Could not parse marketing deploy URL"
+            exit 1
+          fi
           for domain in proteinquest.app www.proteinquest.app proteinquest.vercel.app proteinlens.vercel.app; do
             npx vercel alias set "$DEPLOY_URL" "$domain" --token "${{ secrets.VERCEL_TOKEN }}" --scope "$SCOPE" 2>/dev/null || \
             npx vercel alias set "$DEPLOY_URL" "$domain" --token "${{ secrets.VERCEL_TOKEN }}" || true
           done
-          echo "Marketing: https://proteinquest.app"
+          echo "Marketing: https://proteinquest.app ($DEPLOY_URL)"
 
       - name: Build web app (Expo export)
         run: |
@@ -56,9 +60,14 @@ jobs:
         run: |
           set -euo pipefail
           SCOPE="${VERCEL_SCOPE:-niketh-puttas-projects}"
-          APP_DEPLOY_URL="$(npx vercel deploy dist --prod --yes --token "${{ secrets.VERCEL_TOKEN }}" --scope "$SCOPE" 2>/dev/null | tail -n 1 || npx vercel deploy dist --prod --yes --token "${{ secrets.VERCEL_TOKEN }}" | tail -n 1)"
+          cd dist
+          APP_DEPLOY_URL="$(npx vercel deploy --prod --yes --token "${{ secrets.VERCEL_TOKEN }}" --scope "$SCOPE" 2>&1 | rg -o 'https://[a-z0-9-]+\.vercel\.app' | tail -n 1)"
+          if [ -z "$APP_DEPLOY_URL" ]; then
+            echo "::error::Could not parse web app deploy URL"
+            exit 1
+          fi
           for domain in app.proteinquest.app app.proteinquest.vercel.app; do
             npx vercel alias set "$APP_DEPLOY_URL" "$domain" --token "${{ secrets.VERCEL_TOKEN }}" --scope "$SCOPE" 2>/dev/null || \
             npx vercel alias set "$APP_DEPLOY_URL" "$domain" --token "${{ secrets.VERCEL_TOKEN }}" || true
           done
-          echo "Web app: https://app.proteinquest.app"
+          echo "Web app: https://app.proteinquest.app ($APP_DEPLOY_URL)"
