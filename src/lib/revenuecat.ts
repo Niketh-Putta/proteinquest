@@ -90,13 +90,23 @@ export interface OfferingsStatus {
   message?: string;
 }
 
-const OFFERINGS_UNAVAILABLE_MESSAGE =
-  'Subscriptions are not available yet. In App Store Connect, ensure pro_weekly and pro_yearly are Ready to Submit (metadata, pricing, review screenshot), linked in RevenueCat, and the In-App Purchase API key is uploaded. See store/PAYMENTS.md.';
+function offeringsUnavailableMessage(): string {
+  if (Platform.OS === 'android') {
+    return (
+      'Subscriptions are not available yet. In Google Play Console, ensure pro_weekly and pro_yearly are Active, ' +
+      "linked in RevenueCat offering 'default' ($rc_weekly, $rc_annual), and the Play service account is uploaded to RevenueCat. See store/PAYMENTS.md."
+    );
+  }
+  return (
+    'Subscriptions are not available yet. In App Store Connect, ensure pro_weekly and pro_yearly are Ready to Submit ' +
+    '(metadata, pricing, review screenshot), linked in RevenueCat, and the In-App Purchase API key is uploaded. See store/PAYMENTS.md.'
+  );
+}
 
 function offeringsConfigurationError(e: unknown): string | null {
   const message = e instanceof Error ? e.message : String(e);
   if (/configuration|could not be fetched|offerings empty|why-are-offerings-empty/i.test(message)) {
-    return OFFERINGS_UNAVAILABLE_MESSAGE;
+    return offeringsUnavailableMessage();
   }
   return null;
 }
@@ -119,12 +129,12 @@ export async function getOfferingsStatus(): Promise<OfferingsStatus> {
     const packages = current?.availablePackages ?? [];
     const hasPlans = packages.some(isWeeklyOrYearlyPackage);
     if (hasPlans) return { ready: true };
-    return { ready: false, message: OFFERINGS_UNAVAILABLE_MESSAGE };
+    return { ready: false, message: offeringsUnavailableMessage() };
   } catch (e) {
     console.warn('[RevenueCat] getOfferings failed:', e);
     return {
       ready: false,
-      message: offeringsConfigurationError(e) ?? OFFERINGS_UNAVAILABLE_MESSAGE,
+      message: offeringsConfigurationError(e) ?? offeringsUnavailableMessage(),
     };
   }
 }
@@ -211,7 +221,7 @@ export async function purchasePlan(planId: string): Promise<boolean> {
 
   const status = await getOfferingsStatus();
   if (!status.ready) {
-    throw new Error(status.message ?? OFFERINGS_UNAVAILABLE_MESSAGE);
+    throw new Error(status.message ?? offeringsUnavailableMessage());
   }
 
   const Purchases = (await import('react-native-purchases')).default;
@@ -219,7 +229,7 @@ export async function purchasePlan(planId: string): Promise<boolean> {
   const current = offerings.current ?? Object.values(offerings.all ?? {})[0];
   const packages = (current?.availablePackages ?? []).filter(isWeeklyOrYearlyPackage);
   if (packages.length === 0) {
-    throw new Error(OFFERINGS_UNAVAILABLE_MESSAGE);
+    throw new Error(offeringsUnavailableMessage());
   }
 
   const matchesPlan = (p: (typeof packages)[number]) => {
