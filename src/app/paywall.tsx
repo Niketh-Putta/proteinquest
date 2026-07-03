@@ -156,9 +156,14 @@ export default function Paywall() {
         </Text>
 
         <Button
-          title="Subscribe"
+          title={
+            !provider.isConfigured && !__DEV__
+              ? 'Subscriptions unavailable'
+              : 'Subscribe'
+          }
           onPress={handlePurchase}
           loading={busy}
+          disabled={!provider.isConfigured && !__DEV__}
           style={{ marginTop: spacing.md }}
         />
 

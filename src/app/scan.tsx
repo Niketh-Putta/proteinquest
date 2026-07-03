@@ -25,7 +25,7 @@ import Animated, {
   withSequence,
   withTiming,
 } from 'react-native-reanimated';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/Button';
 import { Celebration } from '@/components/Celebration';
@@ -88,6 +88,9 @@ function ScanSweep() {
 export default function ScanScreen() {
   const { session, profile, saveProfile } = useSession();
   const { horizontalPad, contentWidth, contentMaxWidth } = useLayout();
+  const insets = useSafeAreaInsets();
+  /** Keep close control below Dynamic Island / front camera — never flush to screen top. */
+  const headerTop = Math.max(insets.top + spacing.sm, 56);
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
 
@@ -285,17 +288,28 @@ export default function ScanScreen() {
 
   const cameraReady = permission?.granted;
 
+  const headerTitle =
+    phase === 'result' ? 'CONFIRM & LOG' : phase === 'analyzing' ? 'ANALYZING' : 'SCAN MEAL';
+
+  const renderHeader = (overlay = false) => (
+    <View
+      style={[
+        styles.topBar,
+        overlay && styles.topBarOverlay,
+        { paddingTop: headerTop },
+      ]}
+      pointerEvents={overlay ? 'box-none' : 'auto'}>
+      <Pressable onPress={goHome} hitSlop={12} style={styles.iconBtn}>
+        <Ionicons name="close" size={22} color={colors.text} />
+      </Pressable>
+      <Text style={[styles.topTitle, overlay && styles.topTitleOverlay]}>{headerTitle}</Text>
+      <View style={{ width: 44 }} />
+    </View>
+  );
+
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-      <View style={styles.topBar}>
-        <Pressable onPress={goHome} hitSlop={12} style={styles.iconBtn}>
-          <Ionicons name="close" size={22} color={colors.text} />
-        </Pressable>
-        <Text style={styles.topTitle}>
-          {phase === 'result' ? 'CONFIRM & LOG' : phase === 'analyzing' ? 'ANALYZING' : 'SCAN MEAL'}
-        </Text>
-        <View style={{ width: 44 }} />
-      </View>
+    <SafeAreaView style={styles.safe} edges={['bottom']}>
+      {phase !== 'camera' || demoAutoScan ? renderHeader() : null}
 
       {error ? (
         <Animated.View entering={FadeInDown.duration(320)} style={styles.errorBanner}>
@@ -309,6 +323,7 @@ export default function ScanScreen() {
 
       {phase === 'camera' && !demoAutoScan && (
         <View style={styles.cameraWrap}>
+          {renderHeader(true)}
           {cameraReady ? (
             <CameraView ref={cameraRef} style={styles.camera} facing="back" />
           ) : (
@@ -497,13 +512,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    paddingBottom: spacing.sm,
+  },
+  topBarOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+  },
+  topTitleOverlay: {
+    color: colors.text,
+    textShadowColor: 'rgba(0,0,0,0.6)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
   },
   iconBtn: {
     width: 44,
     height: 44,
     alignItems: 'center',
     justifyContent: 'center',
+    borderRadius: 22,
+    backgroundColor: 'rgba(12, 11, 16, 0.72)',
   },
   topTitle: {
     fontFamily: fonts.mono,

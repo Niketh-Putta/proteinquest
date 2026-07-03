@@ -53,6 +53,10 @@ jobs:
           EXPO_PUBLIC_REVENUECAT_IOS_KEY: ${{ secrets.EXPO_PUBLIC_REVENUECAT_IOS_KEY }}
           EXPO_PUBLIC_REVENUECAT_ANDROID_KEY: ${{ secrets.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY }}
         run: |
+          if [ -z "$EXPO_PUBLIC_REVENUECAT_IOS_KEY" ]; then
+            echo "::error::Missing GitHub secret EXPO_PUBLIC_REVENUECAT_IOS_KEY (appl_… from RevenueCat). Run: node scripts/sync-revenuecat-keys.mjs"
+            exit 1
+          fi
           for name in EXPO_PUBLIC_SUPABASE_URL EXPO_PUBLIC_SUPABASE_KEY EXPO_PUBLIC_REVENUECAT_IOS_KEY EXPO_PUBLIC_REVENUECAT_ANDROID_KEY; do
             val="${!name:-}"
             if [ -n "$val" ]; then
