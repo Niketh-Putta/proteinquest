@@ -74,7 +74,7 @@ jobs:
             fi
           done
 
-      - name: Build Android AAB
+      - name: Build Android AAB (local runner — bypasses EAS cloud monthly quota)
         id: eas_build
         env:
           EAS_BUILD_NO_EXPO_GO_WARNING: 'true'
@@ -86,32 +86,9 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p store
-          npx eas-cli build --platform android --profile production --non-interactive --wait --json > store/eas-build.json
-          BUILD_ID="$(node -e "const j=require('./store/eas-build.json'); const b=Array.isArray(j)?j[0]:j; process.stdout.write(b?.id||'');")"
-          ARTIFACT_URL="$(node -e "const j=require('./store/eas-build.json'); const b=Array.isArray(j)?j[0]:j; process.stdout.write(b?.artifacts?.applicationArchiveUrl||'');")"
-          if [ -z "$BUILD_ID" ]; then
-            echo "::error::Could not parse EAS build id from JSON output."
-            cat store/eas-build.json
-            exit 1
-          fi
-          echo "build_id=$BUILD_ID" >> "$GITHUB_OUTPUT"
-          if [ -n "$ARTIFACT_URL" ]; then
-            echo "artifact_url=$ARTIFACT_URL" >> "$GITHUB_OUTPUT"
-          fi
-          echo "EAS build id: $BUILD_ID"
-          echo "Build page: https://expo.dev/accounts/nikethputta1/projects/proteinquest/builds/$BUILD_ID"
-
-      - name: Download AAB from EAS
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        run: |
-          set -euo pipefail
-          if [ -n "${{ steps.eas_build.outputs.artifact_url }}" ]; then
-            curl -fsSL "${{ steps.eas_build.outputs.artifact_url }}" -o store/proteinquest.aab
-          else
-            node scripts/download-eas-aab.mjs "${{ steps.eas_build.outputs.build_id }}" --out=store/proteinquest.aab
-          fi
+          npx eas-cli build --platform android --profile production --local --non-interactive --output store/proteinquest.aab
           ls -lh store/proteinquest.aab
+          echo "build_id=local-$(date +%s)" >> "$GITHUB_OUTPUT"
 
       - name: Upload AAB artifact
         uses: actions/upload-artifact@v4

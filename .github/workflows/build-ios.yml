@@ -170,6 +170,27 @@ jobs:
           echo "build_id=$BUILD_ID" >> "$GITHUB_OUTPUT"
           echo "Build: https://expo.dev/accounts/nikethputta1/projects/proteinquest/builds/$BUILD_ID"
 
+      - name: Submit for App Store review
+        if: steps.asc.outputs.present == 'true' && steps.ios_build.outputs.build_id != ''
+        env:
+          APPLE_ASC_API_KEY_P8: ${{ secrets.APPLE_ASC_API_KEY_P8 }}
+          APPLE_ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
+          EXPO_ASC_KEY_ID: ${{ steps.asc.outputs.key_id }}
+          EXPO_ASC_API_KEY_PATH: ./store/AuthKey_${{ steps.asc.outputs.key_id }}.p8
+        run: |
+          set -euo pipefail
+          VERSION="$(node -e "console.log(require('./app.json').expo.version)")"
+          echo "Waiting for ASC build processing (up to 30 min)…"
+          for i in $(seq 1 60); do
+            if node scripts/submit-ios-version.mjs --version="$VERSION" 2>&1; then
+              exit 0
+            fi
+            echo "Attempt $i/60 — build not ready yet, retry in 30s…"
+            sleep 30
+          done
+          echo "::error::Timed out waiting to submit iOS $VERSION for review"
+          exit 1
+
       - name: Summary
         if: steps.ios_build.outputs.build_id != ''
         run: |
