@@ -326,7 +326,7 @@ export default function LeagueTab() {
         : SITE_URL;
     const url = inviteUrl(profile, origin);
     if (!url) {
-      setInviteStatus('Preparing your invite link — try again in a moment.');
+      setInviteStatus('Preparing your invite link. Try again in a moment.');
       setTimeout(() => setInviteStatus(null), 2400);
       return;
     }
@@ -344,7 +344,7 @@ export default function LeagueTab() {
         setInviteLink(url);
         if (nav?.clipboard?.writeText) {
           await nav.clipboard.writeText(url);
-          setInviteStatus('Link copied — send it to a friend. They auto-join when they open it.');
+          setInviteStatus('Link copied. Send it to a friend. They auto-join when they open it.');
         } else {
           setInviteStatus('Copy this link and send it to a friend.');
         }
@@ -419,7 +419,7 @@ export default function LeagueTab() {
                   await (
                     navigator as unknown as { clipboard: { writeText: (t: string) => Promise<void> } }
                   ).clipboard.writeText(inviteLink);
-                  setInviteStatus('Link copied — send it to a friend. They auto-join when they open it.');
+                  setInviteStatus('Link copied. Send it to a friend. They auto-join when they open it.');
                 }
               }}
               style={[styles.inviteLinkRow, pressableWeb]}>

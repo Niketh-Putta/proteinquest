@@ -55,6 +55,11 @@ export async function initRevenueCat(appUserId: string): Promise<void> {
   await initPromise;
 }
 
+/** Wait until RevenueCat.configure has finished (no-op if never started). */
+export async function ensureRevenueCatReady(): Promise<void> {
+  if (initPromise) await initPromise;
+}
+
 export interface RevenueCatPlan {
   id: string;
   title: string;
@@ -94,7 +99,7 @@ export async function getRevenueCatPlans(): Promise<RevenueCatPlan[]> {
       id: REVENUECAT_PRODUCT_IDS.weekly,
       title: 'Weekly',
       price: '\u00A36.99/wk',
-      caption: 'Flexible — cancel anytime',
+      caption: 'Flexible. Cancel anytime',
       packageIdentifier: '$rc_weekly',
     },
     {
@@ -132,7 +137,7 @@ export async function getRevenueCatPlans(): Promise<RevenueCatPlan[]> {
         id: isYearly ? REVENUECAT_PRODUCT_IDS.yearly : REVENUECAT_PRODUCT_IDS.weekly,
         title: isYearly ? 'Yearly' : 'Weekly',
         price: pkg.product.priceString,
-        caption: isYearly ? 'Save 92% vs weekly' : 'Flexible — cancel anytime',
+        caption: isYearly ? 'Save 92% vs weekly' : 'Flexible. Cancel anytime',
         packageIdentifier: pkg.identifier,
       });
     }

@@ -20,6 +20,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { uploadAvatar } from '@/lib/api';
 import { BillingSheet } from '@/components/BillingSheet';
+import { SubscriptionBillingInfo } from '@/components/SubscriptionBillingInfo';
 import { DragonEvolutionGallery } from '@/components/DragonEvolutionGallery';
 import { GoalEditor } from '@/components/GoalEditor';
 import { dragonById, displayDragonId, isDailyDragonLockedForToday } from '@/lib/character';
@@ -285,7 +286,7 @@ export default function SettingsScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={styles.reminderTitle}>Feed your dragon</Text>
                 <Text style={styles.reminderHint}>
-                  Daily nudges to log meals and snacks — tap opens scan.
+                  Daily nudges to log meals and snacks. Tap opens scan.
                 </Text>
               </View>
               <Switch
@@ -331,6 +332,13 @@ export default function SettingsScreen() {
               </View>
               <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
             </Pressable>
+            {Platform.OS !== 'web' ? (
+              <SubscriptionBillingInfo
+                key={`${session?.user.id ?? 'anon'}-${profile?.is_premium ? 'pro' : 'free'}`}
+                userId={session?.user.id}
+                isPro={!!profile?.is_premium}
+              />
+            ) : null}
           </View>
 
           {profile && isDailyDragonLockedForToday(profile, todayISODate()) ? (

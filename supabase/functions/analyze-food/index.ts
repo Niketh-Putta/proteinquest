@@ -641,11 +641,11 @@ function normalize(raw: Record<string, unknown>) {
 
   if (total >= 150) {
     confidence = confidence === "high" ? "medium" : confidence;
-    if (!notes) notes = "Very high protein estimate — double-check portion size";
+    if (!notes) notes = "Very high protein estimate. Double-check portion size";
   }
   if (items.some((i) => i.confidence === "low")) {
     confidence = "low";
-    if (!notes) notes = "Portion size unclear — adjust total if needed";
+    if (!notes) notes = "Portion size unclear. Adjust total if needed";
   }
 
   let caloriesSum = items.reduce((s, i) => s + i.calories_g, 0);

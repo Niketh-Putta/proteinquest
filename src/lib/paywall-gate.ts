@@ -72,8 +72,8 @@ export function remainingFreeScans(
 
 export function scansLimitLabel(scansUsedToday: number, profile: Profile | null | undefined): string {
   if (isPro(profile)) return 'Unlimited scans';
-  if (isInHabitGracePeriod(profile)) return 'Unlimited scans — first 2 days free';
+  if (isInHabitGracePeriod(profile)) return 'Unlimited scans, first 2 days free';
   const left = remainingFreeScans(scansUsedToday, profile);
-  if (left === 0) return 'Out of free scans — go Pro';
+  if (left === 0) return 'Out of free scans. Go Pro';
   return `${left} free scan${left === 1 ? '' : 's'} left today`;
 }

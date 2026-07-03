@@ -217,7 +217,7 @@ export default function TodayScreen() {
             <Text style={styles.scansPillText}>
               {scansLeft > 0
                 ? `${scansLeft} free scan${scansLeft === 1 ? '' : 's'} left today`
-                : 'Out of free scans — go Pro'}
+                : 'Out of free scans. Go Pro'}
             </Text>
           </Pressable>
         ) : null}

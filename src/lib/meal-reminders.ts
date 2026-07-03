@@ -17,7 +17,7 @@ export interface MealReminderSlot {
   messages: { title: string; body: string }[];
 }
 
-/** Daily meal + snack reminders — gentle nudges to log and feed your dragon. */
+/** Daily meal + snack reminders. Gentle nudges to log and feed your dragon. */
 export const MEAL_REMINDER_SLOTS: MealReminderSlot[] = [
   {
     id: 'breakfast',
@@ -26,9 +26,9 @@ export const MEAL_REMINDER_SLOTS: MealReminderSlot[] = [
     kind: 'breakfast',
     label: 'Breakfast',
     messages: [
-      { title: 'Morning fuel', body: 'Log breakfast and feed your dragon.' },
-      { title: 'Rise & protein', body: 'Snap your breakfast — your dragon is waking up hungry.' },
-      { title: 'Start the streak', body: 'First meal of the day counts. Log it now.' },
+      { title: 'Morning fuel', body: 'Time for breakfast. Log it and feed your dragon.' },
+      { title: 'Rise & protein', body: 'Snap your breakfast. Your dragon is waking up hungry.' },
+      { title: 'Start the streak', body: 'First meal of the day counts. Log breakfast now.' },
     ],
   },
   {
@@ -38,8 +38,8 @@ export const MEAL_REMINDER_SLOTS: MealReminderSlot[] = [
     kind: 'snack',
     label: 'Morning snack',
     messages: [
-      { title: 'Snack check-in', body: 'Quick scan keeps your protein streak alive.' },
-      { title: 'Little bite?', body: 'Log a snack — your dragon loves the attention.' },
+      { title: 'Morning snack time', body: 'Time for a morning snack. Quick scan keeps your streak alive.' },
+      { title: 'Little bite?', body: 'Log your morning snack. Your dragon loves the attention.' },
     ],
   },
   {
@@ -49,7 +49,7 @@ export const MEAL_REMINDER_SLOTS: MealReminderSlot[] = [
     kind: 'lunch',
     label: 'Lunch',
     messages: [
-      { title: 'Lunchtime', body: 'Your dragon is ready — log the meal.' },
+      { title: 'Lunchtime', body: 'Time for lunch. Your dragon is ready for the meal.' },
       { title: 'Midday fuel', body: 'Time to scan lunch and stack protein.' },
       { title: 'Feed your dragon', body: 'Log lunch before the afternoon slump hits.' },
     ],
@@ -61,8 +61,8 @@ export const MEAL_REMINDER_SLOTS: MealReminderSlot[] = [
     kind: 'snack',
     label: 'Afternoon snack',
     messages: [
-      { title: 'Snack o\'clock', body: 'Grab something? Log it and keep your dragon fed.' },
-      { title: 'Protein pit stop', body: 'A quick scan now beats guessing later.' },
+      { title: 'Afternoon snack time', body: 'Time for an afternoon snack. Log it and keep your dragon fed.' },
+      { title: 'Protein pit stop', body: 'Grab an afternoon snack? A quick scan beats guessing later.' },
     ],
   },
   {
@@ -72,9 +72,9 @@ export const MEAL_REMINDER_SLOTS: MealReminderSlot[] = [
     kind: 'dinner',
     label: 'Dinner',
     messages: [
-      { title: 'Dinner call', body: 'Log tonight\'s meal and feed your dragon.' },
-      { title: 'Evening plate', body: 'Scan dinner — close the day strong on protein.' },
-      { title: 'Dragon\'s dinner bell', body: 'Time to log your meal before you unwind.' },
+      { title: 'Dinner call', body: 'Time for dinner. Log tonight\'s meal and feed your dragon.' },
+      { title: 'Evening plate', body: 'Scan dinner and close the day strong on protein.' },
+      { title: 'Dragon\'s dinner bell', body: 'Time to log dinner before you unwind.' },
     ],
   },
   {
@@ -84,8 +84,8 @@ export const MEAL_REMINDER_SLOTS: MealReminderSlot[] = [
     kind: 'snack',
     label: 'Evening snack',
     messages: [
-      { title: 'Late bite?', body: 'Log a snack so your day stays complete.' },
-      { title: 'One more scan', body: 'Your dragon doesn\'t sleep on missed meals.' },
+      { title: 'Evening snack time', body: 'Time for an evening snack so your day stays complete.' },
+      { title: 'One more scan', body: 'Log your evening snack. Your dragon doesn\'t sleep on missed meals.' },
     ],
   },
 ];

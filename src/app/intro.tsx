@@ -313,7 +313,7 @@ export default function IntroScreen() {
 
   async function finish() {
     if (sessionLoading || !session) {
-      setError('Still connecting — please wait a moment and try again.');
+      setError('Still connecting. Please wait a moment and try again.');
       return;
     }
     setSaving(true);

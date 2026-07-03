@@ -375,7 +375,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const saveProfile = useCallback(async (updates: Partial<Profile>) => {
     const nextSession = await withTimeout(ensureAuthSession(), AUTH_VALIDATE_MS, null);
     if (!nextSession) {
-      throw new Error('Still connecting — please wait a moment and try again.');
+      throw new Error('Still connecting. Please wait a moment and try again.');
     }
     setSession(nextSession);
     const userId = nextSession.user.id;

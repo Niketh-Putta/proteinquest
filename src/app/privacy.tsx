@@ -111,7 +111,7 @@ export default function PrivacyScreen() {
           </Paragraph>
           <Bullet>
             Mobile (iOS/Android): purchases are processed by Apple or Google via RevenueCat. We
-            receive subscription status and an anonymous app user ID — not your full payment card
+            receive subscription status and an anonymous app user ID, not your full payment card
             details.
           </Bullet>
           <Bullet>

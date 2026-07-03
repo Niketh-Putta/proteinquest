@@ -234,13 +234,13 @@ export function Celebration({
                 entering={FadeInUp.delay(showEvolution ? 280 : 240).springify()}
                 style={styles.subline}>
                 {showEvolution
-                  ? `New form unlocked — ${stage.tagline}`
+                  ? `New form unlocked: ${stage.tagline}`
                   : isQuickLevelUp && perkUnlocked
                     ? perkUnlocked
                     : isQuickLevelUp
                       ? `${dragon.name} grows stronger. Keep hitting your goal.`
                       : leveledUp && perkUnlocked
-                        ? `Perk unlocked — ${perkUnlocked}`
+                        ? `Perk unlocked: ${perkUnlocked}`
                         : leveledUp
                           ? `${dragon.name} grows stronger. Keep hitting your goal.`
                           : `${dragon.name} is fed. Keep reaching.`}
