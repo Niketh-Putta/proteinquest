@@ -6,11 +6,11 @@
     "height": 1920
   },
   "files": [
-    "store/screenshots/01-today.png",
-    "store/screenshots/02-scan.png",
-    "store/screenshots/03-breakdown.png",
     "store/screenshots/04-evolve.png",
-    "store/screenshots/05-dragons.png"
+    "store/screenshots/05-dragons.png",
+    "store/screenshots/01-today.png",
+    "store/screenshots/03-breakdown.png",
+    "store/screenshots/02-scan.png"
   ],
   "notes": "Branded marketing screenshots (1080x1920). Upload to Play Console → Store listing → Phone screenshots in this order."
 }

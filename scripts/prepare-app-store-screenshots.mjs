@@ -16,11 +16,11 @@ const BG = '#0C0B10';
 const BG_END = '#151320';
 
 const SCREENS = [
-  { src: '01-today.png' },
-  { src: '02-scan.png' },
-  { src: '03-breakdown.png' },
-  { src: '04-evolve.png' },
-  { src: '05-dragons.png' },
+  { src: '04-evolve.png' }, // Hit your protein goal every day
+  { src: '05-dragons.png' }, // Just take a photo
+  { src: '01-today.png' }, // See where protein comes from
+  { src: '03-breakdown.png' }, // Choose your dragon
+  { src: '02-scan.png' }, // Feed your dragon to evolve
 ];
 
 const FORMATS = {

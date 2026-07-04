@@ -1,5 +1,5 @@
 # iOS App Store build + submit via GitHub EXPO_TOKEN + APPLE_ASC_API_KEY_P8.
-# Phone-only: set EXPO_APPLE_ID + EXPO_APPLE_APP_SPECIFIC_PASSWORD secrets for credential bootstrap.
+# Local EAS build on macOS bypasses cloud quota on the free plan.
 name: Build and submit iOS
 
 on:
@@ -22,7 +22,11 @@ on:
       - 'scripts/setup-expo-ios-credentials.cjs'
       - 'scripts/validate-asc-key.mjs'
       - 'scripts/submit-ios-version.mjs'
+      - 'scripts/asc-upload-screenshots.mjs'
+      - 'scripts/prepare-app-store-screenshots.mjs'
       - 'store/app-store-listing.json'
+      - 'store/screenshots/iphone67/**'
+      - 'store/screenshots/ipad13/**'
 
 concurrency:
   group: ios-production
@@ -30,7 +34,8 @@ concurrency:
 
 jobs:
   build-and-submit:
-    runs-on: ubuntu-latest
+    runs-on: macos-15
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
 
@@ -147,10 +152,9 @@ jobs:
           export EXPO_ASC_ISSUER_ID="${APPLE_ASC_ISSUER_ID:-75ae36fa-911c-462c-818e-f1bcc4222c24}"
           node scripts/setup-expo-ios-credentials.cjs
 
-      - name: Build iOS production
+      - name: Build iOS production (local)
         id: ios_build
         if: inputs.submit_only != true
-        continue-on-error: true
         env:
           EAS_BUILD_NO_EXPO_GO_WARNING: 'true'
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
@@ -161,6 +165,9 @@ jobs:
           APPLE_ASC_API_KEY_P8: ${{ secrets.APPLE_ASC_API_KEY_P8 }}
           APPLE_ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
           EXPO_ASC_KEY_ID: ${{ steps.asc.outputs.key_id }}
+          FASTLANE_SKIP_UPDATE_CHECK: '1'
+          FASTLANE_HIDE_GITHUB_ISSUES: '1'
+          CI: '1'
         run: |
           set -euo pipefail
           mkdir -p store
@@ -172,18 +179,36 @@ jobs:
             if(!key) { console.error('Missing APPLE_ASC_API_KEY_P8'); process.exit(1); }
             fs.writeFileSync('store/AuthKey_'+process.env.KEY_ID+'.p8', key);
           "
-          ARGS=(--platform ios --profile production --non-interactive --wait --json)
-          if [ "${{ steps.asc.outputs.present }}" = "true" ]; then
-            ARGS+=(--auto-submit)
-          fi
-          npx eas-cli build "${ARGS[@]}" > store/eas-ios-build.json
-          BUILD_ID="$(node -e "const j=require('./store/eas-ios-build.json'); const b=Array.isArray(j)?j[0]:j; process.stdout.write(b?.id||'');")"
-          if [ -z "$BUILD_ID" ]; then
-            echo "::warning::EAS build did not start (quota or billing). Will submit latest VALID build from App Store Connect."
-            exit 1
-          fi
-          echo "build_id=$BUILD_ID" >> "$GITHUB_OUTPUT"
-          echo "Build: https://expo.dev/accounts/nikethputta1/projects/proteinquest/builds/$BUILD_ID"
+          npx eas-cli build --platform ios --profile production --local --non-interactive --output store/ProteinQuest.ipa
+          ls -lh store/ProteinQuest.ipa
+          echo "ipa_built=true" >> "$GITHUB_OUTPUT"
+
+      - name: Upload IPA to App Store Connect
+        if: steps.asc.outputs.present == 'true' && inputs.submit_only != true && steps.ios_build.outputs.ipa_built == 'true'
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          APPLE_ASC_API_KEY_P8: ${{ secrets.APPLE_ASC_API_KEY_P8 }}
+          APPLE_ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
+          EXPO_ASC_KEY_ID: ${{ steps.asc.outputs.key_id }}
+        run: |
+          set -euo pipefail
+          export KEY_ID="${{ steps.asc.outputs.key_id }}"
+          node -e "
+            const fs=require('fs');
+            const {normalizeP8}=require('./scripts/normalize-p8.cjs');
+            const key=normalizeP8(process.env.APPLE_ASC_API_KEY_P8||'');
+            fs.writeFileSync('store/AuthKey_'+process.env.KEY_ID+'.p8', key);
+          "
+          npx eas-cli submit --platform ios --profile production --path store/ProteinQuest.ipa --non-interactive
+
+      - name: Upload App Store screenshots
+        if: steps.asc.outputs.present == 'true'
+        env:
+          APPLE_ASC_API_KEY_P8: ${{ secrets.APPLE_ASC_API_KEY_P8 }}
+          APPLE_ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
+          EXPO_ASC_KEY_ID: ${{ steps.asc.outputs.key_id }}
+          EXPO_ASC_API_KEY_PATH: ./store/AuthKey_${{ steps.asc.outputs.key_id }}.p8
+        run: node scripts/asc-upload-screenshots.mjs
 
       - name: App Store status (before submit)
         if: steps.asc.outputs.present == 'true'
@@ -205,7 +230,7 @@ jobs:
           set -euo pipefail
           VERSION="$(node -e "console.log(require('./app.json').expo.version)")"
           echo "Submitting iOS $VERSION for App Store review…"
-          for i in $(seq 1 20); do
+          for i in $(seq 1 45); do
             set +e
             OUT="$(node scripts/submit-ios-version.mjs --version="$VERSION" 2>&1)"
             CODE=$?
@@ -218,7 +243,7 @@ jobs:
               exit 0
             fi
             if echo "$OUT" | grep -qE "No VALID build found|No VALID build for iOS"; then
-              echo "Attempt $i/20 — ASC build still processing, retry in 60s…"
+              echo "Attempt $i/45 — ASC build still processing, retry in 60s…"
               sleep 60
               continue
             fi
@@ -232,10 +257,11 @@ jobs:
         if: always()
         run: |
           echo "## iOS App Store pipeline" >> "$GITHUB_STEP_SUMMARY"
-          if [ -n "${{ steps.ios_build.outputs.build_id }}" ]; then
-            echo "Build: https://expo.dev/accounts/nikethputta1/projects/proteinquest/builds/${{ steps.ios_build.outputs.build_id }}" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ steps.ios_build.outputs.ipa_built }}" = "true" ]; then
+            echo "Local IPA built and uploaded to App Store Connect." >> "$GITHUB_STEP_SUMMARY"
+          elif [ "${{ steps.ios_build.outcome }}" = "skipped" ]; then
+            echo "Submit-only run — skipped local build." >> "$GITHUB_STEP_SUMMARY"
           elif [ "${{ steps.ios_build.outcome }}" = "failure" ]; then
-            echo "EAS build skipped or failed (likely free-plan quota). Submitted latest VALID build from App Store Connect if submit step succeeded." >> "$GITHUB_STEP_SUMMARY"
-            echo "Upgrade plan: https://expo.dev/accounts/nikethputta1/settings/billing" >> "$GITHUB_STEP_SUMMARY"
+            echo "Local iOS build failed — see logs." >> "$GITHUB_STEP_SUMMARY"
           fi
           echo "Check review status: App Store Connect → Apps → ProteinQuest → App Store → iOS App" >> "$GITHUB_STEP_SUMMARY"
