@@ -183,11 +183,30 @@ async function listReviewSubmissionItems(submissionId) {
   return r.json.data ?? [];
 }
 
+/** ASC reviewSubmissionItems use `inAppPurchases` (v1 discriminator), not `subscription`. */
+function reviewItemRelKey(type) {
+  if (type === 'appStoreVersions') return 'appStoreVersions';
+  if (type === 'inAppPurchases') return 'inAppPurchases';
+  return type;
+}
+
+async function subscriptionNeedsReview(subId) {
+  const r = await asc('GET', `/v1/subscriptions/${subId}`);
+  const state = r.json.data?.attributes?.state;
+  console.log('subscription', subId, 'state:', state ?? 'unknown');
+  return state === 'READY_TO_SUBMIT' || state === 'DEVELOPER_ACTION_NEEDED' || state === 'REJECTED';
+}
+
 async function ensureReviewSubmissionItem(submissionId, relationships) {
   const items = await listReviewSubmissionItems(submissionId);
   const relType = Object.keys(relationships)[0];
   const relId = relationships[relType]?.data?.id;
-  const existing = items.find((item) => item.relationships?.[relType]?.data?.id === relId);
+  const relKey = reviewItemRelKey(relationships[relType]?.data?.type ?? relType);
+  const existing = items.find(
+    (item) =>
+      item.relationships?.[relKey]?.data?.id === relId ||
+      item.relationships?.[relType]?.data?.id === relId,
+  );
   if (existing) {
     console.log('review item already present', relType, relId);
     return existing.id;
@@ -278,11 +297,15 @@ async function submitVersion(versionId, buildId) {
 
   const submissionId = await getOrCreateOpenReviewSubmission();
   await ensureReviewSubmissionItem(submissionId, {
-    appStoreVersion: { data: { type: 'appStoreVersions', id: versionId } },
+    appStoreVersions: { data: { type: 'appStoreVersions', id: versionId } },
   });
   for (const subId of SUBSCRIPTION_IDS) {
+    if (!(await subscriptionNeedsReview(subId))) {
+      console.log('skip subscription review item (already approved or not ready)', subId);
+      continue;
+    }
     await ensureReviewSubmissionItem(submissionId, {
-      subscription: { data: { type: 'subscriptions', id: subId } },
+      inAppPurchases: { data: { type: 'inAppPurchases', id: subId } },
     });
   }
 
