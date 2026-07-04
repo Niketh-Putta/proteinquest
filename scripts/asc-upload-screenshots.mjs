@@ -3,7 +3,27 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { asc } from './asc-api.mjs';
 
-const VERSION_LOC_ID = 'c5402307-79de-48e1-90b5-13e6133ff144';
+const APP_ID = '6781790996';
+const versionString = JSON.parse(fs.readFileSync('app.json', 'utf8')).expo.version;
+
+async function resolveVersionLocalizationId() {
+  const versions = await asc(
+    'GET',
+    `/v1/apps/${APP_ID}/appStoreVersions?filter[versionString]=${versionString}&limit=1`,
+  );
+  const versionId = versions.json.data?.[0]?.id;
+  if (!versionId) {
+    throw new Error(`No App Store version ${versionString} — create it in ASC first`);
+  }
+  const locs = await asc('GET', `/v1/appStoreVersions/${versionId}/appStoreVersionLocalizations`);
+  const locId = locs.json.data?.[0]?.id;
+  if (!locId) {
+    throw new Error(`No localization on version ${versionString} (${versionId})`);
+  }
+  console.log('Screenshot localization', versionString, locId);
+  return locId;
+}
+
 const sets = [
   {
     displayType: 'APP_IPHONE_67',
@@ -85,7 +105,8 @@ async function uploadScreenshot(setId, filePath) {
 for (const { displayType, dir } of sets) {
   const files = fs.readdirSync(dir).filter((f) => f.endsWith('.png')).sort();
   console.log(displayType, files.length, 'files');
-  const setId = await ensureScreenshotSet(VERSION_LOC_ID, displayType);
+  const versionLocId = await resolveVersionLocalizationId();
+  const setId = await ensureScreenshotSet(versionLocId, displayType);
   await clearScreenshotSet(setId);
   for (const f of files) {
     await uploadScreenshot(setId, path.join(dir, f));
