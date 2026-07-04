@@ -34,7 +34,7 @@ concurrency:
 
 jobs:
   build-and-submit:
-    runs-on: macos-15
+    runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
@@ -50,12 +50,6 @@ jobs:
       - name: Align Expo SDK packages
         if: inputs.submit_only != true
         run: npx expo install --fix
-
-      - name: Select Xcode 16.4
-        if: inputs.submit_only != true
-        run: |
-          sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
-          xcodebuild -version
 
       - name: Verify EXPO_TOKEN is configured
         if: inputs.submit_only != true
@@ -162,7 +156,7 @@ jobs:
           export EXPO_ASC_ISSUER_ID="${APPLE_ASC_ISSUER_ID:-75ae36fa-911c-462c-818e-f1bcc4222c24}"
           node scripts/setup-expo-ios-credentials.cjs
 
-      - name: Build iOS production (local)
+      - name: Build iOS production (EAS cloud)
         id: ios_build
         if: inputs.submit_only != true
         env:
@@ -175,9 +169,6 @@ jobs:
           APPLE_ASC_API_KEY_P8: ${{ secrets.APPLE_ASC_API_KEY_P8 }}
           APPLE_ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
           EXPO_ASC_KEY_ID: ${{ steps.asc.outputs.key_id }}
-          FASTLANE_SKIP_UPDATE_CHECK: '1'
-          FASTLANE_HIDE_GITHUB_ISSUES: '1'
-          CI: '1'
         run: |
           set -euo pipefail
           mkdir -p store
@@ -189,12 +180,22 @@ jobs:
             if(!key) { console.error('Missing APPLE_ASC_API_KEY_P8'); process.exit(1); }
             fs.writeFileSync('store/AuthKey_'+process.env.KEY_ID+'.p8', key);
           "
-          npx eas-cli build --platform ios --profile production --local --non-interactive --output store/ProteinQuest.ipa
-          ls -lh store/ProteinQuest.ipa
+          ARGS=(--platform ios --profile production --non-interactive --wait --json)
+          if [ "${{ steps.asc.outputs.present }}" = "true" ]; then
+            ARGS+=(--auto-submit)
+          fi
+          npx eas-cli build "${ARGS[@]}" > store/eas-ios-build.json
+          BUILD_ID="$(node -e "const j=require('./store/eas-ios-build.json'); const b=Array.isArray(j)?j[0]:j; process.stdout.write(b?.id||'');")"
+          if [ -z "$BUILD_ID" ]; then
+            echo "::error::EAS iOS cloud build did not start (quota/billing)."
+            exit 1
+          fi
+          echo "build_id=$BUILD_ID" >> "$GITHUB_OUTPUT"
           echo "ipa_built=true" >> "$GITHUB_OUTPUT"
+          echo "Build: https://expo.dev/accounts/nikethputta1/projects/proteinquest/builds/$BUILD_ID"
 
       - name: Upload IPA to App Store Connect
-        if: steps.asc.outputs.present == 'true' && inputs.submit_only != true && steps.ios_build.outputs.ipa_built == 'true'
+        if: false
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           APPLE_ASC_API_KEY_P8: ${{ secrets.APPLE_ASC_API_KEY_P8 }}
