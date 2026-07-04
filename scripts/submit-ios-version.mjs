@@ -252,7 +252,7 @@ async function submitVersion(versionId, buildId) {
     console.log(`\n✓ ProteinQuest iOS ${versionArg} already in App Store state: ${state}`);
     return;
   }
-  if (state && state !== 'PREPARE_FOR_SUBMISSION' && state !== 'DEVELOPER_REJECTED') {
+  if (state && state !== 'PREPARE_FOR_SUBMISSION' && state !== 'DEVELOPER_REJECTED' && state !== 'READY_FOR_REVIEW') {
     await logVersionBlockers(versionId);
     throw new Error(`Version ${versionArg} is not ready for submission (state=${state})`);
   }
