@@ -188,13 +188,15 @@ function itemVersionId(item) {
 }
 
 async function findSubmissionContainingVersion(versionId) {
-  for (const state of ['READY_FOR_REVIEW', 'UNRESOLVED_ISSUES', 'OPEN']) {
-    for (const sub of await listAppReviewSubmissions(state)) {
-      const items = await listReviewSubmissionItems(sub.id);
-      if (items.some((it) => itemVersionId(it) === versionId)) {
-        console.log('submission owns version', sub.id, 'state', sub.attributes?.state);
-        return sub;
-      }
+  for (const sub of await listAppReviewSubmissions()) {
+    const items = await listReviewSubmissionItems(sub.id);
+    const linked = items.map(itemVersionId).filter(Boolean);
+    if (linked.length) {
+      console.log('submission', sub.id.slice(0, 8), sub.attributes?.state, 'version items:', linked.join(','));
+    }
+    if (items.some((it) => itemVersionId(it) === versionId)) {
+      console.log('submission owns version', sub.id, 'state', sub.attributes?.state);
+      return sub;
     }
   }
   return null;
@@ -206,14 +208,6 @@ async function cancelReviewSubmission(submissionId) {
   });
   console.log('cancel submission', submissionId, r.status, r.json.errors?.[0]?.detail || 'ok');
   return r.status < 400;
-}
-
-async function cancelStuckReviewSubmissions(exceptId) {
-  for (const state of ['READY_FOR_REVIEW', 'UNRESOLVED_ISSUES']) {
-    for (const sub of await listAppReviewSubmissions(state)) {
-      if (sub.id !== exceptId) await cancelReviewSubmission(sub.id);
-    }
-  }
 }
 
 async function createReviewSubmission() {
@@ -233,11 +227,22 @@ async function getOrCreateReviewSubmission(versionId) {
   const owned = await findSubmissionContainingVersion(versionId);
   if (owned) {
     const subState = owned.attributes?.state;
+    if (['WAITING_FOR_REVIEW', 'IN_REVIEW', 'PENDING_DEVELOPER_RELEASE'].includes(subState)) {
+      console.log('submission already in flight', owned.id, subState);
+      return owned.id;
+    }
     if (subState === 'UNRESOLVED_ISSUES') {
-      await cancelReviewSubmission(owned.id);
+      const cancelled = await cancelReviewSubmission(owned.id);
+      if (!cancelled) return owned.id;
     } else {
       return owned.id;
     }
+  }
+
+  const ready = await listAppReviewSubmissions('READY_FOR_REVIEW');
+  if (ready[0]?.id) {
+    console.log('reuse READY_FOR_REVIEW submission', ready[0].id);
+    return ready[0].id;
   }
 
   const open = await listAppReviewSubmissions('OPEN');
@@ -246,10 +251,14 @@ async function getOrCreateReviewSubmission(versionId) {
     return open[0].id;
   }
 
-  await cancelStuckReviewSubmissions(owned?.id);
-
   const { submissionId, status, json } = await createReviewSubmission();
   if (submissionId) return submissionId;
+
+  const readyAfter = await listAppReviewSubmissions('READY_FOR_REVIEW');
+  if (readyAfter[0]?.id) {
+    console.log('reuse READY_FOR_REVIEW submission after create conflict', readyAfter[0].id);
+    return readyAfter[0].id;
+  }
 
   const retryOwned = await findSubmissionContainingVersion(versionId);
   if (retryOwned) return retryOwned.id;
