@@ -394,7 +394,7 @@ async function submitVersion(versionId, buildId) {
   }
 
   r = await asc('PATCH', `/v1/reviewSubmissions/${submissionId}`, {
-    data: { type: 'reviewSubmissions', id: submissionId, attributes: { submitted: true, platform: 'IOS' } },
+    data: { type: 'reviewSubmissions', id: submissionId, attributes: { submitted: true } },
   });
   console.log('submitted', r.status, r.json.errors?.[0]?.detail || 'ok');
   if (r.status === 200) {
