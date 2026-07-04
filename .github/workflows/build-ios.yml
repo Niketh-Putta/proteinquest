@@ -150,6 +150,7 @@ jobs:
       - name: Build iOS production
         id: ios_build
         if: inputs.submit_only != true
+        continue-on-error: true
         env:
           EAS_BUILD_NO_EXPO_GO_WARNING: 'true'
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
@@ -177,6 +178,10 @@ jobs:
           fi
           npx eas-cli build "${ARGS[@]}" > store/eas-ios-build.json
           BUILD_ID="$(node -e "const j=require('./store/eas-ios-build.json'); const b=Array.isArray(j)?j[0]:j; process.stdout.write(b?.id||'');")"
+          if [ -z "$BUILD_ID" ]; then
+            echo "::warning::EAS build did not start (quota or billing). Will submit latest VALID build from App Store Connect."
+            exit 1
+          fi
           echo "build_id=$BUILD_ID" >> "$GITHUB_OUTPUT"
           echo "Build: https://expo.dev/accounts/nikethputta1/projects/proteinquest/builds/$BUILD_ID"
 
@@ -224,9 +229,13 @@ jobs:
           exit 1
 
       - name: Summary
+        if: always()
         run: |
           echo "## iOS App Store pipeline" >> "$GITHUB_STEP_SUMMARY"
           if [ -n "${{ steps.ios_build.outputs.build_id }}" ]; then
             echo "Build: https://expo.dev/accounts/nikethputta1/projects/proteinquest/builds/${{ steps.ios_build.outputs.build_id }}" >> "$GITHUB_STEP_SUMMARY"
+          elif [ "${{ steps.ios_build.outcome }}" = "failure" ]; then
+            echo "EAS build skipped or failed (likely free-plan quota). Submitted latest VALID build from App Store Connect if submit step succeeded." >> "$GITHUB_STEP_SUMMARY"
+            echo "Upgrade plan: https://expo.dev/accounts/nikethputta1/settings/billing" >> "$GITHUB_STEP_SUMMARY"
           fi
           echo "Check review status: App Store Connect → Apps → ProteinQuest → App Store → iOS App" >> "$GITHUB_STEP_SUMMARY"
