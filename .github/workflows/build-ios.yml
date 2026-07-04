@@ -47,6 +47,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Align Expo SDK packages
+        if: inputs.submit_only != true
+        run: npx expo install --fix
+
+      - name: Select Xcode 16.4
+        if: inputs.submit_only != true
+        run: |
+          sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
+          xcodebuild -version
+
       - name: Verify EXPO_TOKEN is configured
         if: inputs.submit_only != true
         env:
