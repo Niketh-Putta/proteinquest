@@ -133,17 +133,41 @@ async function ensureLocalization(versionId) {
   console.log('localization', r.status, r.json.errors?.[0]?.detail || 'ok');
 }
 
-async function findLatestBuildId(preferVersionString) {
-  const builds = await asc('GET', `/v1/builds?filter[app]=${APP_ID}&sort=-uploadedDate&limit=20`);
+async function findLatestBuildId(preferMarketingVersion) {
+  const builds = await asc(
+    'GET',
+    `/v1/builds?filter[app]=${APP_ID}&sort=-uploadedDate&limit=25&include=preReleaseVersion`,
+  );
   const list = builds.json.data ?? [];
+  const included = builds.json.included ?? [];
+  const marketingVersion = (b) => {
+    const prvId = b.relationships?.preReleaseVersion?.data?.id;
+    const prv = included.find((i) => i.id === prvId);
+    return prv?.attributes?.version ?? null;
+  };
+
   const valid = list.filter((b) => b.attributes?.processingState === 'VALID');
   if (!valid.length) throw new Error('No VALID build found in App Store Connect yet');
 
-  const preferred = preferVersionString
-    ? valid.find((b) => String(b.attributes?.version) === String(preferVersionString))
-    : null;
-  const ready = preferred ?? valid[0];
-  console.log('Latest VALID build', ready.attributes.version, ready.id);
+  if (preferMarketingVersion) {
+    const match = valid.find((b) => marketingVersion(b) === preferMarketingVersion);
+    if (match) {
+      console.log(
+        'Matched VALID build for',
+        preferMarketingVersion,
+        'build',
+        match.attributes.version,
+        match.id,
+      );
+      return match.id;
+    }
+    throw new Error(
+      `No VALID build found for iOS ${preferMarketingVersion} yet (latest VALID is ${marketingVersion(valid[0])} build ${valid[0].attributes.version})`,
+    );
+  }
+
+  const ready = valid[0];
+  console.log('Latest VALID build', marketingVersion(ready), ready.attributes.version, ready.id);
   return ready.id;
 }
 
@@ -289,5 +313,5 @@ if (statusOnly) {
 }
 
 await ensureLocalization(versionId);
-const buildId = buildArg ?? (await findLatestBuildId());
+const buildId = buildArg ?? (await findLatestBuildId(versionArg));
 await submitVersion(versionId, buildId);

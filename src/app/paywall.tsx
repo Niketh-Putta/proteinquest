@@ -39,17 +39,20 @@ export default function Paywall() {
   const [planId, setPlanId] = useState(provider.plans[1]?.id ?? 'pro_yearly');
   const [busy, setBusy] = useState(false);
   const [restoring, setRestoring] = useState(false);
+  const [loadingPlans, setLoadingPlans] = useState(Platform.OS !== 'web');
 
   useEffect(() => {
     if (Platform.OS === 'web') return;
     const userId = session?.user.id;
     if (!userId) return;
+    setLoadingPlans(true);
     getNativePaymentProvider(userId)
       .then((p) => {
         setProvider(p);
         setPlanId(p.plans[1]?.id ?? p.plans[0]?.id ?? 'pro_yearly');
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setLoadingPlans(false));
   }, [session?.user.id]);
 
   async function grantPremium() {
@@ -140,9 +143,15 @@ export default function Paywall() {
           ))}
         </View>
 
-        <View style={{ gap: spacing.sm }}>{provider.plans.map(renderPlan)}</View>
+        <View style={{ gap: spacing.sm }}>
+          {loadingPlans ? (
+            <Text style={styles.offeringsWarning}>Loading subscription plans…</Text>
+          ) : (
+            provider.plans.map(renderPlan)
+          )}
+        </View>
 
-        {provider.isConfigured && provider.offeringsReady === false ? (
+        {!loadingPlans && provider.isConfigured && provider.offeringsReady === false ? (
           <Text style={styles.offeringsWarning}>
             {provider.offeringsMessage ??
               'Subscriptions are not available yet. Products must be approved in App Store Connect and linked in RevenueCat.'}
@@ -166,16 +175,20 @@ export default function Paywall() {
 
         <Button
           title={
-            !provider.isConfigured && !__DEV__
+            loadingPlans
+              ? 'Loading plans…'
+              : !provider.isConfigured && !__DEV__
               ? 'Subscriptions unavailable'
               : provider.offeringsReady === false
                 ? 'Subscriptions unavailable'
                 : 'Subscribe'
           }
           onPress={handlePurchase}
-          loading={busy}
+          loading={busy || loadingPlans}
           disabled={
-            (!provider.isConfigured && !__DEV__) || provider.offeringsReady === false
+            loadingPlans ||
+            (!provider.isConfigured && !__DEV__) ||
+            provider.offeringsReady === false
           }
           style={{ marginTop: spacing.md }}
         />

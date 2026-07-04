@@ -214,10 +214,10 @@ jobs:
             if [ "$CODE" -eq 0 ]; then
               exit 0
             fi
-            if echo "$OUT" | rg -q "already in App Store state"; then
+            if echo "$OUT" | grep -q "already in App Store state"; then
               exit 0
             fi
-            if echo "$OUT" | rg -q "No VALID build found"; then
+            if echo "$OUT" | grep -qE "No VALID build found|No VALID build for iOS"; then
               echo "Attempt $i/20 — ASC build still processing, retry in 60s…"
               sleep 60
               continue

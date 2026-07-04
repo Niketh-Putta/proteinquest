@@ -92,15 +92,20 @@ function resolveCurrentOffering(offerings: PurchasesOfferingsLike): PurchasesOff
   );
 }
 
+function productMatchesPlan(productId: string, plan: 'weekly' | 'yearly'): boolean {
+  const target = REVENUECAT_PRODUCT_IDS[plan];
+  return productId === target || productId.startsWith(`${target}:`);
+}
+
 function isWeeklyOrYearlyPackage(p: {
-  product: { identifier: string };
+  product: { identifier: string; priceString?: string };
   packageType: string;
   identifier: string;
 }): boolean {
   const id = p.product.identifier;
   return (
-    id === REVENUECAT_PRODUCT_IDS.weekly ||
-    id === REVENUECAT_PRODUCT_IDS.yearly ||
+    productMatchesPlan(id, 'weekly') ||
+    productMatchesPlan(id, 'yearly') ||
     p.packageType === 'WEEKLY' ||
     p.packageType === 'ANNUAL' ||
     p.packageType === 'MONTHLY' ||
@@ -109,16 +114,32 @@ function isWeeklyOrYearlyPackage(p: {
   );
 }
 
+/** Package is purchasable only when StoreKit/Play returned a real price. */
+function isPurchasablePackage(p: {
+  product: { identifier: string; priceString?: string };
+  packageType: string;
+  identifier: string;
+}): boolean {
+  return isWeeklyOrYearlyPackage(p) && !!p.product.priceString?.trim();
+}
+
 async function fetchOfferingsWithRetry(): Promise<PurchasesOfferingsLike> {
   const Purchases = (await import('react-native-purchases')).default;
-  let offerings = (await Purchases.getOfferings()) as PurchasesOfferingsLike;
-  if (resolveCurrentOffering(offerings)?.availablePackages?.some(isWeeklyOrYearlyPackage)) {
-    return offerings;
+  const load = async () => {
+    try {
+      return (await Purchases.syncAttributesAndOfferingsIfNeeded()) as PurchasesOfferingsLike;
+    } catch {
+      return (await Purchases.getOfferings()) as PurchasesOfferingsLike;
+    }
+  };
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const offerings = await load();
+    if (resolveCurrentOffering(offerings)?.availablePackages?.some(isPurchasablePackage)) {
+      return offerings;
+    }
+    if (attempt < 2) await new Promise((r) => setTimeout(r, 1200 * (attempt + 1)));
   }
-  // StoreKit can lag right after configure — one short retry before showing unavailable.
-  await new Promise((r) => setTimeout(r, 1200));
-  offerings = (await Purchases.getOfferings()) as PurchasesOfferingsLike;
-  return offerings;
+  return load();
 }
 
 export interface OfferingsStatus {
@@ -164,7 +185,7 @@ export async function getOfferingsStatus(): Promise<OfferingsStatus> {
     const offerings = await fetchOfferingsWithRetry();
     const current = resolveCurrentOffering(offerings);
     const packages = current?.availablePackages ?? [];
-    const hasPlans = packages.some(isWeeklyOrYearlyPackage);
+    const hasPlans = packages.some(isPurchasablePackage);
     if (hasPlans) return { ready: true };
     return { ready: false, message: offeringsUnavailableMessage() };
   } catch (e) {
@@ -207,15 +228,16 @@ export async function getRevenueCatPlans(): Promise<RevenueCatPlan[]> {
     for (const pkg of current.availablePackages) {
       const productId = pkg.product.identifier;
       const isYearly =
-        productId === REVENUECAT_PRODUCT_IDS.yearly ||
+        productMatchesPlan(productId, 'yearly') ||
         pkg.packageType === 'ANNUAL' ||
         pkg.identifier === '$rc_annual';
       const isWeekly =
-        productId === REVENUECAT_PRODUCT_IDS.weekly ||
+        productMatchesPlan(productId, 'weekly') ||
         pkg.packageType === 'WEEKLY' ||
         pkg.identifier === '$rc_weekly';
 
       if (!isYearly && !isWeekly) continue;
+      if (!pkg.product.priceString?.trim()) continue;
 
       mapped.push({
         id: isYearly ? REVENUECAT_PRODUCT_IDS.yearly : REVENUECAT_PRODUCT_IDS.weekly,
@@ -265,7 +287,7 @@ export async function purchasePlan(planId: string): Promise<boolean> {
   const Purchases = (await import('react-native-purchases')).default;
   const offerings = await fetchOfferingsWithRetry();
   const current = resolveCurrentOffering(offerings);
-  const packages = (current?.availablePackages ?? []).filter(isWeeklyOrYearlyPackage);
+  const packages = (current?.availablePackages ?? []).filter(isPurchasablePackage);
   if (packages.length === 0) {
     throw new Error(offeringsUnavailableMessage());
   }
@@ -273,13 +295,13 @@ export async function purchasePlan(planId: string): Promise<boolean> {
   const matchesPlan = (p: (typeof packages)[number]) => {
     if (planId === REVENUECAT_PRODUCT_IDS.yearly) {
       return (
-        p.product.identifier === REVENUECAT_PRODUCT_IDS.yearly ||
+        productMatchesPlan(p.product.identifier, 'yearly') ||
         p.packageType === 'ANNUAL' ||
         p.identifier === '$rc_annual'
       );
     }
     return (
-      p.product.identifier === REVENUECAT_PRODUCT_IDS.weekly ||
+      productMatchesPlan(p.product.identifier, 'weekly') ||
       p.packageType === 'WEEKLY' ||
       p.identifier === '$rc_weekly'
     );
