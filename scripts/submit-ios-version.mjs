@@ -320,7 +320,7 @@ async function ensureReviewSubmissionItem(submissionId, relationships) {
   console.log('review item', relType, relId, r.status, r.json.errors?.[0]?.detail || 'ok');
   if (r.status >= 400) {
     const detail = errDetail(r.json);
-    if (r.status === 409 && /already present|not in valid state/i.test(detail)) {
+    if (r.status === 409 && /already (present|added)|not in valid state/i.test(detail)) {
       console.log('review item conflict ok:', detail);
       return null;
     }
