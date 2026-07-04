@@ -39,7 +39,7 @@ if (!versionArg) {
 
 const whatsNew =
   whatsNewArg ??
-  'Fixes App Store subscription purchases on the paywall, extends the free trial to 3 days, and improves meal scan reliability.';
+  'Fixes App Store subscription purchases, adds Upgrade to Pro in Settings, extends the free trial to 3 days.';
 
 function errDetail(json) {
   const e = json?.errors?.[0];
