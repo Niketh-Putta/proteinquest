@@ -281,7 +281,7 @@ async function listReviewSubmissionItems(submissionId) {
 
 /** ASC reviewSubmissionItems use `inAppPurchases` (v1 discriminator), not `subscription`. */
 function reviewItemRelKey(type) {
-  if (type === 'appStoreVersions') return 'appStoreVersions';
+  if (type === 'appStoreVersions') return 'appStoreVersion';
   if (type === 'inAppPurchases') return 'inAppPurchases';
   return type;
 }
@@ -381,7 +381,7 @@ async function submitVersion(versionId, buildId) {
 
   const submissionId = await getOrCreateReviewSubmission(versionId);
   await ensureReviewSubmissionItem(submissionId, {
-    appStoreVersions: { data: { type: 'appStoreVersions', id: versionId } },
+    appStoreVersion: { data: { type: 'appStoreVersions', id: versionId } },
   });
   for (const subId of SUBSCRIPTION_IDS) {
     if (!(await subscriptionNeedsReview(subId))) {
