@@ -1,10 +1,15 @@
 # iOS App Store build + submit via GitHub EXPO_TOKEN + APPLE_ASC_API_KEY_P8.
 # Phone-only: set EXPO_APPLE_ID + EXPO_APPLE_APP_SPECIFIC_PASSWORD secrets for credential bootstrap.
-# Retrigger after ASC issuer ID + key secrets corrected.
 name: Build and submit iOS
 
 on:
   workflow_dispatch:
+    inputs:
+      submit_only:
+        description: 'Skip EAS build; only submit latest VALID ASC build for review'
+        required: false
+        default: false
+        type: boolean
   push:
     branches: [main]
     paths:
@@ -16,6 +21,8 @@ on:
       - '.github/workflows/build-ios.yml'
       - 'scripts/setup-expo-ios-credentials.cjs'
       - 'scripts/validate-asc-key.mjs'
+      - 'scripts/submit-ios-version.mjs'
+      - 'store/app-store-listing.json'
 
 concurrency:
   group: ios-production
@@ -36,6 +43,7 @@ jobs:
         run: npm ci
 
       - name: Verify EXPO_TOKEN is configured
+        if: inputs.submit_only != true
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
@@ -46,6 +54,7 @@ jobs:
           npx eas-cli whoami
 
       - name: Sync EAS production env vars
+        if: inputs.submit_only != true
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
@@ -72,8 +81,8 @@ jobs:
         run: |
           if [ -z "$APPLE_ASC_API_KEY_P8" ]; then
             echo "present=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::APPLE_ASC_API_KEY_P8 missing"
-            exit 0
+            echo "::error::APPLE_ASC_API_KEY_P8 missing — required for iOS submit"
+            exit 1
           fi
           KEY_ID="$(node -e "const {normalizeKeyId}=require('./scripts/normalize-p8.cjs'); process.stdout.write(normalizeKeyId(process.env.APPLE_ASC_KEY_ID||'JZ3C87NKB9'));")"
           export KEY_ID
@@ -91,7 +100,7 @@ jobs:
           echo "Using ASC Key ID: $KEY_ID"
 
       - name: Sync ASC credentials into eas.json
-        if: steps.asc.outputs.present == 'true'
+        if: steps.asc.outputs.present == 'true' && inputs.submit_only != true
         env:
           APPLE_ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
         run: |
@@ -123,7 +132,7 @@ jobs:
 
       - name: Bootstrap iOS credentials on EAS
         id: ios_bootstrap
-        if: steps.asc.outputs.present == 'true'
+        if: steps.asc.outputs.present == 'true' && inputs.submit_only != true
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           APPLE_ASC_API_KEY_P8: ${{ secrets.APPLE_ASC_API_KEY_P8 }}
@@ -140,6 +149,7 @@ jobs:
 
       - name: Build iOS production
         id: ios_build
+        if: inputs.submit_only != true
         env:
           EAS_BUILD_NO_EXPO_GO_WARNING: 'true'
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
@@ -170,8 +180,17 @@ jobs:
           echo "build_id=$BUILD_ID" >> "$GITHUB_OUTPUT"
           echo "Build: https://expo.dev/accounts/nikethputta1/projects/proteinquest/builds/$BUILD_ID"
 
+      - name: App Store status (before submit)
+        if: steps.asc.outputs.present == 'true'
+        env:
+          APPLE_ASC_API_KEY_P8: ${{ secrets.APPLE_ASC_API_KEY_P8 }}
+          APPLE_ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
+          EXPO_ASC_KEY_ID: ${{ steps.asc.outputs.key_id }}
+          EXPO_ASC_API_KEY_PATH: ./store/AuthKey_${{ steps.asc.outputs.key_id }}.p8
+        run: node scripts/check-ios-app-store-status.mjs || true
+
       - name: Submit for App Store review
-        if: steps.asc.outputs.present == 'true' && steps.ios_build.outputs.build_id != ''
+        if: steps.asc.outputs.present == 'true'
         env:
           APPLE_ASC_API_KEY_P8: ${{ secrets.APPLE_ASC_API_KEY_P8 }}
           APPLE_ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
@@ -180,20 +199,34 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="$(node -e "console.log(require('./app.json').expo.version)")"
-          echo "Waiting for ASC build processing (up to 30 min)…"
-          for i in $(seq 1 60); do
-            if node scripts/submit-ios-version.mjs --version="$VERSION" 2>&1; then
+          echo "Submitting iOS $VERSION for App Store review…"
+          for i in $(seq 1 20); do
+            set +e
+            OUT="$(node scripts/submit-ios-version.mjs --version="$VERSION" 2>&1)"
+            CODE=$?
+            set -e
+            echo "$OUT"
+            if [ "$CODE" -eq 0 ]; then
               exit 0
             fi
-            echo "Attempt $i/60 — build not ready yet, retry in 30s…"
-            sleep 30
+            if echo "$OUT" | rg -q "already in App Store state"; then
+              exit 0
+            fi
+            if echo "$OUT" | rg -q "No VALID build found"; then
+              echo "Attempt $i/20 — ASC build still processing, retry in 60s…"
+              sleep 60
+              continue
+            fi
+            echo "::error::Submit failed (non-retryable). Fix blockers in App Store Connect or listing metadata."
+            exit 1
           done
-          echo "::error::Timed out waiting to submit iOS $VERSION for review"
+          echo "::error::Timed out waiting for VALID ASC build for iOS $VERSION"
           exit 1
 
       - name: Summary
-        if: steps.ios_build.outputs.build_id != ''
         run: |
-          echo "## iOS build finished" >> "$GITHUB_STEP_SUMMARY"
-          echo "https://expo.dev/accounts/nikethputta1/projects/proteinquest/builds/${{ steps.ios_build.outputs.build_id }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "Submit in App Store Connect → TestFlight when processing completes." >> "$GITHUB_STEP_SUMMARY"
+          echo "## iOS App Store pipeline" >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "${{ steps.ios_build.outputs.build_id }}" ]; then
+            echo "Build: https://expo.dev/accounts/nikethputta1/projects/proteinquest/builds/${{ steps.ios_build.outputs.build_id }}" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "Check review status: App Store Connect → Apps → ProteinQuest → App Store → iOS App" >> "$GITHUB_STEP_SUMMARY"
