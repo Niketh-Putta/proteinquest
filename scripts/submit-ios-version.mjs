@@ -171,6 +171,93 @@ async function findLatestBuildId(preferMarketingVersion) {
   return ready.id;
 }
 
+async function listAppReviewSubmissions(stateFilter) {
+  const q = stateFilter
+    ? `/v1/apps/${APP_ID}/reviewSubmissions?filter[state]=${stateFilter}&limit=10`
+    : `/v1/apps/${APP_ID}/reviewSubmissions?limit=20`;
+  const r = await asc('GET', q);
+  return r.json.data ?? [];
+}
+
+function itemVersionId(item) {
+  return (
+    item.relationships?.appStoreVersions?.data?.id ??
+    item.relationships?.appStoreVersion?.data?.id ??
+    null
+  );
+}
+
+async function findSubmissionContainingVersion(versionId) {
+  for (const state of ['READY_FOR_REVIEW', 'UNRESOLVED_ISSUES', 'OPEN']) {
+    for (const sub of await listAppReviewSubmissions(state)) {
+      const items = await listReviewSubmissionItems(sub.id);
+      if (items.some((it) => itemVersionId(it) === versionId)) {
+        console.log('submission owns version', sub.id, 'state', sub.attributes?.state);
+        return sub;
+      }
+    }
+  }
+  return null;
+}
+
+async function cancelReviewSubmission(submissionId) {
+  const r = await asc('PATCH', `/v1/reviewSubmissions/${submissionId}`, {
+    data: { type: 'reviewSubmissions', id: submissionId, attributes: { canceled: true } },
+  });
+  console.log('cancel submission', submissionId, r.status, r.json.errors?.[0]?.detail || 'ok');
+  return r.status < 400;
+}
+
+async function cancelStuckReviewSubmissions(exceptId) {
+  for (const state of ['READY_FOR_REVIEW', 'UNRESOLVED_ISSUES']) {
+    for (const sub of await listAppReviewSubmissions(state)) {
+      if (sub.id !== exceptId) await cancelReviewSubmission(sub.id);
+    }
+  }
+}
+
+async function createReviewSubmission() {
+  const r = await asc('POST', '/v1/reviewSubmissions', {
+    data: {
+      type: 'reviewSubmissions',
+      attributes: { platform: 'IOS' },
+      relationships: { app: { data: { type: 'apps', id: APP_ID } } },
+    },
+  });
+  const submissionId = r.json.data?.id;
+  console.log('create submission', r.status, submissionId || errDetail(r.json));
+  return { submissionId, status: r.status, json: r.json };
+}
+
+async function getOrCreateReviewSubmission(versionId) {
+  const owned = await findSubmissionContainingVersion(versionId);
+  if (owned) {
+    const subState = owned.attributes?.state;
+    if (subState === 'UNRESOLVED_ISSUES') {
+      await cancelReviewSubmission(owned.id);
+    } else {
+      return owned.id;
+    }
+  }
+
+  const open = await listAppReviewSubmissions('OPEN');
+  if (open[0]?.id) {
+    console.log('Found OPEN review submission', open[0].id);
+    return open[0].id;
+  }
+
+  await cancelStuckReviewSubmissions(owned?.id);
+
+  const { submissionId, status, json } = await createReviewSubmission();
+  if (submissionId) return submissionId;
+
+  const retryOwned = await findSubmissionContainingVersion(versionId);
+  if (retryOwned) return retryOwned.id;
+
+  if (status >= 400) throw new Error(`Could not create review submission: ${errDetail(json)}`);
+  throw new Error('Could not create review submission: no id returned');
+}
+
 async function getOpenReviewSubmissionId() {
   const open = await asc('GET', `/v1/apps/${APP_ID}/reviewSubmissions?filter[state]=OPEN&limit=1`);
   const id = open.json.data?.[0]?.id;
@@ -222,29 +309,17 @@ async function ensureReviewSubmissionItem(submissionId, relationships) {
     },
   });
   console.log('review item', relType, relId, r.status, r.json.errors?.[0]?.detail || 'ok');
-  if (r.status >= 400) throw new Error(`Add review item failed: ${errDetail(r.json)}`);
+  if (r.status >= 400) {
+    const detail = errDetail(r.json);
+    if (r.status === 409 && /already present|not in valid state/i.test(detail)) {
+      console.log('review item conflict ok:', detail);
+      return null;
+    }
+    throw new Error(`Add review item failed: ${detail}`);
+  }
   return r.json.data?.id;
 }
 
-async function getOrCreateOpenReviewSubmission() {
-  const existingId = await getOpenReviewSubmissionId();
-  if (existingId) return existingId;
-
-  const r = await asc('POST', '/v1/reviewSubmissions', {
-    data: {
-      type: 'reviewSubmissions',
-      relationships: { app: { data: { type: 'apps', id: APP_ID } } },
-    },
-  });
-  const submissionId = r.json.data?.id;
-  console.log('create submission', r.status, submissionId || errDetail(r.json));
-  if (!submissionId) {
-    const retryOpen = await getOpenReviewSubmissionId();
-    if (retryOpen) return retryOpen;
-    throw new Error(`Could not create review submission: ${errDetail(r.json)}`);
-  }
-  return submissionId;
-}
 
 async function submitVersion(versionId, buildId) {
   const { state } = await getVersionState(versionId);
@@ -295,7 +370,7 @@ async function submitVersion(versionId, buildId) {
     console.log('review detail', r.status, r.json.errors?.[0]?.detail || 'ok');
   }
 
-  const submissionId = await getOrCreateOpenReviewSubmission();
+  const submissionId = await getOrCreateReviewSubmission(versionId);
   await ensureReviewSubmissionItem(submissionId, {
     appStoreVersions: { data: { type: 'appStoreVersions', id: versionId } },
   });
