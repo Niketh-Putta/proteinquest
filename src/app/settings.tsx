@@ -332,6 +332,21 @@ export default function SettingsScreen() {
               </View>
               <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
             </Pressable>
+            {!profile?.is_premium ? (
+              <Pressable
+                onPress={() => router.push('/paywall')}
+                android_ripple={{ color: colors.hairlineBright }}
+                style={({ pressed }) => [styles.billingBtn, styles.upgradeBtn, pressed && styles.billingBtnPressed]}>
+                <View style={styles.billingIcon}>
+                  <Ionicons name="star" size={18} color={colors.accent} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.billingTitle}>Upgrade to Pro</Text>
+                  <Text style={styles.billingHint}>Unlimited scans and full access</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+              </Pressable>
+            ) : null}
             {Platform.OS !== 'web' ? (
               <SubscriptionBillingInfo
                 key={`${session?.user.id ?? 'anon'}-${profile?.is_premium ? 'pro' : 'free'}`}
@@ -624,6 +639,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   billingBtnPressed: { opacity: 0.85 },
+  upgradeBtn: { marginTop: spacing.sm },
   billingIcon: {
     width: 38,
     height: 38,
