@@ -3,8 +3,10 @@ import { Platform } from 'react-native';
 import { SITE_URL } from '@/lib/site';
 import {
   checkProEntitlement,
+  ensureRevenueCatReady,
   getOfferingsStatus,
   getRevenueCatPlans,
+  initRevenueCat,
   isRevenueCatConfigured,
   purchasePlan,
   restorePurchases,
@@ -104,18 +106,22 @@ async function loadRevenueCatPlans(): Promise<PaymentPlan[]> {
 }
 
 /** Native provider with live store prices when RevenueCat is configured. */
-export async function getNativePaymentProvider(): Promise<PaymentProvider> {
+export async function getNativePaymentProvider(appUserId?: string): Promise<PaymentProvider> {
   if (isRevenueCatConfigured()) {
+    if (appUserId) await initRevenueCat(appUserId);
+    await ensureRevenueCatReady();
     const [plans, offerings] = await Promise.all([
       loadRevenueCatPlans(),
       getOfferingsStatus(),
     ]);
-    const livePlans = offerings.ready && plans.length > 0 ? plans : PLANS;
+    const hasLivePlans = plans.length > 0;
+    const offeringsReady = offerings.ready || hasLivePlans;
+    const livePlans = offeringsReady && hasLivePlans ? plans : PLANS;
     return {
       ...revenueCatProvider,
       plans: livePlans,
-      offeringsReady: offerings.ready,
-      offeringsMessage: offerings.message,
+      offeringsReady,
+      offeringsMessage: offeringsReady ? undefined : offerings.message,
     };
   }
   return stubProvider;

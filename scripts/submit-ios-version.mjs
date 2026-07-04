@@ -3,9 +3,9 @@
  * Create or update an App Store version, attach latest processed build, submit for review.
  *
  * Usage:
- *   node scripts/submit-ios-version.mjs --version=1.0.6
- *   node scripts/submit-ios-version.mjs --version=1.0.6 --build-id=<asc-build-uuid>
- *   node scripts/submit-ios-version.mjs --version=1.0.6 --status-only
+ *   node scripts/submit-ios-version.mjs --version=1.0.7
+ *   node scripts/submit-ios-version.mjs --version=1.0.7 --build-id=<asc-build-uuid>
+ *   node scripts/submit-ios-version.mjs --version=1.0.7 --status-only
  */
 import fs from 'node:fs';
 import { asc } from './asc-api.mjs';
@@ -32,14 +32,14 @@ const statusOnly = args.includes('--status-only');
 
 if (!versionArg) {
   console.error(
-    'Usage: node scripts/submit-ios-version.mjs --version=1.0.6 [--build-id=...] [--whats-new=...] [--status-only]',
+    'Usage: node scripts/submit-ios-version.mjs --version=1.0.7 [--build-id=...] [--whats-new=...] [--status-only]',
   );
   process.exit(1);
 }
 
 const whatsNew =
   whatsNewArg ??
-  'Personalized meal reminders, subscription billing details in Settings, improved scan close button placement, and real App Store payments via RevenueCat.';
+  'Fixes App Store subscription purchases on the paywall, extends the free trial to 3 days, and improves meal scan reliability.';
 
 function errDetail(json) {
   const e = json?.errors?.[0];
@@ -256,7 +256,6 @@ async function submitVersion(versionId, buildId) {
   await ensureReviewSubmissionItem(submissionId, {
     appStoreVersion: { data: { type: 'appStoreVersions', id: versionId } },
   });
-
   for (const subId of SUBSCRIPTION_IDS) {
     await ensureReviewSubmissionItem(submissionId, {
       subscription: { data: { type: 'subscriptions', id: subId } },
@@ -264,7 +263,7 @@ async function submitVersion(versionId, buildId) {
   }
 
   r = await asc('PATCH', `/v1/reviewSubmissions/${submissionId}`, {
-    data: { type: 'reviewSubmissions', id: submissionId, attributes: { submitted: true } },
+    data: { type: 'reviewSubmissions', id: submissionId, attributes: { submitted: true, platform: 'IOS' } },
   });
   console.log('submitted', r.status, r.json.errors?.[0]?.detail || 'ok');
   if (r.status === 200) {

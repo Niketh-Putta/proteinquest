@@ -42,13 +42,15 @@ export default function Paywall() {
 
   useEffect(() => {
     if (Platform.OS === 'web') return;
-    getNativePaymentProvider()
+    const userId = session?.user.id;
+    if (!userId) return;
+    getNativePaymentProvider(userId)
       .then((p) => {
         setProvider(p);
         setPlanId(p.plans[1]?.id ?? p.plans[0]?.id ?? 'pro_yearly');
       })
       .catch(() => {});
-  }, []);
+  }, [session?.user.id]);
 
   async function grantPremium() {
     await saveProfile({ is_premium: true, paywall_dismissed: true });

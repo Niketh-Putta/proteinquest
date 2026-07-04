@@ -68,6 +68,30 @@ export interface RevenueCatPlan {
   packageIdentifier: string;
 }
 
+type PurchasesOfferingLike = {
+  identifier: string;
+  availablePackages: Array<{
+    product: { identifier: string };
+    packageType: string;
+    identifier: string;
+  }>;
+};
+
+type PurchasesOfferingsLike = {
+  current: PurchasesOfferingLike | null;
+  all?: Record<string, PurchasesOfferingLike>;
+};
+
+function resolveCurrentOffering(offerings: PurchasesOfferingsLike): PurchasesOfferingLike | null {
+  return (
+    offerings.current ??
+    offerings.all?.default ??
+    Object.values(offerings.all ?? {}).find((o) => o.identifier === 'default') ??
+    Object.values(offerings.all ?? {})[0] ??
+    null
+  );
+}
+
 function isWeeklyOrYearlyPackage(p: {
   product: { identifier: string };
   packageType: string;
@@ -79,9 +103,22 @@ function isWeeklyOrYearlyPackage(p: {
     id === REVENUECAT_PRODUCT_IDS.yearly ||
     p.packageType === 'WEEKLY' ||
     p.packageType === 'ANNUAL' ||
+    p.packageType === 'MONTHLY' ||
     p.identifier === '$rc_weekly' ||
     p.identifier === '$rc_annual'
   );
+}
+
+async function fetchOfferingsWithRetry(): Promise<PurchasesOfferingsLike> {
+  const Purchases = (await import('react-native-purchases')).default;
+  let offerings = (await Purchases.getOfferings()) as PurchasesOfferingsLike;
+  if (resolveCurrentOffering(offerings)?.availablePackages?.some(isWeeklyOrYearlyPackage)) {
+    return offerings;
+  }
+  // StoreKit can lag right after configure — one short retry before showing unavailable.
+  await new Promise((r) => setTimeout(r, 1200));
+  offerings = (await Purchases.getOfferings()) as PurchasesOfferingsLike;
+  return offerings;
 }
 
 export interface OfferingsStatus {
@@ -123,9 +160,9 @@ export async function getOfferingsStatus(): Promise<OfferingsStatus> {
     return { ready: false, message: 'RevenueCat is not configured in this build.' };
   }
   try {
-    const Purchases = (await import('react-native-purchases')).default;
-    const offerings = await Purchases.getOfferings();
-    const current = offerings.current;
+    await ensureRevenueCatReady();
+    const offerings = await fetchOfferingsWithRetry();
+    const current = resolveCurrentOffering(offerings);
     const packages = current?.availablePackages ?? [];
     const hasPlans = packages.some(isWeeklyOrYearlyPackage);
     if (hasPlans) return { ready: true };
@@ -161,9 +198,9 @@ export async function getRevenueCatPlans(): Promise<RevenueCatPlan[]> {
   if (!isRevenueCatConfigured()) return fallback;
 
   try {
-    const Purchases = (await import('react-native-purchases')).default;
-    const offerings = await Purchases.getOfferings();
-    const current = offerings.current;
+    await ensureRevenueCatReady();
+    const offerings = await fetchOfferingsWithRetry();
+    const current = resolveCurrentOffering(offerings);
     if (!current) return [];
 
     const mapped: RevenueCatPlan[] = [];
@@ -224,9 +261,10 @@ export async function purchasePlan(planId: string): Promise<boolean> {
     throw new Error(status.message ?? offeringsUnavailableMessage());
   }
 
+  await ensureRevenueCatReady();
   const Purchases = (await import('react-native-purchases')).default;
-  const offerings = await Purchases.getOfferings();
-  const current = offerings.current ?? Object.values(offerings.all ?? {})[0];
+  const offerings = await fetchOfferingsWithRetry();
+  const current = resolveCurrentOffering(offerings);
   const packages = (current?.availablePackages ?? []).filter(isWeeklyOrYearlyPackage);
   if (packages.length === 0) {
     throw new Error(offeringsUnavailableMessage());

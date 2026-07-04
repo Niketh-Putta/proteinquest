@@ -5,7 +5,7 @@ import { totalXp } from './xp';
 export const FREE_DAILY_SCANS = 3;
 
 /** No paywall and unlimited scans for the first N calendar days after signup. */
-export const HABIT_GRACE_DAYS = 2;
+export const HABIT_GRACE_DAYS = 3;
 
 export function isPro(profile: Profile | null | undefined): boolean {
   return profile?.is_premium === true;
@@ -28,7 +28,7 @@ export function accountAgeCalendarDays(
   return Math.floor((todayDay.getTime() - signupDay.getTime()) / 86_400_000);
 }
 
-/** Signup day + next calendar day: no paywall, unlimited scans. */
+/** First N calendar days after signup (day 0 = signup day): no paywall, unlimited scans. */
 export function isInHabitGracePeriod(
   profile: Profile | null | undefined,
   now = new Date(),
@@ -72,7 +72,7 @@ export function remainingFreeScans(
 
 export function scansLimitLabel(scansUsedToday: number, profile: Profile | null | undefined): string {
   if (isPro(profile)) return 'Unlimited scans';
-  if (isInHabitGracePeriod(profile)) return 'Unlimited scans, first 2 days free';
+  if (isInHabitGracePeriod(profile)) return 'Unlimited scans, 3-day free trial';
   const left = remainingFreeScans(scansUsedToday, profile);
   if (left === 0) return 'Out of free scans. Go Pro';
   return `${left} free scan${left === 1 ? '' : 's'} left today`;
