@@ -1,7 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Haptics from 'expo-haptics';
-import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
@@ -13,6 +12,7 @@ import {
   Text,
   TextInput,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import Animated, {
   Easing,
@@ -39,6 +39,7 @@ import {
 } from '@/lib/api';
 import { applyLogToCharacter, isDailyDragonLockedForToday } from '@/lib/character';
 import { useLayout } from '@/lib/layout';
+import { prepareSquareMealPhoto } from '@/lib/meal-photo';
 import { canScan, isInHabitGracePeriod, isPro, remainingFreeScans } from '@/lib/paywall-gate';
 import { todayISODate } from '@/lib/protein';
 import { useSession } from '@/lib/session';
@@ -86,12 +87,46 @@ function ScanSweep() {
   return <Animated.View style={[styles.sweepLine, style]} />;
 }
 
+function ScanViewfinder({
+  size,
+  top,
+  left,
+}: {
+  size: number;
+  top: number;
+  left: number;
+}) {
+  return (
+    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+      <View style={[styles.dim, { top: 0, left: 0, right: 0, height: top }]} />
+      <View style={[styles.dim, { top: top + size, left: 0, right: 0, bottom: 0 }]} />
+      <View style={[styles.dim, { top, left: 0, width: left, height: size }]} />
+      <View style={[styles.dim, { top, left: left + size, right: 0, height: size }]} />
+      <View style={[styles.squareFrame, { top, left, width: size, height: size }]}>
+        {(['tl', 'tr', 'bl', 'br'] as const).map((corner) => (
+          <View key={corner} style={[styles.corner, styles[corner]]} />
+        ))}
+      </View>
+    </View>
+  );
+}
+
 export default function ScanScreen() {
   const { session, profile, saveProfile } = useSession();
   const { horizontalPad, contentWidth, contentMaxWidth } = useLayout();
+  const { width: screenW, height: screenH } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   /** Keep close control below Dynamic Island / front camera — never flush to screen top. */
   const headerTop = Math.max(insets.top + spacing.sm, 56);
+  const headerChrome = headerTop + 44 + spacing.sm;
+  const controlsChrome = 64 + spacing.lg + Math.max(insets.bottom, spacing.md);
+  const viewfinderSize = Math.min(
+    screenW - 56,
+    screenH - headerChrome - controlsChrome - spacing.lg * 2,
+  );
+  const viewfinderTop =
+    headerChrome + (screenH - headerChrome - controlsChrome - viewfinderSize) / 2;
+  const viewfinderLeft = (screenW - viewfinderSize) / 2;
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
 
@@ -186,35 +221,21 @@ export default function ScanScreen() {
     const scanCountPromise = needsScanCheck ? countTodayPhotoScans() : null;
 
     setPhase('analyzing');
-    setDisplayUri(uri);
     try {
-      const imagePromise = (async () => {
-        const ctx = ImageManipulator.manipulate(uri).resize({ width: 768 });
-        const rendered = await ctx.renderAsync();
-        return rendered.saveAsync({
-          format: SaveFormat.JPEG,
-          compress: 0.65,
-          base64: true,
-        });
-      })();
-
-      const [saved, used] = await Promise.all([
-        imagePromise,
+      const [square, used] = await Promise.all([
+        prepareSquareMealPhoto(uri),
         scanCountPromise ?? Promise.resolve(null),
       ]);
+
+      setDisplayUri(square.uri);
 
       if (needsScanCheck && used !== null && !canScan(profile!, used)) {
         router.push('/paywall');
         return;
       }
-      if (!saved.base64) {
-        throw new Error(
-          'Could not read that image. If it came from your library, try a JPEG or PNG.',
-        );
-      }
-      setImageBase64(saved.base64);
+      setImageBase64(square.base64);
 
-      const res = await analyzeFoodPhoto(saved.base64);
+      const res = await analyzeFoodPhoto(square.base64);
       if (!res.is_food) {
         showError(res.notes || "This doesn't look like food. Point the camera at your meal.");
         return;
@@ -381,11 +402,11 @@ export default function ScanScreen() {
           )}
 
           {cameraReady ? (
-            <View style={[styles.frame, { pointerEvents: 'none' }]}>
-              {(['tl', 'tr', 'bl', 'br'] as const).map((corner) => (
-                <View key={corner} style={[styles.corner, styles[corner]]} />
-              ))}
-            </View>
+            <ScanViewfinder
+              size={viewfinderSize}
+              top={viewfinderTop}
+              left={viewfinderLeft}
+            />
           ) : null}
 
           <View style={styles.controls}>
@@ -421,10 +442,12 @@ export default function ScanScreen() {
           <View style={styles.analyzingImageWrap}>
             {displayUri ? (
               <View style={styles.analyzingPreviewShell}>
-                <MealPhotoPreview uri={displayUri} maxHeightRatio={0.38} bordered />
+                <MealPhotoPreview uri={displayUri} square bordered />
                 <ScanSweep />
               </View>
-            ) : null}
+            ) : (
+              <View style={styles.analyzingPlaceholder} />
+            )}
           </View>
           <Text style={styles.analyzingTitle}>{ANALYZING_STEPS[analyzeStep]}</Text>
           <Text style={styles.analyzingSub}>AI is reading your plate</Text>
@@ -445,7 +468,7 @@ export default function ScanScreen() {
           showsVerticalScrollIndicator={false}>
           {displayUri ? (
             <Animated.View entering={FadeIn} style={styles.resultImageWrap}>
-              <MealPhotoPreview uri={displayUri} maxHeightRatio={0.42} bordered />
+              <MealPhotoPreview uri={displayUri} square bordered />
             </Animated.View>
           ) : null}
 
@@ -636,17 +659,25 @@ const styles = StyleSheet.create({
     maxWidth: 300,
     lineHeight: 19,
   },
-  frame: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, margin: 28 },
+  dim: {
+    position: 'absolute',
+    backgroundColor: 'rgba(12, 11, 16, 0.55)',
+  },
+  squareFrame: {
+    position: 'absolute',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255, 255, 255, 0.18)',
+  },
   corner: {
     position: 'absolute',
     width: 24,
     height: 24,
     borderColor: colors.accent,
   },
-  tl: { top: 0, left: 0, borderTopWidth: 2, borderLeftWidth: 2 },
-  tr: { top: 0, right: 0, borderTopWidth: 2, borderRightWidth: 2 },
-  bl: { bottom: 96, left: 0, borderBottomWidth: 2, borderLeftWidth: 2 },
-  br: { bottom: 96, right: 0, borderBottomWidth: 2, borderRightWidth: 2 },
+  tl: { top: -1, left: -1, borderTopWidth: 2, borderLeftWidth: 2 },
+  tr: { top: -1, right: -1, borderTopWidth: 2, borderRightWidth: 2 },
+  bl: { bottom: -1, left: -1, borderBottomWidth: 2, borderLeftWidth: 2 },
+  br: { bottom: -1, right: -1, borderBottomWidth: 2, borderRightWidth: 2 },
   controls: {
     position: 'absolute',
     bottom: 0,
@@ -698,6 +729,14 @@ const styles = StyleSheet.create({
   analyzingPreviewShell: {
     width: '100%',
     position: 'relative',
+    overflow: 'hidden',
+  },
+  analyzingPlaceholder: {
+    width: '100%',
+    aspectRatio: 1,
+    backgroundColor: colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.hairlineBright,
   },
   sweepLine: {
     position: 'absolute',

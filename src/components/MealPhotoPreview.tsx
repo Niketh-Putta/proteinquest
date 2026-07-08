@@ -9,16 +9,29 @@ interface Props {
   /** Cap height as a fraction of screen height (default 0.42). */
   maxHeightRatio?: number;
   bordered?: boolean;
+  /** Force a 1:1 square frame (meal scan photos). */
+  square?: boolean;
 }
 
-export function MealPhotoPreview({ uri, maxHeightRatio = 0.42, bordered = true }: Props) {
+export function MealPhotoPreview({
+  uri,
+  maxHeightRatio = 0.42,
+  bordered = true,
+  square = false,
+}: Props) {
   const { height: screenH } = useWindowDimensions();
   const maxHeight = screenH * maxHeightRatio;
   const [layoutWidth, setLayoutWidth] = useState(0);
   const [aspect, setAspect] = useState(3 / 4);
 
-  const frameHeight =
-    layoutWidth > 0 ? Math.min(layoutWidth / aspect, maxHeight) : maxHeight;
+  const frameAspect = square ? 1 : aspect;
+  const frameHeight = layoutWidth > 0
+    ? square
+      ? layoutWidth
+      : Math.min(layoutWidth / frameAspect, maxHeight)
+    : square
+      ? maxHeight
+      : maxHeight;
 
   function onLayout(e: LayoutChangeEvent) {
     const w = e.nativeEvent.layout.width;
@@ -36,8 +49,9 @@ export function MealPhotoPreview({ uri, maxHeightRatio = 0.42, bordered = true }
       <Image
         source={{ uri }}
         style={styles.image}
-        contentFit="contain"
+        contentFit={square ? 'cover' : 'contain'}
         onLoad={(e) => {
+          if (square) return;
           const { width, height } = e.source;
           if (width && height && height > 0) setAspect(width / height);
         }}

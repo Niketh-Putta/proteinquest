@@ -39,7 +39,7 @@ if (!versionArg) {
 
 const whatsNew =
   whatsNewArg ??
-  'Fixes App Store subscription purchases, adds Upgrade to Pro in Settings, extends the free trial to 3 days.';
+  'Square meal scan frame for clearer food photos, improved subscription purchase flow, Upgrade to Pro in Settings, and 3-day free trial.';
 
 function errDetail(json) {
   const e = json?.errors?.[0];

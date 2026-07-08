@@ -102,10 +102,11 @@ async function uploadScreenshot(setId, filePath) {
   console.log('  uploaded', fileName);
 }
 
+const versionLocId = await resolveVersionLocalizationId();
+
 for (const { displayType, dir } of sets) {
   const files = fs.readdirSync(dir).filter((f) => f.endsWith('.png')).sort();
   console.log(displayType, files.length, 'files');
-  const versionLocId = await resolveVersionLocalizationId();
   const setId = await ensureScreenshotSet(versionLocId, displayType);
   await clearScreenshotSet(setId);
   for (const f of files) {

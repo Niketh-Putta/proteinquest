@@ -2,7 +2,7 @@
   "expo": {
     "name": "ProteinQuest",
     "slug": "proteinquest",
-    "version": "1.0.7",
+    "version": "1.0.8",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "proteinquest",
@@ -10,7 +10,7 @@
     "backgroundColor": "#0C0B10",
     "ios": {
       "bundleIdentifier": "com.proteinquest.app",
-      "buildNumber": "7",
+      "buildNumber": "8",
       "supportsTablet": true,
       "entitlements": {
         "aps-environment": "production"

@@ -146,6 +146,15 @@ jobs:
           EXPO_ASC_API_KEY_PATH: ./store/AuthKey_${{ steps.asc.outputs.key_id }}.p8
         run: node scripts/validate-asc-key.mjs
 
+      - name: Validate iOS version > latest approved (ITMS-90062)
+        if: steps.asc.outputs.present == 'true' && inputs.submit_only != true
+        env:
+          APPLE_ASC_API_KEY_P8: ${{ secrets.APPLE_ASC_API_KEY_P8 }}
+          APPLE_ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
+          EXPO_ASC_KEY_ID: ${{ steps.asc.outputs.key_id }}
+          EXPO_ASC_API_KEY_PATH: ./store/AuthKey_${{ steps.asc.outputs.key_id }}.p8
+        run: node scripts/validate-ios-version.mjs --strict
+
       - name: Bootstrap iOS credentials on EAS
         id: ios_bootstrap
         if: steps.asc.outputs.present == 'true' && inputs.submit_only != true

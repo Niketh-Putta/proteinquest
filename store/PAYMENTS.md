@@ -208,7 +208,11 @@ Until dashboard secrets are set, native builds show **“Payments aren’t conne
 
 RevenueCat error: *None of the products registered in the RevenueCat dashboard could be fetched from App Store Connect.*
 
-**Root cause:** StoreKit cannot load `pro_weekly` / `pro_yearly` from ASC. Code IDs are correct (`com.proteinquest.app`, entitlement `pro`, offering `default`). iOS 1.0.5 build **does** bake in `EXPO_PUBLIC_REVENUECAT_IOS_KEY` (CI syncs it to EAS production).
+**Root cause:** StoreKit cannot load `pro_weekly` / `pro_yearly` from ASC. Code IDs are correct (`com.proteinquest.app`, entitlement `pro`, offering `default`). iOS builds bake in `EXPO_PUBLIC_REVENUECAT_IOS_KEY` (CI syncs it to EAS production).
+
+**Most common live blocker:** **Paid Apps Agreement** is not **Active** (status `New` or `Pending User Info`). Complete Business → banking (wait for Processing), US tax form W-8BEN, then sign Paid Apps. Until Active, StoreKit returns no prices and the paywall shows fallback £6.99/£29.99 with Subscribe disabled.
+
+**ITMS-90062 (duplicate version):** Uploading the same `CFBundleShortVersionString` as an already-approved release fails. Bump `expo.version` in `app.json` before each new App Store binary. CI runs `node scripts/validate-ios-version.mjs --strict` to catch this pre-build.
 
 ### App Store Connect (required)
 

@@ -85,6 +85,9 @@ ready = check('Paywall Terms + Privacy + Restore', (() => {
 ready = check('EXPO_TOKEN set', !!process.env.EXPO_TOKEN?.trim()) && ready;
 ready = check('EXPO_PUBLIC_REVENUECAT_IOS_KEY (appl_…)', process.env.EXPO_PUBLIC_REVENUECAT_IOS_KEY?.startsWith('appl_') ?? false, 'add after RevenueCat iOS app + rebuild') && ready;
 
+const appVersion = JSON.parse(readFileSync(join(ROOT, 'app.json'), 'utf8')).expo.version;
+ready = check(`iOS version bumped (${appVersion})`, appVersion !== '1.0.5', 'must exceed last approved — run node scripts/validate-ios-version.mjs') && ready;
+
 ready = check('eas.json appleId', iosSubmit.appleId && !iosSubmit.appleId.includes('REPLACE')) && ready;
 ready = check('eas.json ascAppId', iosSubmit.ascAppId && !String(iosSubmit.ascAppId).includes('REPLACE'), 'App Store Connect → App Information → Apple ID') && ready;
 ready = check('eas.json appleTeamId', iosSubmit.appleTeamId && !iosSubmit.appleTeamId.includes('REPLACE'), 'developer.apple.com/account → Membership') && ready;

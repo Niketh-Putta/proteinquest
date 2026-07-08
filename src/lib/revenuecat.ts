@@ -156,8 +156,9 @@ function offeringsUnavailableMessage(): string {
     );
   }
   return (
-    'Subscriptions are not available yet. In App Store Connect, ensure pro_weekly and pro_yearly are Ready to Submit ' +
-    '(metadata, pricing, review screenshot), linked in RevenueCat, and the In-App Purchase API key is uploaded. See store/PAYMENTS.md.'
+    'Subscriptions are not available yet. In App Store Connect → Business, the Paid Apps Agreement must be Active ' +
+    '(complete banking, US tax form W-8BEN, and sign Paid Apps). Also ensure pro_weekly and pro_yearly are Approved ' +
+    'and linked in RevenueCat with the In-App Purchase API key uploaded. See store/PAYMENTS.md.'
   );
 }
 
