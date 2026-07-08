@@ -20,6 +20,10 @@ const files = [
     name: 'functions/_shared/protein-density.ts',
     path: 'supabase/functions/_shared/protein-density.ts',
   },
+  {
+    name: 'functions/_shared/scan-entitlement.ts',
+    path: 'supabase/functions/_shared/scan-entitlement.ts',
+  },
 ];
 
 const payload = {
