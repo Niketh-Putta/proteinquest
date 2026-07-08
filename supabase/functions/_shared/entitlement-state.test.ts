@@ -11,8 +11,8 @@ test('renewal grants pro', () => {
   assert.equal(resolveEntitlementState('RENEWAL', ['pro']), true);
 });
 
-test('cancellation revokes pro', () => {
-  assert.equal(resolveEntitlementState('CANCELLATION', ['pro']), false);
+test('cancellation is ignored until expiration', () => {
+  assert.equal(resolveEntitlementState('CANCELLATION', ['pro']), null);
 });
 
 test('expiration revokes pro', () => {

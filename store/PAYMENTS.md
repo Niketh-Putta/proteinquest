@@ -198,6 +198,27 @@ supabase secrets set REVENUECAT_WEBHOOK_AUTH=$(openssl rand -hex 32)
 
 ---
 
+## Production go-live (App Store build live)
+
+When the app is on the App Store, payments work only if **all** of these are true:
+
+| Check | Where |
+|-------|--------|
+| `EXPO_PUBLIC_REVENUECAT_IOS_KEY` baked into the **production EAS build** | GitHub secret → CI `eas env:create` → rebuild if missing from live build |
+| Paid Apps Agreement **Active** | App Store Connect → Business |
+| `pro_weekly` + `pro_yearly` **Approved** | App Store Connect → Subscriptions |
+| RevenueCat iOS app + **In-App Purchase key** linked | RevenueCat dashboard |
+| Offering `default` with `$rc_weekly` + `$rc_annual` → entitlement `pro` | RevenueCat dashboard |
+| Webhook deployed + registered | `supabase functions deploy revenuecat-webhook` + RC Integrations |
+
+Run: `node scripts/verify-payments-production.mjs`
+
+**Webhook behaviour:** `CANCELLATION` (user turned off auto-renew) does **not** revoke Pro until `EXPIRATION` — subscribers keep access for the paid period.
+
+**Server enforcement:** `analyze-food` rejects photo scans over the free daily limit (403) even if the client is modified.
+
+---
+
 ## Current gap (manual)
 
 Until dashboard secrets are set, native builds show **“Payments aren’t connected yet”** and use test-mode unlock. Complete the checklists above to go live.

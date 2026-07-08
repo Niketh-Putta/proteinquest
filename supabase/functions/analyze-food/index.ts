@@ -1,5 +1,6 @@
 // Protein analysis via server Gemini key (primary) or OpenAI fallback.
 
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import {
   lookupCalorieDensity,
   caloriesFromDensity,
@@ -8,10 +9,14 @@ import {
   lookupProteinDensity,
   proteinFromDensity,
 } from "../_shared/protein-density.ts";
+import { canScanPhoto } from "../_shared/scan-entitlement.ts";
 
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
 const OPENAI_MODEL = Deno.env.get("OPENAI_MODEL") ?? "gpt-4o";
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 const GEMINI_MODELS = [
   Deno.env.get("GEMINI_MODEL") ?? "gemini-2.5-flash",
   "gemini-2.5-pro",
@@ -175,6 +180,9 @@ Deno.serve(async (req) => {
   }
 
   try {
+    const gate = await enforcePhotoScanLimit(req);
+    if (gate) return gate;
+
     const body = await req.json();
     const { image_base64, mime_type = "image/jpeg" } = body;
     if (!image_base64) {
@@ -715,6 +723,53 @@ function geminiErrorMessage(status: number, body: string): string {
 
 function round1(n: number): number {
   return Math.round(n * 10) / 10;
+}
+
+async function enforcePhotoScanLimit(req: Request): Promise<Response | null> {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SUPABASE_SERVICE_ROLE_KEY) {
+    return null;
+  }
+
+  const auth = req.headers.get("Authorization");
+  if (!auth?.startsWith("Bearer ")) {
+    return json({ error: "Sign in required to scan meals." }, 401);
+  }
+
+  const userClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    global: { headers: { Authorization: auth } },
+  });
+  const { data: userData, error: userError } = await userClient.auth.getUser();
+  const userId = userData.user?.id;
+  if (userError || !userId) {
+    return json({ error: "Sign in required to scan meals." }, 401);
+  }
+
+  const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+  const { data: profile } = await admin
+    .from("profiles")
+    .select("is_premium, created_at")
+    .eq("id", userId)
+    .maybeSingle();
+
+  const today = new Date().toISOString().slice(0, 10);
+  const { count } = await admin
+    .from("protein_logs")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .eq("logged_date", today)
+    .in("source", ["photo", "photo_scan"]);
+
+  const decision = canScanPhoto({
+    isPremium: profile?.is_premium === true,
+    createdAt: profile?.created_at ?? null,
+    scansUsedToday: count ?? 0,
+  });
+
+  if (!decision.allowed) {
+    return json({ error: decision.message ?? "Daily scan limit reached." }, 403);
+  }
+
+  return null;
 }
 
 function json(body: unknown, status = 200): Response {

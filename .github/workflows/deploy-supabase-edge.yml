@@ -17,11 +17,15 @@ jobs:
         with:
           version: latest
 
-      - name: Deploy analyze-food
+      - name: Deploy payment + analysis edge functions
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
           set -euo pipefail
-          supabase functions deploy analyze-food \
-            --project-ref csxdkvpvcasuknhnprxp \
-            --no-verify-jwt
+          PROJECT=csxdkvpvcasuknhnprxp
+          for fn in analyze-food revenuecat-webhook; do
+            echo "Deploying $fn…"
+            supabase functions deploy "$fn" \
+              --project-ref "$PROJECT" \
+              --no-verify-jwt
+          done

@@ -10,8 +10,14 @@ export const REVENUECAT_PRODUCT_IDS = {
   yearly: 'pro_yearly',
 } as const;
 
-const IOS_KEY = process.env.EXPO_PUBLIC_REVENUECAT_IOS_KEY ?? '';
-const ANDROID_KEY = process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY ?? '';
+const extra = Constants.expoConfig?.extra as
+  | { revenueCatIosKey?: string; revenueCatAndroidKey?: string }
+  | undefined;
+
+const IOS_KEY =
+  process.env.EXPO_PUBLIC_REVENUECAT_IOS_KEY ?? extra?.revenueCatIosKey ?? '';
+const ANDROID_KEY =
+  process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY ?? extra?.revenueCatAndroidKey ?? '';
 
 /** Expo Go has no react-native-purchases native module — treat as unconfigured. */
 const IS_EXPO_GO =

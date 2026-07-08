@@ -10,7 +10,6 @@ const GRANT_EVENTS = new Set([
 
 const REVOKE_EVENTS = new Set([
   "EXPIRATION",
-  "CANCELLATION",
   "BILLING_ISSUE",
 ]);
 
@@ -19,7 +18,8 @@ const REVOKE_EVENTS = new Set([
  * the event type is not relevant (caller should skip the write).
  *
  * - Grant events → premium when the pro entitlement is (or is implicitly) active.
- * - Revoke events (cancel / expire / billing issue) → always false.
+ * - Revoke events → false on expiration or billing failure.
+ * - CANCELLATION is ignored: auto-renew is off but access continues until EXPIRATION.
  */
 export function resolveEntitlementState(
   eventType: string,

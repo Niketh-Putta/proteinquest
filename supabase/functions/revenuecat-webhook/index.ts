@@ -65,7 +65,7 @@ Deno.serve(async (req) => {
         Prefer: "return=minimal",
       },
       body: JSON.stringify({
-        // Grant → dismiss the paywall. Revoke (cancel/expire/billing issue) →
+        // Grant → dismiss the paywall. Revoke (expire/billing issue) →
         // clear the dismissal so former subscribers get paywalls like everyone else.
         is_premium: isPremium,
         paywall_dismissed: isPremium,
