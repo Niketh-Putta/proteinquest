@@ -223,15 +223,6 @@ jobs:
           "
           npx eas-cli submit --platform ios --profile production --path store/ProteinQuest.ipa --non-interactive
 
-      - name: Upload App Store screenshots
-        if: steps.asc.outputs.present == 'true'
-        env:
-          APPLE_ASC_API_KEY_P8: ${{ secrets.APPLE_ASC_API_KEY_P8 }}
-          APPLE_ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
-          EXPO_ASC_KEY_ID: ${{ steps.asc.outputs.key_id }}
-          EXPO_ASC_API_KEY_PATH: ./store/AuthKey_${{ steps.asc.outputs.key_id }}.p8
-        run: node scripts/asc-upload-screenshots.mjs
-
       - name: App Store status (before submit)
         if: steps.asc.outputs.present == 'true'
         env:
@@ -274,6 +265,15 @@ jobs:
           done
           echo "::error::Timed out waiting for VALID ASC build for iOS $VERSION"
           exit 1
+
+      - name: Upload App Store screenshots
+        if: steps.asc.outputs.present == 'true'
+        env:
+          APPLE_ASC_API_KEY_P8: ${{ secrets.APPLE_ASC_API_KEY_P8 }}
+          APPLE_ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
+          EXPO_ASC_KEY_ID: ${{ steps.asc.outputs.key_id }}
+          EXPO_ASC_API_KEY_PATH: ./store/AuthKey_${{ steps.asc.outputs.key_id }}.p8
+        run: node scripts/asc-upload-screenshots.mjs || true
 
       - name: Summary
         if: always()
