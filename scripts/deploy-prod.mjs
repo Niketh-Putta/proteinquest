@@ -10,7 +10,7 @@ const PRODUCTION_DOMAINS = [
   'proteinquest.vercel.app',
   'proteinlens.vercel.app',
 ];
-const VERCEL_SCOPE = 'niketh-puttas-projects';
+const VERCEL_SCOPE = process.env.VERCEL_SCOPE?.trim() || '';
 
 function run(command, options = {}) {
   console.log(`\n> ${command}`);
@@ -54,24 +54,26 @@ function parseDeployUrl(output) {
   );
 }
 
-function vercelDeploy(distDir) {
+function vercelArgs(base) {
   const token = vercelToken();
-  if (!token) {
+  const args = [...base];
+  if (token && process.env.VERCEL_TOKEN?.trim()) {
+    args.push('--token', token);
+  }
+  if (VERCEL_SCOPE) args.push('--scope', VERCEL_SCOPE);
+  return args;
+}
+
+function vercelDeploy() {
+  const token = vercelToken();
+  if (!token && !process.env.VERCEL_TOKEN?.trim()) {
+    // Linked project + local `vercel login` is enough.
+  } else if (!token) {
     console.error('No Vercel token found. Run `vercel login` or set VERCEL_TOKEN.');
     process.exit(1);
   }
 
-  const args = [
-    'deploy',
-    '--prod',
-    '--yes',
-    '--prebuilt',
-    '--json',
-    '--token',
-    token,
-    '--scope',
-    VERCEL_SCOPE,
-  ];
+  const args = vercelArgs(['deploy', '--prod', '--yes', '--prebuilt', '--json']);
 
   const result = spawnSync('vercel', args, {
     encoding: 'utf8',
@@ -101,13 +103,11 @@ if (!deployOnly) {
   run('node scripts/prepare-vercel-output.mjs', { inherit: true });
 }
 
-const deploymentUrl = vercelDeploy('dist');
-const token = vercelToken();
+const deploymentUrl = vercelDeploy();
 for (const domain of PRODUCTION_DOMAINS) {
-  run(
-    `vercel alias set ${deploymentUrl} ${domain} --token "${token}" --scope ${VERCEL_SCOPE}`,
-    { inherit: true },
-  );
+  const aliasArgs = vercelArgs(['alias', 'set', deploymentUrl, domain]);
+  const result = spawnSync('vercel', aliasArgs, { encoding: 'utf8', stdio: 'inherit' });
+  if (result.status !== 0) process.exit(result.status || 1);
 }
 for (const domain of PRODUCTION_DOMAINS) {
   console.log(`Production: https://${domain}`);

@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npx expo export --platform web && node scripts/prepare-web-export.mjs",
+  "buildCommand": "node scripts/prepare-marketing-dist.mjs",
   "outputDirectory": "dist",
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+  "installCommand": "npm ci"
 }

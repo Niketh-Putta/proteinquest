@@ -34,12 +34,11 @@ jobs:
       - name: Sync Vercel project env vars
         run: |
           set -euo pipefail
-          SCOPE="${VERCEL_SCOPE:-niketh-puttas-projects}"
           for name in EXPO_PUBLIC_SUPABASE_URL EXPO_PUBLIC_SUPABASE_KEY; do
             val="${!name:-}"
             if [ -n "$val" ]; then
-              printf '%s' "$val" | npx vercel env rm "$name" production --yes --token "${{ secrets.VERCEL_TOKEN }}" --scope "$SCOPE" 2>/dev/null || true
-              printf '%s' "$val" | npx vercel env add "$name" production --token "${{ secrets.VERCEL_TOKEN }}" --scope "$SCOPE"
+              printf '%s' "$val" | npx vercel env rm "$name" production --yes --token "${{ secrets.VERCEL_TOKEN }}" 2>/dev/null || true
+              printf '%s' "$val" | npx vercel env add "$name" production --token "${{ secrets.VERCEL_TOKEN }}"
             fi
           done
 
@@ -57,15 +56,14 @@ jobs:
         id: app_deploy
         run: |
           set -euo pipefail
-          SCOPE="${VERCEL_SCOPE:-niketh-puttas-projects}"
           cd dist
-          APP_DEPLOY_URL="$(npx vercel deploy --yes --token "${{ secrets.VERCEL_TOKEN }}" --scope "$SCOPE" 2>&1 | grep -oE 'https://[a-z0-9-]+\.vercel\.app' | tail -n 1)"
+          APP_DEPLOY_URL="$(npx vercel deploy --yes --token "${{ secrets.VERCEL_TOKEN }}" 2>&1 | grep -oE 'https://[a-z0-9-]+\.vercel\.app' | tail -n 1)"
           if [ -z "$APP_DEPLOY_URL" ]; then
             echo "::error::Could not parse web app deploy URL"
             exit 1
           fi
           for domain in app.proteinquest.app app.proteinquest.vercel.app; do
-            npx vercel alias set "$APP_DEPLOY_URL" "$domain" --token "${{ secrets.VERCEL_TOKEN }}" --scope "$SCOPE" 2>/dev/null || \
+            npx vercel alias set "$APP_DEPLOY_URL" "$domain" --token "${{ secrets.VERCEL_TOKEN }}" 2>/dev/null || \
             npx vercel alias set "$APP_DEPLOY_URL" "$domain" --token "${{ secrets.VERCEL_TOKEN }}" || true
           done
           echo "app_url=$APP_DEPLOY_URL" >> "$GITHUB_OUTPUT"
@@ -74,14 +72,13 @@ jobs:
       - name: Deploy marketing site to proteinquest.app (must be last)
         run: |
           set -euo pipefail
-          SCOPE="${VERCEL_SCOPE:-niketh-puttas-projects}"
-          DEPLOY_URL="$(npx vercel deploy --prod --yes --prebuilt --token "${{ secrets.VERCEL_TOKEN }}" --scope "$SCOPE" 2>&1 | grep -oE 'https://[a-z0-9-]+\.vercel\.app' | tail -n 1)"
+          DEPLOY_URL="$(npx vercel deploy --prod --yes --prebuilt --token "${{ secrets.VERCEL_TOKEN }}" 2>&1 | grep -oE 'https://[a-z0-9-]+\.vercel\.app' | tail -n 1)"
           if [ -z "$DEPLOY_URL" ]; then
             echo "::error::Could not parse marketing deploy URL"
             exit 1
           fi
           for domain in proteinquest.app www.proteinquest.app proteinquest.vercel.app proteinlens.vercel.app; do
-            npx vercel alias set "$DEPLOY_URL" "$domain" --token "${{ secrets.VERCEL_TOKEN }}" --scope "$SCOPE" 2>/dev/null || \
+            npx vercel alias set "$DEPLOY_URL" "$domain" --token "${{ secrets.VERCEL_TOKEN }}" 2>/dev/null || \
             npx vercel alias set "$DEPLOY_URL" "$domain" --token "${{ secrets.VERCEL_TOKEN }}" || true
           done
           echo "Marketing: https://proteinquest.app ($DEPLOY_URL)"
