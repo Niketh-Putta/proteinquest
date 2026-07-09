@@ -77,3 +77,11 @@ export function scansLimitLabel(scansUsedToday: number, profile: Profile | null 
   if (left === 0) return 'Out of free scans. Go Pro';
   return `${left} free scan${left === 1 ? '' : 's'} left today`;
 }
+
+/** True when a message is (or was) a free-tier scan-limit notice — never show as a banner. */
+export function isScanLimitMessage(message: string | null | undefined): boolean {
+  if (!message) return false;
+  return /daily scan limit|scan limit reached|out of free scans|upgrade to (proteinquest )?pro for unlimited/i.test(
+    message,
+  );
+}

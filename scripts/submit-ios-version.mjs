@@ -39,7 +39,7 @@ if (!versionArg) {
 
 const whatsNew =
   whatsNewArg ??
-  'Square meal scan frame for clearer food photos, improved subscription purchase flow, Upgrade to Pro in Settings, and 3-day free trial.';
+  'Fixes free-scan counting and paywall routing, clearer safe-area layout, and an in-app update prompt when a newer store build is available.';
 
 function errDetail(json) {
   const e = json?.errors?.[0];

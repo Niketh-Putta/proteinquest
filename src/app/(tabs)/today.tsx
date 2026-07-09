@@ -11,7 +11,7 @@ import {
   View,
 } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CharacterCard } from '@/components/CharacterCard';
 import { DailyDragonPicker } from '@/components/DailyDragonPicker';
@@ -41,11 +41,14 @@ export default function TodayScreen() {
     isNarrow,
   } = useLayout();
   const tabBarScrollInset = useTabBarScrollInset(isNarrow);
+  const insets = useSafeAreaInsets();
   const { profile, saveProfile } = useSession();
   const [logs, setLogs] = useState<ProteinLog[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [scansLeft, setScansLeft] = useState<number | null>(null);
+  /** Extra air below Dynamic Island so FREE / date never sit under the camera. */
+  const headerTopPad = insets.top > 0 ? spacing.md : 0;
 
   const load = useCallback(async () => {
     try {
@@ -154,7 +157,7 @@ export default function TodayScreen() {
   function renderHeader() {
     const snapshot = xpSnapshot(profile);
     return (
-      <View>
+      <View style={headerTopPad > 0 ? { paddingTop: headerTopPad } : undefined}>
         <View style={styles.header}>
           <View style={{ flex: 1 }}>
             <Pressable

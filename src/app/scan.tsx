@@ -2,8 +2,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
-import { router } from 'expo-router';
-import React, { useEffect, useRef, useState } from 'react';
+import { router, useFocusEffect } from 'expo-router';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Platform,
   Pressable,
@@ -40,7 +40,13 @@ import {
 import { applyLogToCharacter, isDailyDragonLockedForToday } from '@/lib/character';
 import { useLayout } from '@/lib/layout';
 import { prepareSquareMealPhoto } from '@/lib/meal-photo';
-import { canScan, isInHabitGracePeriod, isPro, remainingFreeScans } from '@/lib/paywall-gate';
+import {
+  canScan,
+  isInHabitGracePeriod,
+  isPro,
+  isScanLimitMessage,
+  remainingFreeScans,
+} from '@/lib/paywall-gate';
 import { todayISODate } from '@/lib/protein';
 import { useSession } from '@/lib/session';
 import type { Analysis } from '@/lib/types';
@@ -116,8 +122,8 @@ export default function ScanScreen() {
   const { horizontalPad, contentWidth, contentMaxWidth } = useLayout();
   const { width: screenW, height: screenH } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  /** Keep close control below Dynamic Island / front camera — never flush to screen top. */
-  const headerTop = Math.max(insets.top + spacing.sm, 56);
+  /** Keep chrome below Dynamic Island / front camera on all phones. */
+  const headerTop = Math.max(insets.top, 44) + spacing.md;
   const headerChrome = headerTop + 44 + spacing.sm;
   const controlsChrome = 64 + spacing.lg + Math.max(insets.bottom, spacing.md);
   const viewfinderSize = Math.min(
@@ -170,6 +176,37 @@ export default function ScanScreen() {
     }
   }, [profile]);
 
+  const needsScanQuota =
+    !!profile && !isPro(profile) && !isInHabitGracePeriod(profile);
+
+  const openPaywallForLimit = useCallback(() => {
+    setError(null);
+    setPhase('camera');
+    router.push('/paywall');
+  }, []);
+
+  /** Keep Today pill and Scan gate on the same live count; never show a limit banner. */
+  useFocusEffect(
+    useCallback(() => {
+      if (!needsScanQuota) {
+        setScansLeft(null);
+        return;
+      }
+      let cancelled = false;
+      countTodayPhotoScans()
+        .then((used) => {
+          if (cancelled) return;
+          setScansLeft(remainingFreeScans(used, profile));
+          // Only gate the camera entry — don't yank users off result after their last scan.
+          if (phase === 'camera' && !canScan(profile, used)) openPaywallForLimit();
+        })
+        .catch(() => {});
+      return () => {
+        cancelled = true;
+      };
+    }, [needsScanQuota, openPaywallForLimit, phase, profile]),
+  );
+
   useEffect(() => {
     if (phase !== 'analyzing') return;
     setAnalyzeStep(0);
@@ -182,6 +219,12 @@ export default function ScanScreen() {
 
   async function capture() {
     try {
+      try {
+        const allowed = await ensureCanScan();
+        if (needsScanQuota && allowed === null) return;
+      } catch {
+        /* count failed — allow capture; analyze rechecks */
+      }
       const photo = await cameraRef.current?.takePictureAsync({ quality: 0.8 });
       if (!photo?.uri) throw new Error('Could not capture the photo');
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
@@ -192,6 +235,12 @@ export default function ScanScreen() {
   }
 
   async function pickFromLibrary() {
+    try {
+      const allowed = await ensureCanScan();
+      if (needsScanQuota && allowed === null) return;
+    } catch {
+      /* count failed — allow picker; analyze rechecks */
+    }
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
       showError('Photo library access is needed to upload a meal photo.');
@@ -206,9 +255,24 @@ export default function ScanScreen() {
   }
 
   function showError(message: string) {
+    if (isScanLimitMessage(message)) {
+      openPaywallForLimit();
+      return;
+    }
     setError(message);
     setPhase('camera');
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+  }
+
+  async function ensureCanScan(): Promise<number | null> {
+    if (!needsScanQuota) return null;
+    const used = await countTodayPhotoScans();
+    setScansLeft(remainingFreeScans(used, profile));
+    if (!canScan(profile, used)) {
+      openPaywallForLimit();
+      return null;
+    }
+    return used;
   }
 
   async function analyze(uri: string) {
@@ -217,21 +281,32 @@ export default function ScanScreen() {
       router.replace('/(tabs)/today');
       return;
     }
-    const needsScanCheck = profile && !isPro(profile) && !isInHabitGracePeriod(profile);
-    const scanCountPromise = needsScanCheck ? countTodayPhotoScans() : null;
+
+    // Gate before camera work so Today "1 left" and Scan never disagree.
+    let usedAtStart: number | null = null;
+    try {
+      usedAtStart = await ensureCanScan();
+      if (needsScanQuota && usedAtStart === null) return;
+    } catch {
+      /* count failed — allow attempt; analyze path rechecks */
+    }
 
     setPhase('analyzing');
     try {
       const [square, used] = await Promise.all([
         prepareSquareMealPhoto(uri),
-        scanCountPromise ?? Promise.resolve(null),
+        needsScanQuota ? countTodayPhotoScans() : Promise.resolve(null),
       ]);
 
       setDisplayUri(square.uri);
 
-      if (needsScanCheck && used !== null && !canScan(profile!, used)) {
-        router.push('/paywall');
-        return;
+      const usedNow = used ?? usedAtStart;
+      if (needsScanQuota && usedNow !== null) {
+        setScansLeft(remainingFreeScans(usedNow, profile));
+        if (!canScan(profile!, usedNow)) {
+          openPaywallForLimit();
+          return;
+        }
       }
       setImageBase64(square.base64);
 
@@ -245,11 +320,9 @@ export default function ScanScreen() {
       setProteinOverride(String(Math.round(res.total_protein_g)));
       setCalorieOverride(res.calories ? String(Math.round(res.calories)) : '');
 
-      const tracksScanQuota =
-        profile && session?.user.id && !isPro(profile) && !isInHabitGracePeriod(profile);
-      if (tracksScanQuota) {
+      if (needsScanQuota && session?.user.id) {
         await recordPhotoScan(session.user.id);
-        setScansLeft(remainingFreeScans((used ?? 0) + 1, profile));
+        setScansLeft(remainingFreeScans((usedNow ?? 0) + 1, profile));
       }
 
       setPhase('result');
@@ -367,7 +440,14 @@ export default function ScanScreen() {
       {phase !== 'camera' || demoAutoScan ? renderHeader() : null}
 
       {error ? (
-        <Animated.View entering={FadeInDown.duration(320)} style={styles.errorBanner}>
+        <Animated.View
+          entering={FadeInDown.duration(320)}
+          style={[
+            styles.errorBanner,
+            phase === 'camera' && !demoAutoScan
+              ? [styles.errorBannerOverlay, { top: headerTop + 44 }]
+              : { marginTop: spacing.sm },
+          ]}>
           <Ionicons name="alert-circle" size={15} color={colors.danger} />
           <Text style={styles.errorText}>{error}</Text>
           <Pressable onPress={() => setError(null)} hitSlop={8}>
@@ -633,8 +713,18 @@ const styles = StyleSheet.create({
     marginHorizontal: spacing.md,
     marginBottom: spacing.sm,
     paddingVertical: 10,
+    paddingHorizontal: spacing.sm,
+    borderRadius: 10,
+    backgroundColor: 'rgba(12, 11, 16, 0.88)',
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.danger,
+  },
+  errorBannerOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    zIndex: 20,
+    marginBottom: 0,
   },
   errorText: { flex: 1, fontFamily: fonts.body, fontSize: 13, color: colors.danger },
   cameraWrap: { flex: 1 },
