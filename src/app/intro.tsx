@@ -35,7 +35,7 @@ import { Button } from '@/components/Button';
 import { useLayout, usePinnedFooterGap } from '@/lib/layout';
 import { useSession } from '@/lib/session';
 import { setPreferredName } from '@/lib/xp';
-import { colors, fonts, noTextCaret, pressableWeb, spacing, textInputWeb } from '@/theme';
+import { colors, displayLH, fonts, noTextCaret, pressableWeb, spacing, textInputWeb } from '@/theme';
 
 const HERO_ART = require('@/assets/character/dragons/fire-5.png');
 const EMBERS_VIDEO = require('@/assets/video/embers.mp4');
@@ -293,7 +293,7 @@ export default function IntroScreen() {
     const base = Math.round(
       Math.max(44, Math.min(width * 0.165, isDesktop ? 108 : 88)),
     );
-    return { fontSize: base, lineHeight: Math.round(base * 1.1) };
+    return { fontSize: base, lineHeight: displayLH(base) };
   }, [width, isDesktop]);
 
   function next() {

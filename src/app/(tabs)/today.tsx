@@ -27,7 +27,7 @@ import { useSession } from '@/lib/session';
 import type { ProteinLog } from '@/lib/types';
 import { formatXp } from '@/lib/leaderboard';
 import { xpSnapshot } from '@/lib/xp';
-import { colors, fonts, noTextCaret, pressableWeb, spacing } from '@/theme';
+import { colors, displayLH, fonts, noTextCaret, pressableWeb, spacing, type } from '@/theme';
 
 export default function TodayScreen() {
   const {
@@ -185,7 +185,9 @@ export default function TodayScreen() {
               </Text>
             </Pressable>
             <Text style={styles.eyebrow}>{dateLabel}</Text>
-            <Text style={[styles.title, { fontSize: titleSize }]}>Today</Text>
+            <Text style={[styles.title, { fontSize: titleSize, lineHeight: displayLH(titleSize) }]}>
+              Today
+            </Text>
           </View>
           <Pressable
             onPress={() => router.push('/league')}
@@ -435,16 +437,12 @@ const styles = StyleSheet.create({
   statusTagTextPro: { color: colors.bg },
   statusTagTextFree: { color: colors.textSecondary },
   eyebrow: {
-    fontFamily: fonts.mono,
-    fontSize: 10,
-    letterSpacing: 3,
+    ...type.eyebrow,
     color: colors.accent,
     marginBottom: 6,
   },
   title: {
-    fontFamily: fonts.displayHeavy,
-    color: colors.text,
-    letterSpacing: -1.2,
+    ...type.pageTitle,
   },
   gearBtn: {
     width: 44,

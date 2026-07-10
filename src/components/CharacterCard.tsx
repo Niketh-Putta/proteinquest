@@ -29,7 +29,7 @@ import { formatXp } from '@/lib/leaderboard';
 import { todayISODate } from '@/lib/protein';
 import { useLayout } from '@/lib/layout';
 import type { Profile } from '@/lib/types';
-import { colors, fonts, radius, spacing } from '@/theme';
+import { colors, displayLH, fonts, radius, spacing } from '@/theme';
 
 interface Props {
   profile: Profile;
@@ -150,7 +150,9 @@ function CharacterCardInner({
         </View>
 
         <View style={styles.identity}>
-          <Text style={[styles.name, { fontSize: nameSize }]}>{dragon.name}</Text>
+          <Text style={[styles.name, { fontSize: nameSize, lineHeight: displayLH(nameSize) }]}>
+            {dragon.name}
+          </Text>
           <Text style={[styles.stageLabel, { color: dragon.accent }]}>
             {dragon.name} · Lv {level} · {stage.name}
           </Text>

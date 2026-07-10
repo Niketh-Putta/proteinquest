@@ -14,7 +14,7 @@ import {
 } from '@/lib/payments';
 import { SITE_URL } from '@/lib/site';
 import { useSession } from '@/lib/session';
-import { colors, fonts, radius, spacing } from '@/theme';
+import { colors, displayLH, fonts, radius, spacing } from '@/theme';
 
 const PERKS = [
   { icon: 'infinite' as const, text: 'Unlimited AI scans every day' },
@@ -230,6 +230,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 40,
+    lineHeight: displayLH(40),
     fontWeight: '800',
     color: colors.text,
     marginTop: spacing.sm,

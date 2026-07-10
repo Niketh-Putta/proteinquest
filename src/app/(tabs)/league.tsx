@@ -36,7 +36,7 @@ import {
 import { todayISODate } from '@/lib/protein';
 import { useSession } from '@/lib/session';
 import { SITE_URL } from '@/lib/site';
-import { colors, fonts, pressableWeb, radius, spacing } from '@/theme';
+import { colors, displayLH, fonts, pressableWeb, radius, spacing } from '@/theme';
 
 const AVATAR_HUES = ['#FF7A59', '#9B8CFF', '#5BC8F5', '#5AD67A', '#FFB454', '#FF6B7A'];
 
@@ -379,7 +379,7 @@ export default function LeagueTab() {
             <View style={styles.headerCopy}>
               <Text style={styles.eyebrow}>PROTEINQUEST</Text>
               <Text
-                style={[styles.title, { fontSize: titleSize }]}
+                style={[styles.title, { fontSize: titleSize, lineHeight: displayLH(titleSize) }]}
                 numberOfLines={1}
                 adjustsFontSizeToFit
                 minimumFontScale={0.82}>

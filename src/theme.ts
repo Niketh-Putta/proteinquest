@@ -57,10 +57,24 @@ export const fonts = {
   body: Platform.select({ ios: 'system-ui', default: 'sans-serif' })!,
 } as const;
 
+/**
+ * Sora ExtraBold/Bold clip glyph tops when lineHeight ≈ fontSize.
+ * Use this for display titles and hero numbers instead of 1:1 leading.
+ */
+export function displayLH(fontSize: number): number {
+  return Math.round(fontSize * 1.2);
+}
+
 export const type = {
-  hero: { fontFamily: fonts.displayHeavy, fontSize: 72, lineHeight: 76, color: colors.text },
-  title: { fontFamily: fonts.display, fontSize: 28, lineHeight: 34, color: colors.text },
-  heading: { fontFamily: fonts.display, fontSize: 19, lineHeight: 25, color: colors.text },
+  hero: {
+    fontFamily: fonts.displayHeavy,
+    fontSize: 72,
+    lineHeight: displayLH(72),
+    color: colors.text,
+    ...(Platform.OS === 'android' ? { includeFontPadding: true } : null),
+  },
+  title: { fontFamily: fonts.display, fontSize: 28, lineHeight: displayLH(28), color: colors.text },
+  heading: { fontFamily: fonts.display, fontSize: 19, lineHeight: displayLH(19), color: colors.text },
   body: { fontFamily: fonts.body, fontSize: 15, lineHeight: 22, color: colors.textSecondary },
   label: {
     fontFamily: fonts.mono,
@@ -70,7 +84,24 @@ export const type = {
     textTransform: 'uppercase' as const,
     color: colors.textTertiary,
   },
-  stat: { fontFamily: fonts.display, fontSize: 24, lineHeight: 30, color: colors.text },
+  /** Screen titles (Rhythm, Today, etc.) — ExtraBold + negative tracking needs air. */
+  pageTitle: {
+    fontFamily: fonts.displayHeavy,
+    fontSize: 38,
+    lineHeight: displayLH(38),
+    letterSpacing: -1.2,
+    color: colors.text,
+    ...(Platform.OS === 'android' ? { includeFontPadding: true } : null),
+  },
+  /** Uppercase mono eyebrows (LAST 7 DAYS, PROTEIN TODAY). */
+  eyebrow: {
+    fontFamily: fonts.mono,
+    fontSize: 10,
+    lineHeight: 14,
+    letterSpacing: 3,
+    color: colors.textTertiary,
+  },
+  stat: { fontFamily: fonts.display, fontSize: 24, lineHeight: displayLH(24), color: colors.text },
 } as const;
 
 // RN 0.76+ / react-native-web support boxShadow directly; shadow* props are deprecated on web.

@@ -3,7 +3,7 @@ import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { DRAGONS } from '@/lib/character';
 import type { DragonId } from '@/lib/types';
-import { colors, fonts, pressableWeb, radius, spacing } from '@/theme';
+import { colors, displayLH, fonts, pressableWeb, radius, spacing } from '@/theme';
 
 interface Props {
   value: DragonId | null;
@@ -89,7 +89,7 @@ const styles = StyleSheet.create({
   title: {
     fontFamily: fonts.displayHeavy,
     fontSize: 34,
-    lineHeight: 40,
+    lineHeight: displayLH(34),
     color: colors.text,
     letterSpacing: -1,
     marginTop: 4,

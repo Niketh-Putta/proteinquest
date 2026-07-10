@@ -17,7 +17,7 @@ import {
   kgFromInput,
 } from '@/lib/protein';
 import type { ActivityLevel, GoalType, Profile, Sex } from '@/lib/types';
-import { colors, fonts, spacing, type } from '@/theme';
+import { colors, displayLH, fonts, spacing, type } from '@/theme';
 
 interface Props {
   profile: Profile | null;
@@ -220,7 +220,7 @@ const styles = StyleSheet.create({
   goalRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 4, marginTop: 4 },
   goalValue: {
     fontSize: 64,
-    lineHeight: 64,
+    lineHeight: displayLH(64),
     fontFamily: fonts.displayHeavy,
     color: colors.text,
     fontVariant: ['tabular-nums'],
@@ -228,11 +228,12 @@ const styles = StyleSheet.create({
   },
   goalValueNarrow: {
     fontSize: 52,
-    lineHeight: 52,
+    lineHeight: displayLH(52),
     letterSpacing: -1.5,
   },
   goalUnit: {
     fontSize: 24,
+    lineHeight: displayLH(24),
     fontFamily: fonts.display,
     color: colors.textTertiary,
     marginBottom: 8,

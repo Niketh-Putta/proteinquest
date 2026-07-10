@@ -8,7 +8,7 @@ import { useLayout, usePinnedFooterGap } from '@/lib/layout';
 import { todayISODate } from '@/lib/protein';
 import { useSession } from '@/lib/session';
 import type { DragonId } from '@/lib/types';
-import { colors, fonts, spacing } from '@/theme';
+import { colors, displayLH, fonts, spacing } from '@/theme';
 
 export function DailyDragonPicker() {
   const { isNarrow, height, width } = useLayout();
@@ -91,13 +91,13 @@ const styles = StyleSheet.create({
   title: {
     fontFamily: fonts.displayHeavy,
     fontSize: 32,
-    lineHeight: 38,
+    lineHeight: displayLH(32),
     color: colors.text,
     letterSpacing: -0.8,
     marginTop: spacing.sm,
   },
-  titleNarrow: { fontSize: 26, lineHeight: 32, letterSpacing: -0.5 },
-  titleCompact: { fontSize: 24, lineHeight: 30, marginTop: spacing.xs },
+  titleNarrow: { fontSize: 26, lineHeight: displayLH(26), letterSpacing: -0.5 },
+  titleCompact: { fontSize: 24, lineHeight: displayLH(24), marginTop: spacing.xs },
   sub: {
     fontFamily: fonts.body,
     fontSize: 14,

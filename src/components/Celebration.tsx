@@ -26,7 +26,7 @@ import {
 } from '@/lib/character';
 import { todayISODate } from '@/lib/protein';
 import type { Profile } from '@/lib/types';
-import { colors, fonts, radius, spacing } from '@/theme';
+import { colors, displayLH, fonts, radius, spacing } from '@/theme';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
@@ -297,6 +297,7 @@ const styles = StyleSheet.create({
   evolvedBanner: {
     fontFamily: fonts.displayHeavy,
     fontSize: 42,
+    lineHeight: displayLH(42),
     letterSpacing: 2,
     textAlign: 'center',
     marginTop: spacing.sm,
@@ -304,6 +305,7 @@ const styles = StyleSheet.create({
   title: {
     fontFamily: fonts.displayHeavy,
     fontSize: 32,
+    lineHeight: displayLH(32),
     color: colors.text,
     textAlign: 'center',
     letterSpacing: -1,

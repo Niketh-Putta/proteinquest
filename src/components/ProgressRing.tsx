@@ -9,7 +9,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import Svg, { Circle } from 'react-native-svg';
 
-import { colors, fonts } from '@/theme';
+import { colors, displayLH, fonts, type } from '@/theme';
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
@@ -65,12 +65,28 @@ export function ProgressRing({ consumed, goal, size = 264 }: Props) {
           transform={`rotate(-90 ${size / 2} ${size / 2})`}
         />
       </Svg>
-      <Text style={[styles.label, { fontSize: 10 * scale }]}>PROTEIN TODAY</Text>
+      <Text style={[styles.label, { fontSize: 10 * scale, lineHeight: 14 * scale }]}>
+        PROTEIN TODAY
+      </Text>
       <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 2 }}>
-        <Text style={[styles.consumed, { fontSize: 72 * scale, lineHeight: 72 * scale }]}>
+        <Text
+          style={[
+            styles.consumed,
+            { fontSize: 72 * scale, lineHeight: displayLH(72 * scale) },
+          ]}>
           {Math.round(consumed)}
         </Text>
-        <Text style={[styles.unit, { fontSize: 24 * scale, marginBottom: 10 * scale }]}>g</Text>
+        <Text
+          style={[
+            styles.unit,
+            {
+              fontSize: 24 * scale,
+              lineHeight: displayLH(24 * scale),
+              marginBottom: 10 * scale,
+            },
+          ]}>
+          g
+        </Text>
       </View>
       <Text style={[styles.goalLine, { fontSize: 11 * scale }]}>
         {hitGoal
@@ -87,10 +103,7 @@ export function ProgressRing({ consumed, goal, size = 264 }: Props) {
 
 const styles = StyleSheet.create({
   label: {
-    fontFamily: fonts.mono,
-    fontSize: 10,
-    letterSpacing: 3,
-    color: colors.textTertiary,
+    ...type.eyebrow,
     marginBottom: 4,
   },
   consumed: {

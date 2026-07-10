@@ -36,7 +36,7 @@ import { todayISODate } from '@/lib/protein';
 import { useSession } from '@/lib/session';
 import type { Profile } from '@/lib/types';
 import { setPreferredName } from '@/lib/xp';
-import { colors, fonts, spacing, textInputWeb } from '@/theme';
+import { colors, displayLH, fonts, spacing, textInputWeb } from '@/theme';
 
 function goHome() {
   if (router.canGoBack()) router.back();
@@ -415,11 +415,12 @@ const styles = StyleSheet.create({
   title: {
     fontFamily: fonts.displayHeavy,
     fontSize: 32,
+    lineHeight: displayLH(32),
     color: colors.text,
     letterSpacing: -0.8,
     marginBottom: 6,
   },
-  titleNarrow: { fontSize: 26, letterSpacing: -0.5 },
+  titleNarrow: { fontSize: 26, lineHeight: displayLH(26), letterSpacing: -0.5 },
   subtitle: {
     fontFamily: fonts.body,
     fontSize: 13,

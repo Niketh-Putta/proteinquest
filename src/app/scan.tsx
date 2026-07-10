@@ -50,7 +50,7 @@ import {
 import { todayISODate } from '@/lib/protein';
 import { useSession } from '@/lib/session';
 import type { Analysis } from '@/lib/types';
-import { colors, fonts, spacing, textInputWeb } from '@/theme';
+import { colors, displayLH, fonts, spacing, textInputWeb } from '@/theme';
 
 type Phase = 'camera' | 'analyzing' | 'result';
 
@@ -859,6 +859,7 @@ const styles = StyleSheet.create({
   foodName: {
     fontFamily: fonts.displayHeavy,
     fontSize: 28,
+    lineHeight: displayLH(28),
     color: colors.text,
     letterSpacing: -0.8,
   },
@@ -942,6 +943,7 @@ const styles = StyleSheet.create({
   totalInputRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 4, marginTop: 4 },
   totalInput: {
     fontSize: 56,
+    lineHeight: displayLH(56),
     fontFamily: fonts.displayHeavy,
     color: colors.text,
     fontVariant: ['tabular-nums'],
@@ -949,7 +951,13 @@ const styles = StyleSheet.create({
     minWidth: 60,
     letterSpacing: -2,
   },
-  totalUnit: { fontSize: 22, fontFamily: fonts.display, color: colors.textTertiary, marginBottom: 8 },
+  totalUnit: {
+    fontSize: 22,
+    lineHeight: displayLH(22),
+    fontFamily: fonts.display,
+    color: colors.textTertiary,
+    marginBottom: 8,
+  },
   totalCal: {
     fontSize: 14,
     fontFamily: fonts.mono,

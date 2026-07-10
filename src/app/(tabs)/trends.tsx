@@ -9,7 +9,7 @@ import { displayProgress, effectiveStreak } from '@/lib/character';
 import { useLayout } from '@/lib/layout';
 import { todayISODate } from '@/lib/protein';
 import { useSession } from '@/lib/session';
-import { colors, fonts, spacing } from '@/theme';
+import { colors, displayLH, fonts, spacing, type } from '@/theme';
 
 const WINDOW = 7;
 
@@ -77,12 +77,18 @@ export default function TrendsScreen() {
         showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
           <Text style={styles.eyebrow}>LAST {WINDOW} DAYS</Text>
-          <Text style={[styles.title, { fontSize: titleSize }]}>Rhythm</Text>
+          <Text style={[styles.title, { fontSize: titleSize, lineHeight: displayLH(titleSize) }]}>
+            Rhythm
+          </Text>
         </View>
 
         <View style={styles.heroBlock}>
           <View style={styles.heroRow}>
-            <Text style={[styles.heroNumber, { fontSize: heroNumSize, lineHeight: heroNumSize }]}>
+            <Text
+              style={[
+                styles.heroNumber,
+                { fontSize: heroNumSize, lineHeight: displayLH(heroNumSize) },
+              ]}>
               {avg}
             </Text>
             <Text style={styles.heroUnit}>g</Text>
@@ -185,32 +191,19 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   scroll: { paddingTop: spacing.lg, paddingBottom: 120 },
   header: { marginBottom: spacing.xl },
-  eyebrow: {
-    fontFamily: fonts.mono,
-    fontSize: 10,
-    letterSpacing: 3,
-    color: colors.textTertiary,
-    marginBottom: 6,
-  },
-  title: {
-    fontFamily: fonts.displayHeavy,
-    fontSize: 38,
-    color: colors.text,
-    letterSpacing: -1.2,
-  },
+  eyebrow: { ...type.eyebrow, marginBottom: 6 },
+  title: { ...type.pageTitle },
   heroBlock: { marginBottom: spacing.lg },
   heroRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 4 },
   heroNumber: {
-    fontFamily: fonts.displayHeavy,
-    fontSize: 72,
-    lineHeight: 72,
-    color: colors.text,
+    ...type.hero,
     letterSpacing: -3,
     fontVariant: ['tabular-nums'],
   },
   heroUnit: {
     fontFamily: fonts.display,
     fontSize: 28,
+    lineHeight: displayLH(28),
     color: colors.textTertiary,
     marginBottom: 10,
   },
@@ -313,12 +306,14 @@ const styles = StyleSheet.create({
   metricValue: {
     fontFamily: fonts.display,
     fontSize: 20,
+    lineHeight: displayLH(20),
     color: colors.text,
     fontVariant: ['tabular-nums'],
   },
   metricLabel: {
     fontFamily: fonts.mono,
     fontSize: 9,
+    lineHeight: 12,
     letterSpacing: 1.2,
     textTransform: 'uppercase',
     color: colors.textTertiary,

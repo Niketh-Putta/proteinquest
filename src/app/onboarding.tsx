@@ -27,7 +27,7 @@ import { useLayout, usePinnedFooterGap } from '@/lib/layout';
 import { useSession } from '@/lib/session';
 import type { DragonId, Profile } from '@/lib/types';
 import { getPreferredName } from '@/lib/xp';
-import { colors, fonts, spacing } from '@/theme';
+import { colors, displayLH, fonts, spacing } from '@/theme';
 
 type Step = 'dragon' | 'goal' | 'forging';
 
@@ -281,13 +281,13 @@ const styles = StyleSheet.create({
   title: {
     fontFamily: fonts.displayHeavy,
     fontSize: 34,
-    lineHeight: 40,
+    lineHeight: displayLH(34),
     color: colors.text,
     letterSpacing: -1,
     marginTop: spacing.sm,
   },
-  titleNarrow: { fontSize: 28, lineHeight: 34, letterSpacing: -0.5 },
-  titleCompact: { fontSize: 26, lineHeight: 32 },
+  titleNarrow: { fontSize: 28, lineHeight: displayLH(28), letterSpacing: -0.5 },
+  titleCompact: { fontSize: 26, lineHeight: displayLH(26) },
   subtitle: {
     fontFamily: fonts.body,
     fontSize: 14,
@@ -308,6 +308,7 @@ const styles = StyleSheet.create({
   forgePct: {
     fontFamily: fonts.displayHeavy,
     fontSize: 64,
+    lineHeight: displayLH(64),
     color: colors.text,
     letterSpacing: -2,
     fontVariant: ['tabular-nums'],
