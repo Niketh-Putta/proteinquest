@@ -81,8 +81,8 @@ function ScanSweep() {
   useEffect(() => {
     y.value = withRepeat(
       withSequence(
-        withTiming(1, { duration: 1300, easing: Easing.inOut(Easing.quad) }),
-        withTiming(0, { duration: 1300, easing: Easing.inOut(Easing.quad) }),
+        withTiming(1, { duration: 700, easing: Easing.linear }),
+        withTiming(0, { duration: 700, easing: Easing.linear }),
       ),
       -1,
     );
@@ -853,7 +853,8 @@ const styles = StyleSheet.create({
   },
   resultScroll: { paddingTop: spacing.sm, paddingBottom: spacing.xxl },
   resultImageWrap: {
-    width: '100%',
+    width: '85%',
+    alignSelf: 'center',
     marginBottom: spacing.lg,
   },
   foodName: {
