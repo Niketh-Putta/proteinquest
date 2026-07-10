@@ -101,7 +101,25 @@ export async function analyzeFoodPhoto(
   if (!body?.analysis) {
     throw new Error('No analysis returned. Please try again.');
   }
-  return body.analysis;
+  return sanitizeAnalysis(body.analysis);
+}
+
+/** Coerce AI macros to finite numbers so the UI never shows blank / "...". */
+function sanitizeAnalysis(raw: Analysis): Analysis {
+  const protein = Number(raw.total_protein_g);
+  const calories = Number(raw.calories);
+  const safeProtein = Number.isFinite(protein) && protein >= 0 ? protein : 1;
+  let safeCalories = Number.isFinite(calories) && calories > 0 ? calories : 0;
+  if (safeCalories <= 0) {
+    safeCalories = Math.max(Math.round(safeProtein * 8), 50);
+  }
+  return {
+    ...raw,
+    total_protein_g: safeProtein,
+    calories: safeCalories,
+    food_name: raw.food_name?.trim() || 'Meal',
+    items: Array.isArray(raw.items) ? raw.items : [],
+  };
 }
 
 export async function uploadFoodPhoto(userId: string, imageBase64: string): Promise<string | null> {

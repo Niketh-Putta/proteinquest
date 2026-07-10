@@ -316,9 +316,16 @@ export default function ScanScreen() {
         return;
       }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-      setAnalysis(res);
-      setProteinOverride(String(Math.round(res.total_protein_g)));
-      setCalorieOverride(res.calories ? String(Math.round(res.calories)) : '');
+      const proteinG = Number(res.total_protein_g);
+      const caloriesN = Number(res.calories);
+      const safeProtein = Number.isFinite(proteinG) && proteinG >= 0 ? Math.round(proteinG) : 1;
+      const safeCalories =
+        Number.isFinite(caloriesN) && caloriesN > 0
+          ? Math.round(caloriesN)
+          : Math.max(safeProtein * 8, 50);
+      setAnalysis({ ...res, total_protein_g: safeProtein, calories: safeCalories });
+      setProteinOverride(String(safeProtein));
+      setCalorieOverride(String(safeCalories));
 
       if (needsScanQuota && session?.user.id) {
         await recordPhotoScan(session.user.id);
@@ -343,17 +350,15 @@ export default function ScanScreen() {
       return;
     }
     const calorieRaw = calorieOverride.trim();
+    const caloriesParsed = calorieRaw.length > 0 ? parseFloat(calorieRaw) : NaN;
     const calories =
-      calorieRaw.length > 0
-        ? (() => {
-            const v = parseFloat(calorieRaw);
-            return Number.isNaN(v) || v < 0 ? null : Math.round(v);
-          })()
-        : analysis.calories
+      Number.isFinite(caloriesParsed) && caloriesParsed >= 0
+        ? Math.round(caloriesParsed)
+        : Number.isFinite(analysis.calories) && analysis.calories > 0
           ? Math.round(analysis.calories)
-          : null;
-    if (calorieRaw.length > 0 && calories === null) {
-      setError('Enter calories as a number, or leave blank.');
+          : Math.max(Math.round(proteinG) * 8, 50);
+    if (calorieRaw.length > 0 && !Number.isFinite(caloriesParsed)) {
+      setError('Enter calories as a number.');
       return;
     }
     setSaving(true);
@@ -625,8 +630,6 @@ export default function ScanScreen() {
                 onChangeText={(t) => setCalorieOverride(t.replace(/[^0-9.]/g, ''))}
                 keyboardType="numeric"
                 maxLength={5}
-                placeholder="—"
-                placeholderTextColor={colors.textMuted}
               />
               <Text style={styles.totalUnit}>cal</Text>
             </View>

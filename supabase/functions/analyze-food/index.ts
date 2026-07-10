@@ -690,6 +690,29 @@ function normalize(raw: Record<string, unknown>) {
   if (calories > 3500) calories = 3500;
   if (calories < 0) calories = 0;
 
+  // Never return blank/zero macros for a recognized meal — UI must show numbers.
+  if (total <= 0 && items.length > 0) {
+    total = round1(items.reduce((s, i) => s + i.protein_g, 0));
+  }
+  if (calories <= 0) {
+    const densityFallback = Math.round(
+      items.reduce((s, i) => {
+        const grams = i.estimated_grams ?? 0;
+        const dens = grams > 0 ? lookupCalorieDensity(i.name) : null;
+        return dens ? s + caloriesFromDensity(grams, dens) : s;
+      }, 0),
+    );
+    if (densityFallback > 0) {
+      calories = densityFallback;
+    } else if (total > 0) {
+      // Last resort: ~4 kcal/g protein + modest carb/fat buffer for a plate.
+      calories = Math.max(Math.round(total * 8), 50);
+    } else {
+      calories = 150;
+    }
+  }
+  if (total <= 0) total = 1;
+
   return {
     is_food: true,
     food_name: sanitizeField(raw.food_name, 80) || 'Meal',
@@ -751,13 +774,16 @@ async function enforcePhotoScanLimit(req: Request): Promise<Response | null> {
     .eq("id", userId)
     .maybeSingle();
 
+  // Count only photo_scan rows — each AI analysis records one. Do NOT also
+  // count logged `photo` meals or free users effectively get ~2 scans (scan+log
+  // would burn two slots toward FREE_DAILY_SCANS=3).
   const today = new Date().toISOString().slice(0, 10);
   const { count } = await admin
     .from("protein_logs")
     .select("id", { count: "exact", head: true })
     .eq("user_id", userId)
     .eq("logged_date", today)
-    .in("source", ["photo", "photo_scan"]);
+    .eq("source", "photo_scan");
 
   const decision = canScanPhoto({
     isPremium: profile?.is_premium === true,
