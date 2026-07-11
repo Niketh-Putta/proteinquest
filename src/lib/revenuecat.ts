@@ -161,10 +161,16 @@ function offeringsUnavailableMessage(): string {
       "linked in RevenueCat offering 'default' ($rc_weekly, $rc_annual), and the Play service account is uploaded to RevenueCat. See store/PAYMENTS.md."
     );
   }
+  if (!getApiKey()) {
+    const ver = Constants.expoConfig?.version ?? 'unknown';
+    return (
+      `This install (${ver}) was built without RevenueCat. Use the latest TestFlight or App Store build.`
+    );
+  }
   return (
-    'Subscriptions are not available yet. In App Store Connect → Business, the Paid Apps Agreement must be Active ' +
-    '(complete banking, US tax form W-8BEN, and sign Paid Apps). Also ensure pro_weekly and pro_yearly are Approved ' +
-    'and linked in RevenueCat with the In-App Purchase API key uploaded. See store/PAYMENTS.md.'
+    'Subscriptions are not loading from the App Store yet. Ensure pro_weekly and pro_yearly are Approved in App Store Connect, ' +
+    'RevenueCat has a valid In-App Purchase key (SubscriptionKey_W92LH2WSQ6.p8), and offering default links both products. ' +
+    'Try again in a few minutes after reinstalling.'
   );
 }
 

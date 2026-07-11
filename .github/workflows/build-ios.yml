@@ -23,6 +23,7 @@ on:
       - 'scripts/validate-asc-key.mjs'
       - 'scripts/submit-ios-version.mjs'
       - 'scripts/asc-upload-screenshots.mjs'
+      - 'scripts/generate-app-store-screenshots.mjs'
       - 'scripts/prepare-app-store-screenshots.mjs'
       - 'store/app-store-listing.json'
       - 'store/screenshots/iphone67/**'

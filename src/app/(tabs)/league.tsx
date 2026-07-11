@@ -14,7 +14,6 @@ import {
 } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
-
 import { PageCanvas } from '@/components/PageCanvas';
 import { confirmDestructive } from '@/lib/confirm';
 import {
@@ -140,19 +139,13 @@ function Avatar({
   );
 }
 
+const CHAMPION_WINGS = require('@/assets/champion-wings-red.png');
+
+/** Exact reference wing art, recolored red. */
 function ChampionWings() {
   return (
-    <View style={styles.wings}>
-      <View style={[styles.wing, styles.wingLeft]}>
-        <View style={[styles.feather, styles.featherOne]} />
-        <View style={[styles.feather, styles.featherTwo]} />
-        <View style={[styles.feather, styles.featherThree]} />
-      </View>
-      <View style={[styles.wing, styles.wingRight]}>
-        <View style={[styles.feather, styles.featherOne]} />
-        <View style={[styles.feather, styles.featherTwo]} />
-        <View style={[styles.feather, styles.featherThree]} />
-      </View>
+    <View style={styles.wings} pointerEvents="none">
+      <Image source={CHAMPION_WINGS} style={styles.wingsImg} contentFit="fill" />
     </View>
   );
 }
@@ -598,61 +591,30 @@ const styles = StyleSheet.create({
   champAvatarWrap: {
     alignItems: 'center',
     justifyContent: 'center',
+    zIndex: 1,
   },
   wings: {
     position: 'absolute',
-    width: 178,
-    height: 74,
-    top: -5,
+    width: 164,
+    height: 94,
+    top: -14,
     alignItems: 'center',
     justifyContent: 'center',
+    zIndex: 0,
   },
-  wing: {
-    position: 'absolute',
-    width: 70,
-    height: 58,
-    opacity: 0.48,
-  },
-  wingLeft: {
-    left: 0,
-    transform: [{ rotate: '-9deg' }],
-  },
-  wingRight: {
-    right: 0,
-    transform: [{ rotate: '9deg' }, { scaleX: -1 }],
-  },
-  feather: {
-    position: 'absolute',
-    right: 0,
-    borderTopWidth: 2,
-    borderTopColor: RED.glowEdge,
-    borderTopLeftRadius: 40,
-    width: 66,
-  },
-  featherOne: {
-    top: 8,
-    height: 36,
-    transform: [{ rotate: '-32deg' }],
-  },
-  featherTwo: {
-    top: 19,
-    height: 30,
-    width: 58,
-    transform: [{ rotate: '-18deg' }],
-  },
-  featherThree: {
-    top: 31,
-    height: 22,
-    width: 48,
-    transform: [{ rotate: '-6deg' }],
+  wingsImg: {
+    width: '100%',
+    height: '100%',
+    tintColor: RED.bright,
+    opacity: 0.82,
   },
   champGlow: {
     position: 'absolute',
     width: 96,
     height: 96,
     borderRadius: 48,
-    backgroundColor: RED.bright,
-    opacity: 0.26,
+    backgroundColor: colors.accent,
+    opacity: 0.22,
     ...(Platform.OS === 'web' ? { filter: 'blur(26px)' } : {}),
   } as unknown as object,
   podHandle: {

@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * Marketing App Store screenshots (1290×2796) — LOCKED-style layouts:
+ * Marketing App Store screenshots (1290x2796), LOCKED-style layouts:
  * gradient backdrop, bold headline, device frame, no stretch.
  *
- * Source phone captures: store/screenshots/0*.png (1080×1920)
+ * Source phone captures: store/screenshots/raw/*.png (1179×2556, iPhone viewport)
  * Output: store/screenshots/iphone67/01.png … 05.png
  */
 import fs from 'node:fs';
@@ -17,6 +17,9 @@ const ROOT = path.join(__dirname, '..');
 
 const W = 1290;
 const H = 2796;
+// iPhone 16, 6.1-inch display resolution.
+const PHONE_CAPTURE_W = 1179;
+const PHONE_CAPTURE_H = 2556;
 
 const RAW_DIR = path.join(ROOT, 'store/screenshots/raw');
 const APP = process.env.APP_URL ?? 'http://localhost:8081';
@@ -30,8 +33,12 @@ const CAPTURES = [
   { name: 'trends.png', path: '/trends', wait: 'Rhythm' },
   { name: 'scan.png', path: '/scan', wait: 'Scan meal' },
   { name: 'league.png', path: '/league', wait: 'Leaderboard' },
-  { name: 'intro.png', path: '/intro', wait: 'Get started' },
 ];
+const DAILY_DRAGON_CAPTURE = {
+  name: 'daily-dragon.png',
+  path: '/today',
+  wait: 'Who are you growing today?',
+};
 
 const SLIDES = [
   {
@@ -43,7 +50,7 @@ const SLIDES = [
     subAccent: 'dragon',
     bg: 'warm',
     phoneScale: 0.66,
-    phoneY: 0.56,
+    phoneY: 0.6,
   },
   {
     out: '02.png',
@@ -66,15 +73,15 @@ const SLIDES = [
     subAccent: 'consistent',
     bg: 'forest',
     phoneScale: 0.65,
-    phoneY: 0.56,
+    phoneY: 0.6,
     tilt: 2,
   },
   {
     out: '04.png',
-    src: 'intro.png',
+    src: 'daily-dragon.png',
     headline: ['Choose your', 'dragon'],
     accentLine: 1,
-    sub: 'Ember, Frost, or Moss — pick your companion.',
+    sub: 'Ember, Frost, or Moss. Pick your companion.',
     subAccent: 'companion',
     bg: 'violet',
     phoneScale: 0.66,
@@ -111,7 +118,7 @@ function slideHtml(slide, phoneDataUrl) {
 
   const tilt = slide.tilt ?? 0;
   const phoneW = Math.round(W * slide.phoneScale);
-  const phoneH = Math.round(phoneW * (1920 / 1080));
+  const phoneH = Math.round(phoneW * (PHONE_CAPTURE_H / PHONE_CAPTURE_W));
   const phoneTop = Math.round(H * slide.phoneY - phoneH / 2);
 
   return `<!DOCTYPE html>
@@ -188,29 +195,51 @@ function slideHtml(slide, phoneDataUrl) {
     z-index: 1;
   }
   .phone-shadow {
-    position: absolute; inset: 18px 24px -8px 24px;
-    background: rgba(0,0,0,0.55); filter: blur(36px); border-radius: 48px;
+    position: absolute; inset: 28px 20px -22px;
+    background: rgba(0,0,0,0.72); filter: blur(44px); border-radius: 112px;
   }
   .phone-frame {
     position: relative; width: 100%; height: 100%;
-    border-radius: 52px; padding: 14px;
-    background: linear-gradient(145deg, #3a3648 0%, #1a1824 40%, #0f0e14 100%);
+    border-radius: 108px; padding: 18px;
+    background:
+      linear-gradient(100deg, #6f6b73 0%, #242229 3%, #111014 8%, #0a090c 50%, #201e24 94%, #77737b 100%);
     box-shadow:
-      0 0 0 1px rgba(255,255,255,0.08),
-      0 32px 80px rgba(0,0,0,0.65),
-      inset 0 1px 0 rgba(255,255,255,0.12);
+      0 0 0 2px rgba(255,255,255,0.26),
+      0 0 0 5px rgba(8,7,10,0.9),
+      0 42px 95px rgba(0,0,0,0.72),
+      inset 4px 0 3px rgba(255,255,255,0.18),
+      inset -4px 0 3px rgba(255,255,255,0.12);
   }
   .phone-screen {
-    width: 100%; height: 100%; border-radius: 40px; overflow: hidden;
+    position: relative; width: 100%; height: 100%; border-radius: 90px; overflow: hidden;
     background: #0c0b10;
+    box-shadow: 0 0 0 4px #000, inset 0 0 0 1px rgba(255,255,255,0.08);
   }
   .phone-screen img {
     width: 100%; height: 100%; object-fit: cover; object-position: top center;
     display: block;
   }
-  .notch {
-    position: absolute; top: 22px; left: 50%; transform: translateX(-50%);
-    width: 140px; height: 36px; background: #000; border-radius: 20px; z-index: 3;
+  .dynamic-island {
+    position: absolute; top: 34px; left: 50%; transform: translateX(-50%);
+    width: 212px; height: 62px; background: #020203; border-radius: 36px; z-index: 4;
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.04), inset 0 1px 3px rgba(255,255,255,0.025);
+  }
+  .dynamic-island::after {
+    content: ''; position: absolute; width: 15px; height: 15px; right: 20px; top: 23px;
+    border-radius: 50%; background: radial-gradient(circle at 35% 35%, #243450 0%, #080d18 45%, #010204 72%);
+  }
+  .button {
+    position: absolute; background: linear-gradient(90deg, #55515a, #17151a);
+    box-shadow: inset 1px 0 1px rgba(255,255,255,.25), 2px 2px 4px rgba(0,0,0,.55);
+  }
+  .action-button { left: -8px; top: 255px; width: 9px; height: 74px; border-radius: 5px 0 0 5px; }
+  .volume-up { left: -9px; top: 380px; width: 10px; height: 126px; border-radius: 6px 0 0 6px; }
+  .volume-down { left: -9px; top: 534px; width: 10px; height: 126px; border-radius: 6px 0 0 6px; }
+  .side-button { right: -9px; top: 410px; width: 10px; height: 210px; border-radius: 0 6px 6px 0; }
+  .camera-control { right: -8px; top: 760px; width: 9px; height: 118px; border-radius: 0 5px 5px 0; }
+  .glass {
+    pointer-events: none; position: absolute; inset: 18px; border-radius: 90px; z-index: 5;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.12), inset 0 1px 18px rgba(255,255,255,.025);
   }
 </style>
 </head>
@@ -229,11 +258,17 @@ function slideHtml(slide, phoneDataUrl) {
   </div>
   <div class="phone-wrap">
     <div class="phone-shadow"></div>
+    <div class="button action-button"></div>
+    <div class="button volume-up"></div>
+    <div class="button volume-down"></div>
+    <div class="button side-button"></div>
+    <div class="button camera-control"></div>
     <div class="phone-frame">
-      <div class="notch"></div>
       <div class="phone-screen">
         <img src="${phoneDataUrl}" alt=""/>
       </div>
+      <div class="dynamic-island"></div>
+      <div class="glass"></div>
     </div>
   </div>
 </div>
@@ -241,7 +276,7 @@ function slideHtml(slide, phoneDataUrl) {
 </html>`;
 }
 
-async function seedDemoUser() {
+async function seedDemoUser({ dailyDragonLocked = true } = {}) {
   const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
   const { data: auth, error } = await supabase.auth.signInAnonymously();
   if (error || !auth.session) throw new Error(`Auth failed: ${error?.message}`);
@@ -254,8 +289,8 @@ async function seedDemoUser() {
     onboarded: true,
     protein_goal_g: 150,
     active_dragon_id: 'fire',
-    daily_dragon_id: 'fire',
-    daily_dragon_date: today,
+    daily_dragon_id: dailyDragonLocked ? 'fire' : null,
+    daily_dragon_date: dailyDragonLocked ? today : null,
     dragon_progress: {
       fire: { xp: 1250, level: 4, streak: 5, best_streak: 7, goals_hit: 12, last_goal_date: today },
     },
@@ -302,9 +337,9 @@ async function injectSession(page, session) {
   );
 }
 
-async function captureRawUi(page) {
+async function captureRawUi(page, captures = CAPTURES) {
   fs.mkdirSync(RAW_DIR, { recursive: true });
-  for (const cap of CAPTURES) {
+  for (const cap of captures) {
     const outPath = path.join(RAW_DIR, cap.name);
     try {
       if (cap.name === 'scan.png') {
@@ -335,12 +370,26 @@ async function main() {
   fs.mkdirSync(RAW_DIR, { recursive: true });
 
   const browser = await chromium.launch();
-  const capturePage = await browser.newPage({ viewport: { width: 1080, height: 1920 } });
+  const phoneContextOptions = {
+    viewport: { width: 393, height: 852 },
+    deviceScaleFactor: 3,
+    isMobile: true,
+    hasTouch: true,
+  };
+  const captureContext = await browser.newContext(phoneContextOptions);
+  const capturePage = await captureContext.newPage();
   console.log('Capturing raw UI from', APP);
-  const session = await seedDemoUser();
+  const session = await seedDemoUser({ dailyDragonLocked: true });
   await injectSession(capturePage, session);
   await captureRawUi(capturePage);
-  await capturePage.close();
+  await captureContext.close();
+
+  const dragonContext = await browser.newContext(phoneContextOptions);
+  const dragonPage = await dragonContext.newPage();
+  const dragonSession = await seedDemoUser({ dailyDragonLocked: false });
+  await injectSession(dragonPage, dragonSession);
+  await captureRawUi(dragonPage, [DAILY_DRAGON_CAPTURE]);
+  await dragonContext.close();
 
   const page = await browser.newPage({ viewport: { width: W, height: H } });
 
@@ -356,7 +405,7 @@ async function main() {
   }
 
   await browser.close();
-  console.log('\nDone — iphone67 marketing screenshots at 1290×2796');
+  console.log('\nDone: iPhone 16 marketing screenshots at 1290x2796');
 }
 
 main().catch((e) => {

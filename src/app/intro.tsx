@@ -32,6 +32,11 @@ import Animated, {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/Button';
+import {
+  DISPLAY_NAME_TAKEN,
+  isDisplayNameAvailable,
+  isDisplayNameTakenError,
+} from '@/lib/display-name';
 import { useLayout, usePinnedFooterGap } from '@/lib/layout';
 import { useSession } from '@/lib/session';
 import { setPreferredName } from '@/lib/xp';
@@ -307,7 +312,21 @@ export default function IntroScreen() {
   }
 
   async function submitName() {
-    if (name.trim()) await setPreferredName(name);
+    const chosen = name.trim();
+    if (chosen) {
+      try {
+        const available = await isDisplayNameAvailable(chosen);
+        if (!available) {
+          setError(DISPLAY_NAME_TAKEN);
+          return;
+        }
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Could not check that name.');
+        return;
+      }
+      await setPreferredName(chosen);
+    }
+    setError(null);
     next();
   }
 
@@ -319,14 +338,29 @@ export default function IntroScreen() {
     setSaving(true);
     setError(null);
     try {
+      const chosen = name.trim();
+      if (chosen) {
+        const available = await isDisplayNameAvailable(chosen);
+        if (!available) {
+          setError(DISPLAY_NAME_TAKEN);
+          setSaving(false);
+          setPhase('name');
+          return;
+        }
+      }
       await saveProfile({
         intro_completed: true,
-        ...(name.trim() ? { display_name: name.trim() } : {}),
+        ...(chosen ? { display_name: chosen } : {}),
       });
       router.replace('/onboarding');
     } catch (e: unknown) {
       if (__DEV__ && e) console.error('[intro] saveProfile failed:', e);
-      setError(e instanceof Error ? e.message : 'Could not save progress');
+      if (isDisplayNameTakenError(e)) {
+        setError(DISPLAY_NAME_TAKEN);
+        setPhase('name');
+      } else {
+        setError(e instanceof Error ? e.message : 'Could not save progress');
+      }
       setSaving(false);
     }
   }

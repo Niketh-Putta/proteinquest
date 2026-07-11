@@ -133,7 +133,9 @@ const stubProvider: PaymentProvider = {
   plans: PLANS,
   async purchase(_planId: string, _opts?: { userId?: string; email?: string }) {
     if (!__DEV__) {
-      throw new Error('Subscriptions are not available in this build. Install the App Store or Play Store version.');
+      throw new Error(
+        'Payments are not enabled in this App Store build. Install the latest TestFlight or App Store update.',
+      );
     }
     return true;
   },

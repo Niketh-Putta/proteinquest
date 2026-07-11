@@ -15,7 +15,6 @@ import React, { useEffect } from 'react';
 import { View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
-import { AppUpdatePrompt } from '@/components/AppUpdatePrompt';
 import { MealRemindersBootstrap } from '@/components/MealRemindersBootstrap';
 import { SessionProvider, useSession } from '@/lib/session';
 import { trackPageVisitOnce } from '@/lib/track-visit';
@@ -59,7 +58,6 @@ export default function RootLayout() {
           {fontsLoaded ? (
             <>
               <MealRemindersBootstrap />
-              <AppUpdatePrompt />
               <StatusBar style="light" />
               <Stack
                 screenOptions={{

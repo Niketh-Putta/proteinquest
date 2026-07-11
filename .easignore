@@ -29,3 +29,7 @@ store/google-play-service-account.json
 demo/
 store/proteinquest.aab
 store/screenshots/
+.tools/
+.cursor/
+.tmp-*.png
+*.aab

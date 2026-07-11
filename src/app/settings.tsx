@@ -24,6 +24,11 @@ import { SubscriptionBillingInfo } from '@/components/SubscriptionBillingInfo';
 import { DragonEvolutionGallery } from '@/components/DragonEvolutionGallery';
 import { GoalEditor } from '@/components/GoalEditor';
 import { dragonById, displayDragonId, isDailyDragonLockedForToday } from '@/lib/character';
+import {
+  DISPLAY_NAME_TAKEN,
+  isDisplayNameAvailable,
+  isDisplayNameTakenError,
+} from '@/lib/display-name';
 import { useLayout } from '@/lib/layout';
 import {
   formatReminderTime,
@@ -104,11 +109,19 @@ export default function SettingsScreen() {
     setPreferredName(next).catch(() => {});
     if (next && next !== (profile?.display_name ?? '')) {
       try {
+        const available = await isDisplayNameAvailable(next);
+        if (!available) {
+          setError(DISPLAY_NAME_TAKEN);
+          setLeagueName(profile?.display_name ?? '');
+          return;
+        }
         await saveProfile({ display_name: next });
+        setError(null);
         setNameSaved(true);
         setTimeout(() => setNameSaved(false), 1600);
-      } catch {
-        /* name is cosmetic; ignore transient save errors */
+      } catch (e) {
+        setError(isDisplayNameTakenError(e) ? DISPLAY_NAME_TAKEN : e instanceof Error ? e.message : 'Could not save name.');
+        setLeagueName(profile?.display_name ?? '');
       }
     }
   }
