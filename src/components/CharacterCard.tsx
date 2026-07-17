@@ -14,6 +14,7 @@ import Animated, {
 import {
   DRAGONS,
   displayDragonId,
+  displayDragonName,
   displayProgress,
   dragonById,
   dragonLevelProgress,
@@ -57,6 +58,7 @@ function CharacterCardInner({
   const todayISO = todayISODate();
   const dragonId = displayDragonId(profile, todayISO);
   const dragon = dragonById(dragonId);
+  const dragonName = displayDragonName(profile, dragonId);
   const progress = displayProgress(profile, todayISO);
   const { level, xpIntoLevel, xpForNext } = dragonLevelProgress(progress);
   const stage = stageForXpLevel(level, dragonId);
@@ -151,10 +153,10 @@ function CharacterCardInner({
 
         <View style={styles.identity}>
           <Text style={[styles.name, { fontSize: nameSize, lineHeight: displayLH(nameSize) }]}>
-            {dragon.name}
+            {dragonName}
           </Text>
           <Text style={[styles.stageLabel, { color: dragon.accent }]}>
-            {dragon.name} · Lv {level} · {stage.name}
+            {dragonName} · Lv {level} · {stage.name}
           </Text>
           <Text style={styles.dragonScope}>This dragon only</Text>
         </View>
@@ -212,25 +214,43 @@ function CharacterCardInner({
             {DRAGONS.map((d) => {
               const isActive = d.id === dragonId;
               const prog = getDragonProgress(profile, d.id);
-              const st = stageForXpLevel(effectiveLevel(prog), d.id);
+              const lvl = effectiveLevel(prog);
+              const st = stageForXpLevel(lvl, d.id);
+              const showLock = !isActive && dragonLocked;
               return (
                 <View key={d.id} style={styles.switcherItem}>
-                  <Image
-                    source={st.art}
+                  <View
                     style={[
-                      styles.switcherArt,
-                      { borderRadius: radius.sm },
-                      isActive
-                        ? { borderColor: d.accent, opacity: 1 }
-                        : { opacity: dragonLocked ? 0.25 : 0.4 },
-                    ]}
-                  />
+                      styles.dragonPod,
+                      isActive && [
+                        styles.dragonPodActive,
+                        { backgroundColor: colors.accentSurface, borderColor: d.accent, shadowColor: d.accent },
+                      ],
+                    ]}>
+                    <Image
+                      source={st.art}
+                      style={[
+                        isActive ? styles.artActive : styles.artIdle,
+                        showLock && { opacity: 0.55 },
+                      ]}
+                    />
+                    {showLock ? (
+                      <View style={styles.lockChip}>
+                        <Ionicons name="lock-closed" size={8} color={colors.textSecondary} />
+                      </View>
+                    ) : null}
+                  </View>
+                  <View style={[styles.levelPill, isActive && { backgroundColor: d.accent }]}>
+                    <Text style={[styles.levelPillText, isActive && { color: colors.bg }]}>
+                      Lv {lvl}
+                    </Text>
+                  </View>
                 </View>
               );
             })}
           </View>
           {dragonLocked ? (
-            <Text style={styles.lockedHint}>Locked for today</Text>
+            <Text style={styles.lockedHint}>Switch dragons again tomorrow</Text>
           ) : null}
         </View>
       ) : null}
@@ -364,20 +384,67 @@ const styles = StyleSheet.create({
   switcherRow: {
     flexDirection: 'row',
     justifyContent: 'center',
-    alignItems: 'center',
-    gap: spacing.sm,
+    alignItems: 'flex-end',
+    gap: spacing.md,
   },
   switcherItem: {
-    minWidth: 36,
-    minHeight: 36,
+    alignItems: 'center',
+    gap: 5,
+  },
+  dragonPod: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.sm,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  switcherArt: {
-    width: 32,
-    height: 32,
+  dragonPodActive: {
+    width: 62,
+    height: 62,
+    borderRadius: radius.md,
     borderWidth: 1.5,
-    borderColor: 'transparent',
+    marginBottom: 8,
+    shadowOpacity: 0.55,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 8,
+  },
+  artIdle: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.sm,
+    opacity: 0.9,
+  },
+  artActive: {
+    width: 54,
+    height: 54,
+    borderRadius: radius.sm,
+  },
+  lockChip: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    width: 15,
+    height: 15,
+    borderRadius: 999,
+    backgroundColor: colors.surfaceElevated,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.hairlineBright,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  levelPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 999,
+    backgroundColor: 'transparent',
+  },
+  levelPillText: {
+    fontFamily: fonts.mono,
+    fontSize: 8.5,
+    letterSpacing: 0.8,
+    color: colors.textTertiary,
+    textTransform: 'uppercase',
   },
   lockedHint: {
     fontFamily: fonts.mono,

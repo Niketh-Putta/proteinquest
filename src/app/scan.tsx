@@ -39,6 +39,13 @@ import {
 } from '@/lib/api';
 import { applyLogToCharacter, isDailyDragonLockedForToday } from '@/lib/character';
 import { useLayout } from '@/lib/layout';
+import {
+  CALORIE_OVERRIDE_BUFFER,
+  PROTEIN_OVERRIDE_BUFFER_G,
+  clampCalorieOverride,
+  clampProteinOverride,
+  maxAllowedOverride,
+} from '@/lib/log-limits';
 import { prepareSquareMealPhoto } from '@/lib/meal-photo';
 import {
   canScan,
@@ -212,7 +219,7 @@ export default function ScanScreen() {
     setAnalyzeStep(0);
     const t = setInterval(
       () => setAnalyzeStep((s) => Math.min(s + 1, ANALYZING_STEPS.length - 1)),
-      1700,
+      900,
     );
     return () => clearInterval(t);
   }, [phase]);
@@ -344,23 +351,42 @@ export default function ScanScreen() {
       setError('Profile still loading - wait a second and tap Log it again.');
       return;
     }
-    const proteinG = parseFloat(proteinOverride);
-    if (Number.isNaN(proteinG) || proteinG < 0) {
+    const proteinEntered = parseFloat(proteinOverride);
+    if (Number.isNaN(proteinEntered) || proteinEntered < 0) {
       setError('Enter the protein amount in grams.');
       return;
     }
+    const proteinClamp = clampProteinOverride(proteinEntered, analysis.total_protein_g);
+    if (proteinClamp.clamped) {
+      setProteinOverride(String(proteinClamp.max));
+      setError(
+        `Protein capped at ${proteinClamp.max}g — the most we can verify from this photo. Scan again to log more.`,
+      );
+      return;
+    }
+    const proteinG = proteinClamp.value;
+
     const calorieRaw = calorieOverride.trim();
     const caloriesParsed = calorieRaw.length > 0 ? parseFloat(calorieRaw) : NaN;
-    const calories =
+    if (calorieRaw.length > 0 && !Number.isFinite(caloriesParsed)) {
+      setError('Enter calories as a number.');
+      return;
+    }
+    const caloriesEntered =
       Number.isFinite(caloriesParsed) && caloriesParsed >= 0
         ? Math.round(caloriesParsed)
         : Number.isFinite(analysis.calories) && analysis.calories > 0
           ? Math.round(analysis.calories)
           : Math.max(Math.round(proteinG) * 8, 50);
-    if (calorieRaw.length > 0 && !Number.isFinite(caloriesParsed)) {
-      setError('Enter calories as a number.');
+    const calorieClamp = clampCalorieOverride(caloriesEntered, analysis.calories);
+    if (calorieClamp.clamped) {
+      setCalorieOverride(String(calorieClamp.max));
+      setError(
+        `Calories capped at ${calorieClamp.max} — the most we can verify from this photo.`,
+      );
       return;
     }
+    const calories = calorieClamp.value;
     setSaving(true);
     try {
       const [todayLogs, imagePath] = await Promise.all([
@@ -399,7 +425,7 @@ export default function ScanScreen() {
       });
       await saveProfile(updates);
 
-      if (goalJustHit) {
+      if (goalJustHit || evolved || leveledUp) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
         setCelebration({
           evolved,
@@ -618,7 +644,9 @@ export default function ScanScreen() {
               />
               <Text style={styles.totalUnit}>g</Text>
             </View>
-            <Text style={styles.totalHint}>tap to adjust protein</Text>
+            <Text style={styles.totalHint}>
+              tap to adjust · max {maxAllowedOverride(analysis.total_protein_g, PROTEIN_OVERRIDE_BUFFER_G)}g
+            </Text>
           </Animated.View>
 
           <Animated.View entering={FadeInDown.delay(280).duration(400)} style={styles.totalBlock}>
@@ -633,7 +661,9 @@ export default function ScanScreen() {
               />
               <Text style={styles.totalUnit}>cal</Text>
             </View>
-            <Text style={styles.totalHint}>tap to adjust calories</Text>
+            <Text style={styles.totalHint}>
+              tap to adjust · max {maxAllowedOverride(analysis.calories, CALORIE_OVERRIDE_BUFFER)}
+            </Text>
           </Animated.View>
 
           <Animated.View entering={FadeInDown.delay(320)} style={{ gap: 4, marginTop: spacing.lg }}>
