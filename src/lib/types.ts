@@ -48,6 +48,8 @@ export interface Profile {
   /** ISO date (YYYY-MM-DD) when daily_dragon_id was chosen. */
   daily_dragon_date: string | null;
   dragon_progress: Partial<Record<DragonId, DragonProgress>>;
+  /** User-chosen names keyed by dragon id; falls back to species name when missing. */
+  dragon_names?: Partial<Record<DragonId, string>>;
 }
 
 export interface FoodItem {

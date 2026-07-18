@@ -277,7 +277,7 @@ function profileSaveError(error: { message?: string; code?: string; details?: st
     return new Error('Your session expired. Refresh the page and try again.');
   }
   if (/display_name_taken/i.test(msg) || (error.code === '23505' && /display_name/i.test(msg))) {
-    return new Error('That name is already taken. Choose another.');
+    return new Error('This username already exists. Please choose another.');
   }
   const detail = __DEV__ && error.details ? ` (${error.details})` : '';
   return new Error(msg ? `${msg}${detail}` : 'Could not save progress');

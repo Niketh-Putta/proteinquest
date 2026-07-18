@@ -6,6 +6,7 @@ import { router } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -23,13 +24,20 @@ import { BillingSheet } from '@/components/BillingSheet';
 import { SubscriptionBillingInfo } from '@/components/SubscriptionBillingInfo';
 import { DragonEvolutionGallery } from '@/components/DragonEvolutionGallery';
 import { GoalEditor } from '@/components/GoalEditor';
-import { dragonById, displayDragonId, isDailyDragonLockedForToday } from '@/lib/character';
+import {
+  DRAGONS,
+  buildDragonNames,
+  displayDragonId,
+  displayDragonName,
+  isDailyDragonLockedForToday,
+  normalizeDragonName,
+} from '@/lib/character';
 import {
   DISPLAY_NAME_TAKEN,
   isDisplayNameAvailable,
   isDisplayNameTakenError,
 } from '@/lib/display-name';
-import { useLayout } from '@/lib/layout';
+import { useLayout, useTabBarScrollInset } from '@/lib/layout';
 import {
   formatReminderTime,
   getNotificationPermissionStatus,
@@ -39,7 +47,7 @@ import {
 } from '@/lib/meal-reminders';
 import { todayISODate } from '@/lib/protein';
 import { useSession } from '@/lib/session';
-import type { Profile } from '@/lib/types';
+import type { DragonId, Profile } from '@/lib/types';
 import { setPreferredName } from '@/lib/xp';
 import { colors, displayLH, fonts, spacing, textInputWeb } from '@/theme';
 
@@ -48,22 +56,25 @@ function goHome() {
   else router.replace('/(tabs)/today');
 }
 
-export default function SettingsScreen() {
+export default function SettingsScreen({ embedded = false }: { embedded?: boolean }) {
   const { profile, session, saveProfile } = useSession();
   const { contentMaxWidth, horizontalPad, isNarrow } = useLayout();
+  const tabBarInset = useTabBarScrollInset();
   const [saving, setSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [leagueName, setLeagueName] = useState('');
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [nameFocused, setNameFocused] = useState(false);
   const [nameSaved, setNameSaved] = useState(false);
   const [billingOpen, setBillingOpen] = useState(false);
   const [remindersOn, setRemindersOn] = useState(true);
   const [remindersBusy, setRemindersBusy] = useState(false);
+  const [dragonNameDrafts, setDragonNameDrafts] = useState<Partial<Record<DragonId, string>>>({});
+  const [dragonNamesSaved, setDragonNamesSaved] = useState(false);
   const nameInputRef = useRef<TextInput>(null);
   const nameHydrated = useRef(false);
+  const dragonNamesHydrated = useRef(false);
 
   useEffect(() => {
     isMealRemindersEnabled().then(setRemindersOn).catch(() => {});
@@ -73,7 +84,7 @@ export default function SettingsScreen() {
     setRemindersBusy(true);
     setError(null);
     try {
-      const ok = await setMealRemindersEnabled(next);
+      const ok = await setMealRemindersEnabled(next, profile);
       if (next && !ok) {
         const status = await getNotificationPermissionStatus();
         if (status !== 'granted') {
@@ -97,9 +108,49 @@ export default function SettingsScreen() {
     nameHydrated.current = true;
   }, [profile]);
 
+  const avatarUrl = profile?.avatar_url ?? null;
+
   useEffect(() => {
-    setAvatarUrl(profile?.avatar_url ?? null);
-  }, [profile?.avatar_url]);
+    if (!profile) return;
+    const saved = profile.dragon_names ?? {};
+    const dirty = DRAGONS.some((d) => {
+      const a = normalizeDragonName(saved[d.id] ?? '');
+      const b = normalizeDragonName(dragonNameDrafts[d.id] ?? '');
+      return a !== b;
+    });
+    if (dragonNamesHydrated.current && dirty) return;
+    dragonNamesHydrated.current = true;
+    setDragonNameDrafts(saved);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-sync from profile when not mid-edit
+  }, [profile?.dragon_names]);
+
+  const dragonNamesDirty = DRAGONS.some((d) => {
+    const saved = profile?.dragon_names?.[d.id] ?? '';
+    const draft = dragonNameDrafts[d.id] ?? '';
+    return normalizeDragonName(draft) !== normalizeDragonName(saved);
+  });
+
+  async function commitDragonNames() {
+    if (!profile) return;
+    const nextNames = buildDragonNames(
+      Object.fromEntries(
+        DRAGONS.map((d) => [
+          d.id,
+          normalizeDragonName(dragonNameDrafts[d.id] ?? '') || d.name,
+        ]),
+      ) as Partial<Record<DragonId, string>>,
+    );
+    try {
+      await saveProfile({ dragon_names: nextNames });
+      setDragonNameDrafts(nextNames);
+      setError(null);
+      setDragonNamesSaved(true);
+      setTimeout(() => setDragonNamesSaved(false), 1600);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not save dragon names.');
+      setDragonNameDrafts(profile.dragon_names ?? {});
+    }
+  }
 
   const nameDirty = leagueName.trim() !== (profile?.display_name ?? '').trim();
 
@@ -112,6 +163,7 @@ export default function SettingsScreen() {
         const available = await isDisplayNameAvailable(next);
         if (!available) {
           setError(DISPLAY_NAME_TAKEN);
+          Alert.alert('Username already exists', DISPLAY_NAME_TAKEN);
           setLeagueName(profile?.display_name ?? '');
           return;
         }
@@ -120,7 +172,12 @@ export default function SettingsScreen() {
         setNameSaved(true);
         setTimeout(() => setNameSaved(false), 1600);
       } catch (e) {
-        setError(isDisplayNameTakenError(e) ? DISPLAY_NAME_TAKEN : e instanceof Error ? e.message : 'Could not save name.');
+        if (isDisplayNameTakenError(e)) {
+          setError(DISPLAY_NAME_TAKEN);
+          Alert.alert('Username already exists', DISPLAY_NAME_TAKEN);
+        } else {
+          setError(e instanceof Error ? e.message : 'Could not save name.');
+        }
         setLeagueName(profile?.display_name ?? '');
       }
     }
@@ -158,7 +215,6 @@ export default function SettingsScreen() {
       const url = await uploadAvatar(userId, saved.base64);
       if (!url) throw new Error('Upload failed. Please try again.');
 
-      setAvatarUrl(url);
       await saveProfile({ avatar_url: url });
     } catch (e: any) {
       setError(e?.message ?? 'Could not update your photo. Please try again.');
@@ -184,12 +240,16 @@ export default function SettingsScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+    <SafeAreaView style={styles.safe} edges={embedded ? ['top'] : ['top', 'bottom']}>
       <View style={styles.topBar}>
-        <Pressable onPress={goHome} hitSlop={12} style={styles.iconBtn}>
-          <Ionicons name="close" size={22} color={colors.text} />
-        </Pressable>
-        <Text style={styles.topTitle}>SETTINGS</Text>
+        {embedded ? (
+          <View style={styles.iconBtn} />
+        ) : (
+          <Pressable onPress={goHome} hitSlop={12} style={styles.iconBtn}>
+            <Ionicons name="close" size={22} color={colors.text} />
+          </Pressable>
+        )}
+        <Text style={styles.topTitle}>{embedded ? 'PROFILE' : 'SETTINGS'}</Text>
         <View style={{ width: 44 }} />
       </View>
       <KeyboardAvoidingView
@@ -204,6 +264,7 @@ export default function SettingsScreen() {
               width: '100%',
               alignSelf: 'center',
             },
+            embedded && { paddingBottom: tabBarInset },
           ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}>
@@ -292,38 +353,38 @@ export default function SettingsScreen() {
           {Platform.OS !== 'web' ? (
             <View style={styles.section}>
               <Text style={styles.sectionLabel}>MEAL REMINDERS</Text>
-            <View style={styles.reminderRow}>
-              <View style={styles.reminderIcon}>
-                <Ionicons name="notifications-outline" size={18} color={colors.accent} />
+              <View style={styles.reminderRow}>
+                <View style={styles.reminderIcon}>
+                  <Ionicons name="notifications-outline" size={18} color={colors.accent} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.reminderTitle}>Feed your dragon</Text>
+                  <Text style={styles.reminderHint}>
+                    Daily nudges to log meals and snacks. Tap opens scan.
+                  </Text>
+                </View>
+                <Switch
+                  value={remindersOn}
+                  onValueChange={toggleReminders}
+                  disabled={remindersBusy}
+                  trackColor={{ false: colors.hairline, true: colors.accentGlow }}
+                  thumbColor={remindersOn ? colors.accent : colors.textTertiary}
+                  ios_backgroundColor={colors.hairline}
+                />
               </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.reminderTitle}>Feed your dragon</Text>
-                <Text style={styles.reminderHint}>
-                  Daily nudges to log meals and snacks. Tap opens scan.
-                </Text>
-              </View>
-              <Switch
-                value={remindersOn}
-                onValueChange={toggleReminders}
-                disabled={remindersBusy}
-                trackColor={{ false: colors.hairline, true: colors.accentGlow }}
-                thumbColor={remindersOn ? colors.accent : colors.textTertiary}
-                ios_backgroundColor={colors.hairline}
-              />
+              {remindersOn ? (
+                <View style={styles.reminderSchedule}>
+                  {MEAL_REMINDER_SLOTS.map((slot) => (
+                    <View key={slot.id} style={styles.reminderSlot}>
+                      <Text style={styles.reminderSlotLabel}>{slot.label}</Text>
+                      <Text style={styles.reminderSlotTime}>
+                        {formatReminderTime(slot.hour, slot.minute)}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
             </View>
-            {remindersOn ? (
-              <View style={styles.reminderSchedule}>
-                {MEAL_REMINDER_SLOTS.map((slot) => (
-                  <View key={slot.id} style={styles.reminderSlot}>
-                    <Text style={styles.reminderSlotLabel}>{slot.label}</Text>
-                    <Text style={styles.reminderSlotTime}>
-                      {formatReminderTime(slot.hour, slot.minute)}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-            ) : null}
-          </View>
           ) : null}
 
           <View style={styles.section}>
@@ -339,8 +400,12 @@ export default function SettingsScreen() {
                 <Text style={styles.billingTitle}>Manage billing</Text>
                 <Text style={styles.billingHint}>
                   {profile?.is_premium
-                    ? 'Update payment, restore, or cancel Pro'
-                    : 'Payment method, restore, and plan options'}
+                    ? Platform.OS === 'android'
+                      ? 'Open Google Play to manage or cancel · restore here'
+                      : Platform.OS === 'ios'
+                        ? 'Open App Store to manage or cancel · restore here'
+                        : 'Manage billing, restore, or cancel'
+                    : 'Restore purchases or see plan options'}
                 </Text>
               </View>
               <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
@@ -349,7 +414,11 @@ export default function SettingsScreen() {
               <Pressable
                 onPress={() => router.push('/paywall')}
                 android_ripple={{ color: colors.hairlineBright }}
-                style={({ pressed }) => [styles.billingBtn, styles.upgradeBtn, pressed && styles.billingBtnPressed]}>
+                style={({ pressed }) => [
+                  styles.billingBtn,
+                  styles.upgradeBtn,
+                  pressed && styles.billingBtnPressed,
+                ]}>
                 <View style={styles.billingIcon}>
                   <Ionicons name="star" size={18} color={colors.accent} />
                 </View>
@@ -373,13 +442,51 @@ export default function SettingsScreen() {
             <View style={styles.lockedDragon}>
               <Text style={styles.lockedLabel}>TODAY&apos;S DRAGON</Text>
               <Text style={styles.lockedName}>
-                {dragonById(displayDragonId(profile, todayISODate())).name}
+                {displayDragonName(profile, displayDragonId(profile, todayISODate()))}
               </Text>
               <Text style={styles.lockedHint}>Locked until tomorrow - pick again on Today.</Text>
             </View>
           ) : null}
 
-          <DragonEvolutionGallery />
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>DRAGON NAMES</Text>
+            <Text style={styles.photoHint}>
+              Rename {DRAGONS.map((d) => displayDragonName(profile, d.id)).join(', ')} anytime.
+              Used in reminders and on Today.
+            </Text>
+            {DRAGONS.map((dragon) => (
+              <View key={dragon.id} style={styles.dragonNameRow}>
+                <Text style={[styles.dragonSpecies, { color: dragon.accent }]}>
+                  {dragon.title}
+                </Text>
+                <TextInput
+                  value={dragonNameDrafts[dragon.id] ?? ''}
+                  onChangeText={(text) =>
+                    setDragonNameDrafts((prev) => ({ ...prev, [dragon.id]: text }))
+                  }
+                  placeholder={dragon.name}
+                  placeholderTextColor={colors.textTertiary}
+                  maxLength={24}
+                  autoCapitalize="words"
+                  autoCorrect={false}
+                  returnKeyType="done"
+                  onSubmitEditing={commitDragonNames}
+                  style={[styles.dragonNameInput, textInputWeb]}
+                />
+              </View>
+            ))}
+            {dragonNamesDirty ? (
+              <Pressable
+                onPress={commitDragonNames}
+                style={({ pressed }) => [styles.nameSave, pressed && { opacity: 0.85 }]}>
+                <Text style={styles.nameSaveText}>Save names</Text>
+              </Pressable>
+            ) : dragonNamesSaved ? (
+              <Text style={styles.savedHint}>Dragon names saved</Text>
+            ) : null}
+          </View>
+
+          <DragonEvolutionGallery profile={profile} />
 
           {error ? <Text style={styles.error}>{error}</Text> : null}
           <GoalEditor
@@ -464,6 +571,33 @@ const styles = StyleSheet.create({
     fontFamily: fonts.body,
     fontSize: 12,
     color: colors.textSecondary,
+  },
+  dragonNameRow: {
+    gap: 4,
+    marginTop: spacing.sm,
+  },
+  dragonSpecies: {
+    fontFamily: fonts.mono,
+    fontSize: 9,
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+  },
+  dragonNameInput: {
+    fontFamily: fonts.displayMedium,
+    fontSize: 16,
+    color: colors.text,
+    backgroundColor: colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.hairlineBright,
+    borderRadius: 10,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 12,
+  },
+  savedHint: {
+    fontFamily: fonts.body,
+    fontSize: 12,
+    color: colors.accent,
+    marginTop: spacing.xs,
   },
   section: {
     marginBottom: spacing.lg,

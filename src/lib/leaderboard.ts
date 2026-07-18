@@ -1,4 +1,5 @@
 import { levelForXp } from './character';
+import { reconcileLeaderboardIdentity } from './leaderboard-identity';
 import { supabase } from './supabase';
 import type { DragonId, DragonProgress, Profile } from './types';
 import { rankForLevel, type Rank } from './xp';
@@ -88,8 +89,17 @@ function toEntry(
 export function buildLeaderboard(
   rows: LeaderboardRow[],
   currentUserId: string | null | undefined,
+  currentProfile?: Pick<Profile, 'id' | 'display_name' | 'avatar_url'> | null,
 ): LeaderboardEntry[] {
-  const namedRows = rows.filter((row) => hasLeagueName(row, currentUserId));
+  const identity =
+    currentProfile && currentProfile.id === currentUserId
+      ? {
+          display_name: currentProfile.display_name,
+          avatar_url: currentProfile.avatar_url,
+        }
+      : null;
+  const reconciledRows = reconcileLeaderboardIdentity(rows, currentUserId, currentProfile);
+  const namedRows = reconciledRows.filter((row) => hasLeagueName(row, currentUserId));
   const entries = namedRows.map((row) => toEntry(row, currentUserId));
   const hasYou = entries.some((entry) => entry.isYou);
   if (!hasYou && currentUserId) {
@@ -97,8 +107,8 @@ export function buildLeaderboard(
       toEntry(
         {
           user_id: currentUserId,
-          display_name: 'You',
-          avatar_url: null,
+          display_name: identity?.display_name ?? 'You',
+          avatar_url: identity?.avatar_url ?? null,
           xp: 0,
           dragon_progress: {},
           active_dragon_id: null,

@@ -142,8 +142,11 @@ export default function ScanScreen() {
   const viewfinderLeft = (screenW - viewfinderSize) / 2;
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
+  /** Synchronous lock so rapid taps can't launch parallel capture/library flows. */
+  const busyRef = useRef(false);
 
   const [phase, setPhase] = useState<Phase>('camera');
+  const [capturing, setCapturing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [displayUri, setDisplayUri] = useState<string | null>(null);
   const [imageBase64, setImageBase64] = useState<string | null>(null);
@@ -163,6 +166,15 @@ export default function ScanScreen() {
   } | null>(null);
 
   const demoAutoScan = isDemoAutoScan();
+
+  const flash = useSharedValue(0);
+  const flashStyle = useAnimatedStyle(() => ({ opacity: flash.value }));
+  const triggerShutterFlash = useCallback(() => {
+    flash.value = withSequence(
+      withTiming(0.9, { duration: 55, easing: Easing.out(Easing.quad) }),
+      withTiming(0, { duration: 320, easing: Easing.in(Easing.quad) }),
+    );
+  }, [flash]);
 
   useEffect(() => {
     if (demoAutoScan) return;
@@ -225,40 +237,56 @@ export default function ScanScreen() {
   }, [phase]);
 
   async function capture() {
+    // Synchronous lock guards against a second tap in the same frame launching
+    // a parallel capture before React re-renders `capturing`.
+    if (busyRef.current || !cameraReady) return;
+    busyRef.current = true;
+    setCapturing(true);
+    // Instant feedback the moment the shutter is tapped.
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    triggerShutterFlash();
+    try {
+      const photo = await cameraRef.current?.takePictureAsync({ quality: 0.8 });
+      if (!photo?.uri) throw new Error('Could not capture the photo');
+      // Freeze the captured frame immediately so there's no empty placeholder
+      // pop when we transition into the analyzing screen.
+      setDisplayUri(photo.uri);
+      setPhase('analyzing');
+      await analyze(photo.uri);
+    } catch (e: any) {
+      showError(e.message ?? 'Could not capture the photo. Try again.');
+    } finally {
+      busyRef.current = false;
+      setCapturing(false);
+    }
+  }
+
+  async function pickFromLibrary() {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    setCapturing(true);
     try {
       try {
         const allowed = await ensureCanScan();
         if (needsScanQuota && allowed === null) return;
       } catch {
-        /* count failed — allow capture; analyze rechecks */
+        /* count failed — allow picker; analyze rechecks */
       }
-      const photo = await cameraRef.current?.takePictureAsync({ quality: 0.8 });
-      if (!photo?.uri) throw new Error('Could not capture the photo');
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-      await analyze(photo.uri);
-    } catch (e: any) {
-      showError(e.message ?? 'Could not capture the photo. Try again.');
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        showError('Photo library access is needed to upload a meal photo.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        quality: 0.8,
+      });
+      if (result.canceled || !result.assets[0]) return;
+      await analyze(result.assets[0].uri);
+    } finally {
+      busyRef.current = false;
+      setCapturing(false);
     }
-  }
-
-  async function pickFromLibrary() {
-    try {
-      const allowed = await ensureCanScan();
-      if (needsScanQuota && allowed === null) return;
-    } catch {
-      /* count failed — allow picker; analyze rechecks */
-    }
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) {
-      showError('Photo library access is needed to upload a meal photo.');
-      return;
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      quality: 0.8,
-    });
-    if (result.canceled || !result.assets[0]) return;
-    await analyze(result.assets[0].uri);
   }
 
   function showError(message: string) {
@@ -520,24 +548,30 @@ export default function ScanScreen() {
             />
           ) : null}
 
+          <Animated.View
+            pointerEvents="none"
+            style={[StyleSheet.absoluteFill, styles.flash, flashStyle]}
+          />
+
           <View style={styles.controls}>
             <View style={styles.shutterRow}>
               <Pressable
                 onPress={pickFromLibrary}
+                disabled={capturing}
                 accessibilityLabel="Upload from library"
                 accessibilityRole="button"
-                style={styles.libraryBtn}
+                style={[styles.libraryBtn, capturing && { opacity: 0.35 }]}
                 hitSlop={8}>
                 <Ionicons name="images-outline" size={20} color={colors.text} />
               </Pressable>
 
               <Pressable
                 onPress={capture}
-                disabled={!cameraReady}
+                disabled={!cameraReady || capturing}
                 style={({ pressed }) => [
                   styles.shutter,
                   !cameraReady && { opacity: 0.35 },
-                  pressed && { transform: [{ scale: 0.92 }] },
+                  (pressed || capturing) && { transform: [{ scale: 0.92 }] },
                 ]}>
                 <View style={styles.shutterInner} />
               </Pressable>
@@ -781,6 +815,11 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
     maxWidth: 300,
     lineHeight: 19,
+  },
+  flash: {
+    backgroundColor: '#fff',
+    opacity: 0,
+    zIndex: 5,
   },
   dim: {
     position: 'absolute',

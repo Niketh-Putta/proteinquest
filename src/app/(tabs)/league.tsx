@@ -1,5 +1,6 @@
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect } from 'expo-router';
 import React, { useCallback, useState } from 'react';
 import {
@@ -14,6 +15,12 @@ import {
 } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Svg, {
+  Defs,
+  LinearGradient as SvgLinearGradient,
+  Polygon,
+  Stop,
+} from 'react-native-svg';
 import { PageCanvas } from '@/components/PageCanvas';
 import { confirmDestructive } from '@/lib/confirm';
 import {
@@ -35,7 +42,7 @@ import {
 import { todayISODate } from '@/lib/protein';
 import { useSession } from '@/lib/session';
 import { SITE_URL } from '@/lib/site';
-import { colors, displayLH, fonts, pressableWeb, radius, spacing } from '@/theme';
+import { colors, displayLH, fonts, noTextCaret, pressableWeb, radius, spacing } from '@/theme';
 
 const AVATAR_HUES = ['#FF7A59', '#9B8CFF', '#5BC8F5', '#5AD67A', '#FFB454', '#FF6B7A'];
 
@@ -140,31 +147,87 @@ function Avatar({
 }
 
 const CHAMPION_WINGS = require('@/assets/champion-wings-red.png');
+/** Asset is 435×201 — keep container on that ratio so tips are not stretched/cropped. */
+const WINGS_WIDTH = 164;
+const WINGS_HEIGHT = Math.round(WINGS_WIDTH * (201 / 435));
+const CHAMPION_AVATAR_SIZE = 68;
 
-/** Exact reference wing art, recolored red. */
+/** Layered metallic treatment gives the champion wings depth without a neon-flat tint. */
 function ChampionWings() {
   return (
     <View style={styles.wings} pointerEvents="none">
-      <Image source={CHAMPION_WINGS} style={styles.wingsImg} contentFit="fill" />
+      <View style={styles.wingsAura} />
+      <Image
+        source={CHAMPION_WINGS}
+        style={styles.wingsImg}
+        contentFit="contain"
+        recyclingKey="champion-wings"
+      />
+    </View>
+  );
+}
+
+function PodiumTop({ place }: { place: 1 | 2 | 3 }) {
+  const champion = place === 1;
+  const gradientId = `podium-top-${place}`;
+  const points =
+    place === 2
+      ? '0,24 100,24 100,1 12,1'
+      : place === 3
+        ? '0,24 100,24 88,1 0,1'
+        : '0,24 100,24 90,1 10,1';
+  return (
+    <View style={styles.pedestalTop} pointerEvents="none">
+      <Svg width="100%" height="100%" viewBox="0 0 100 24" preserveAspectRatio="none">
+        <Defs>
+          <SvgLinearGradient id={gradientId} x1="0" y1="0" x2="1" y2="1">
+            <Stop offset="0" stopColor={champion ? '#7E292E' : '#48191D'} />
+            <Stop offset="0.5" stopColor={champion ? '#3D1217' : '#241014'} />
+            <Stop offset="1" stopColor="#10090B" />
+          </SvgLinearGradient>
+        </Defs>
+        <Polygon
+          points={points}
+          fill={`url(#${gradientId})`}
+          stroke={champion ? '#FF5C55' : '#8E2B2C'}
+          strokeWidth={champion ? 1.15 : 0.75}
+          vectorEffect="non-scaling-stroke"
+        />
+        <Polygon
+          points="1,23 99,23 97,20 3,20"
+          fill={champion ? 'rgba(255,69,60,0.20)' : 'rgba(255,69,60,0.09)'}
+        />
+      </Svg>
     </View>
   );
 }
 
 function PodiumBlock({
   height,
-  champion,
+  place,
   children,
 }: {
   height: number;
-  champion: boolean;
+  place: 1 | 2 | 3;
   children: React.ReactNode;
 }) {
+  const champion = place === 1;
   return (
     <View style={styles.pedestalWrap}>
-      <View style={[styles.pedestalTop, champion && styles.pedestalTopChamp]} />
-      <View style={[styles.pedestalFace, { height }, champion && styles.pedestalFaceChamp]}>
+      <PodiumTop place={place} />
+      <LinearGradient
+        colors={
+          champion
+            ? (['#351217', '#190C0F', '#090708'] as const)
+            : (['#241014', '#110B0D', '#080708'] as const)
+        }
+        locations={[0, 0.58, 1]}
+        style={[styles.pedestalFace, { height }, champion && styles.pedestalFaceChamp]}>
+        <View style={[styles.pedestalShine, champion && styles.pedestalShineChamp]} />
+        <View style={styles.pedestalLeftFacet} />
+        <View style={styles.pedestalRightFacet} />
         {children}
-      </View>
+      </LinearGradient>
     </View>
   );
 }
@@ -188,14 +251,14 @@ function PodiumColumn({
   if (!entry) return <View style={styles.podCol} />;
 
   const isChamp = place === 1;
-  const pedestalHeight = place === 1 ? 108 : place === 2 ? 78 : 58;
-  const avatarSize = isChamp ? 68 : 50;
+  const pedestalHeight = place === 1 ? 118 : place === 2 ? 86 : 64;
+  const avatarSize = isChamp ? CHAMPION_AVATAR_SIZE : 50;
   const removable = canRemove(entry);
 
   return (
     <Animated.View
       entering={FadeInDown.delay(place === 1 ? 0 : place === 2 ? 90 : 150).duration(360)}
-      style={styles.podCol}>
+      style={[styles.podCol, isChamp && styles.podColChamp]}>
       <View style={styles.podTop}>
         {removable && onRemove ? (
           <Pressable
@@ -218,19 +281,21 @@ function PodiumColumn({
         <View style={isChamp ? styles.champAvatarWrap : undefined}>
           {isChamp ? <View style={styles.champGlow} /> : null}
           {isChamp ? <ChampionWings /> : null}
-          <Avatar
-            entry={entry}
-            size={avatarSize}
-            dragonArt={entry.isYou ? youArt : undefined}
-            ring={isChamp}
-          />
+          <View style={isChamp ? styles.champAvatarFront : undefined}>
+            <Avatar
+              entry={entry}
+              size={avatarSize}
+              dragonArt={entry.isYou ? youArt : undefined}
+              ring={isChamp}
+            />
+          </View>
         </View>
         <Text style={[styles.podHandle, entry.isYou && { color: RED.bright }]} numberOfLines={1}>
           {handleLabel(entry)}
         </Text>
       </View>
 
-      <PodiumBlock height={pedestalHeight} champion={isChamp}>
+      <PodiumBlock height={pedestalHeight} place={place}>
         <Text style={styles.pedXp}>
           {formatXp(entry.xp)} <Text style={styles.pedXpUnit}>XP</Text>
         </Text>
@@ -303,7 +368,7 @@ export default function LeagueTab() {
     });
   }
 
-  const entries = buildLeaderboard(rows, session?.user.id);
+  const entries = buildLeaderboard(rows, session?.user.id, profile);
   const podium = entries.slice(0, 3);
   const rest = entries.slice(3);
   const playerCount = entries.length;
@@ -389,14 +454,18 @@ export default function LeagueTab() {
               hitSlop={8}
               accessibilityRole="button"
               accessibilityLabel="Invite friends"
+              android_ripple={{ color: 'rgba(246, 244, 248, 0.08)' }}
               style={({ pressed }) => [
                 styles.invite,
                 styles.inviteShrink,
                 pressableWeb,
-                pressed && { opacity: 0.85 },
+                // Opacity-only feedback — never swap fill/border to accent or system active colors.
+                pressed && styles.invitePressed,
               ]}>
               <Ionicons name="person-add" size={14} color={colors.text} />
-              <Text style={styles.inviteText}>Invite Friends</Text>
+              <Text style={[styles.inviteText, noTextCaret]} selectable={false}>
+                Invite Friends
+              </Text>
             </Pressable>
           </View>
           {inviteStatus ? <Text style={styles.inviteStatus}>{inviteStatus}</Text> : null}
@@ -520,6 +589,22 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.hairlineBright,
+    overflow: 'hidden',
+    ...(Platform.OS === 'web'
+      ? ({
+          WebkitTapHighlightColor: 'transparent',
+          userSelect: 'none',
+          outlineStyle: 'none',
+          // Avoid browser :active paint that flashes a different fill.
+          transitionProperty: 'opacity',
+          transitionDuration: '80ms',
+        } as object)
+      : null),
+  },
+  invitePressed: {
+    opacity: 0.82,
+    backgroundColor: colors.surface,
+    borderColor: colors.hairlineBright,
   },
   inviteText: {
     fontFamily: fonts.displayMedium,
@@ -562,16 +647,22 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
     marginBottom: spacing.xxl,
     paddingHorizontal: 10,
+    overflow: 'visible',
   },
   podCol: {
     flex: 1,
     alignItems: 'center',
+    overflow: 'visible',
+  },
+  podColChamp: {
+    zIndex: 3,
   },
   podTop: {
     alignItems: 'center',
     gap: 6,
     marginBottom: 10,
     width: '100%',
+    overflow: 'visible',
   },
   podRemove: {
     position: 'absolute',
@@ -589,32 +680,51 @@ const styles = StyleSheet.create({
     textShadowRadius: 12,
   },
   champAvatarWrap: {
+    width: CHAMPION_AVATAR_SIZE,
+    height: CHAMPION_AVATAR_SIZE,
     alignItems: 'center',
     justifyContent: 'center',
-    zIndex: 1,
+    zIndex: 2,
+    overflow: 'visible',
+  },
+  champAvatarFront: {
+    zIndex: 2,
   },
   wings: {
     position: 'absolute',
-    width: 164,
-    height: 94,
-    top: -14,
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: WINGS_WIDTH,
+    height: WINGS_HEIGHT,
+    left: (CHAMPION_AVATAR_SIZE - WINGS_WIDTH) / 2,
+    top: (CHAMPION_AVATAR_SIZE - WINGS_HEIGHT) / 2,
     zIndex: 0,
+    overflow: 'visible',
   },
+  wingsAura: {
+    position: 'absolute',
+    left: 20,
+    right: 20,
+    top: 12,
+    bottom: 2,
+    borderRadius: 48,
+    backgroundColor: Platform.OS === 'web' ? 'rgba(255,28,28,0.18)' : 'transparent',
+    ...(Platform.OS === 'web' ? { filter: 'blur(18px)' } : {}),
+  } as unknown as object,
   wingsImg: {
     width: '100%',
     height: '100%',
-    tintColor: RED.bright,
-    opacity: 0.82,
+    tintColor: '#C52A31',
+    opacity: 0.9,
   },
   champGlow: {
     position: 'absolute',
     width: 96,
     height: 96,
     borderRadius: 48,
-    backgroundColor: colors.accent,
-    opacity: 0.22,
+    left: (CHAMPION_AVATAR_SIZE - 96) / 2,
+    top: (CHAMPION_AVATAR_SIZE - 96) / 2,
+    backgroundColor: Platform.OS === 'web' ? RED.glow : 'transparent',
+    opacity: Platform.OS === 'web' ? 1 : 0,
+    zIndex: 0,
     ...(Platform.OS === 'web' ? { filter: 'blur(26px)' } : {}),
   } as unknown as object,
   podHandle: {
@@ -628,37 +738,58 @@ const styles = StyleSheet.create({
     alignItems: 'stretch',
   },
   pedestalTop: {
-    height: 18,
-    marginHorizontal: 6,
-    backgroundColor: RED.blockTop,
-    borderTopWidth: 1,
-    borderLeftWidth: StyleSheet.hairlineWidth,
-    borderRightWidth: StyleSheet.hairlineWidth,
-    borderColor: RED.edge,
-    transform: [{ skewX: '-20deg' }],
-  },
-  pedestalTopChamp: {
-    backgroundColor: RED.blockTopChamp,
-    borderColor: RED.glowEdge,
+    width: '100%',
+    height: 24,
   },
   pedestalFace: {
-    marginTop: -1,
-    backgroundColor: RED.blockFace,
+    marginTop: -2,
     borderTopWidth: 1,
     borderLeftWidth: StyleSheet.hairlineWidth,
     borderRightWidth: StyleSheet.hairlineWidth,
     borderTopColor: RED.edge,
-    borderLeftColor: 'rgba(255,59,48,0.12)',
-    borderRightColor: 'rgba(0,0,0,0.5)',
+    borderLeftColor: 'rgba(255,59,48,0.22)',
+    borderRightColor: 'rgba(255,59,48,0.14)',
     alignItems: 'center',
     justifyContent: 'flex-start',
     paddingTop: spacing.lg,
     gap: 3,
+    overflow: 'hidden',
   },
   pedestalFaceChamp: {
-    backgroundColor: RED.blockFaceChamp,
     borderTopColor: RED.bright,
     borderLeftColor: 'rgba(255,59,48,0.22)',
+  },
+  pedestalShine: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 1,
+    backgroundColor: 'rgba(255,144,136,0.18)',
+  },
+  pedestalShineChamp: {
+    height: 2,
+    backgroundColor: 'rgba(255,122,112,0.48)',
+  },
+  pedestalLeftFacet: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    width: 8,
+    backgroundColor: 'rgba(255,72,65,0.045)',
+    borderRightWidth: StyleSheet.hairlineWidth,
+    borderRightColor: 'rgba(255,92,84,0.08)',
+  },
+  pedestalRightFacet: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    right: 0,
+    width: 10,
+    backgroundColor: 'rgba(0,0,0,0.28)',
+    borderLeftWidth: StyleSheet.hairlineWidth,
+    borderLeftColor: 'rgba(255,255,255,0.025)',
   },
   pedXp: {
     fontFamily: fonts.display,

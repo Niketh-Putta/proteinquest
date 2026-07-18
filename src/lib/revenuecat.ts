@@ -77,7 +77,7 @@ export interface RevenueCatPlan {
 type PurchasesOfferingLike = {
   identifier: string;
   availablePackages: Array<{
-    product: { identifier: string };
+    product: { identifier: string; priceString?: string };
     packageType: string;
     identifier: string;
   }>;
@@ -325,7 +325,10 @@ export async function purchasePlan(planId: string): Promise<boolean> {
   const pkg = packages.find(matchesPlan) ?? packages[0]!;
 
   try {
-    const { customerInfo } = await Purchases.purchasePackage(pkg);
+    // `pkg` is our structural shim; the SDK wants its full PurchasesPackage.
+    const { customerInfo } = await Purchases.purchasePackage(
+      pkg as unknown as Parameters<typeof Purchases.purchasePackage>[0],
+    );
     return hasProEntitlement(customerInfo);
   } catch (e) {
     const configMsg = offeringsConfigurationError(e);
@@ -351,16 +354,27 @@ export async function restorePurchases(): Promise<boolean> {
  * by the store, so we always route there rather than handling them in-app.
  */
 export async function getBillingManagementUrl(): Promise<string> {
+  // Package-scoped Play link lands on this app's subscriptions (cancel / payment).
   const storeFallback =
     Platform.OS === 'ios'
       ? 'https://apps.apple.com/account/subscriptions'
-      : 'https://play.google.com/store/account/subscriptions';
+      : 'https://play.google.com/store/account/subscriptions?package=com.proteinquest.app';
 
   if (!isRevenueCatConfigured()) return storeFallback;
   try {
     const Purchases = (await import('react-native-purchases')).default;
     const info = await Purchases.getCustomerInfo();
-    return info.managementURL ?? storeFallback;
+    if (info.managementURL) return info.managementURL;
+
+    if (Platform.OS === 'android') {
+      const productId =
+        info.activeSubscriptions[0] ??
+        Object.keys(info.subscriptionsByProductIdentifier ?? {})[0];
+      if (productId) {
+        return `https://play.google.com/store/account/subscriptions?sku=${encodeURIComponent(productId)}&package=com.proteinquest.app`;
+      }
+    }
+    return storeFallback;
   } catch {
     return storeFallback;
   }

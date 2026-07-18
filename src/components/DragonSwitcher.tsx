@@ -5,6 +5,7 @@ import Animated, { FadeIn } from 'react-native-reanimated';
 import {
   DRAGONS,
   activeDragonId,
+  displayDragonName,
   effectiveLevel,
   getDragonProgress,
   stageForXpLevel,
@@ -33,7 +34,7 @@ export function DragonSwitcher({ profile, variant = 'chips', locked = false }: P
     try {
       const dragon = DRAGONS.find((d) => d.id === id)!;
       await saveProfile(switchActiveDragon(profile, id));
-      setToast(`Training ${dragon.name}`);
+      setToast(`Training ${displayDragonName(profile, dragon.id)}`);
       setTimeout(() => setToast(null), 1800);
     } finally {
       setBusy(null);
@@ -59,7 +60,7 @@ export function DragonSwitcher({ profile, variant = 'chips', locked = false }: P
                 <Image source={stage.art} style={styles.cardArt} />
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.cardName, isActive && { color: dragon.accent }]}>
-                    {dragon.name}
+                    {displayDragonName(profile, dragon.id)}
                   </Text>
                   <Text style={styles.cardMeta}>
                     Lv {effectiveLevel(prog)} · {prog.xp} XP
@@ -102,7 +103,7 @@ export function DragonSwitcher({ profile, variant = 'chips', locked = false }: P
                 <Image source={stage.art} style={styles.chipArt} />
                 <View>
                   <Text style={[styles.chipName, isActive && { color: dragon.accent }]}>
-                    {dragon.name}
+                    {displayDragonName(profile, dragon.id)}
                   </Text>
                   <Text style={styles.chipMeta}>
                     {busy === dragon.id ? 'Switching…' : stage.name}

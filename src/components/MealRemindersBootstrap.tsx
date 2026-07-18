@@ -25,8 +25,8 @@ export function MealRemindersBootstrap() {
 
   useEffect(() => {
     if (Platform.OS === 'web' || loading || !profile) return;
-    syncMealReminders().catch(console.error);
-  }, [loading, profile?.id]);
+    syncMealReminders(profile).catch(console.error);
+  }, [loading, profile?.id, profile?.dragon_names, profile?.active_dragon_id, profile?.daily_dragon_id]);
 
   useEffect(() => {
     if (Platform.OS === 'web') return;
@@ -39,7 +39,7 @@ export function MealRemindersBootstrap() {
     });
 
     const onAppState = AppState.addEventListener('change', (state) => {
-      if (state === 'active' && profile) syncMealReminders().catch(console.error);
+      if (state === 'active' && profile) syncMealReminders(profile).catch(console.error);
     });
 
     return () => {

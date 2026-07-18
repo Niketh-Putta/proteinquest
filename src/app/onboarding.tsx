@@ -115,7 +115,7 @@ function StepProgress({ index }: { index: number }) {
 }
 
 export default function Onboarding() {
-  const { saveProfile } = useSession();
+  const { profile, saveProfile } = useSession();
   const { horizontalPad, contentMaxWidth, isNarrow, width, height } = useLayout();
   const isCompact = height < 700 || width < 390;
   const footerGap = usePinnedFooterGap(isCompact);
@@ -190,7 +190,7 @@ export default function Onboarding() {
           showsVerticalScrollIndicator={false}>
           <View style={styles.content}>
             <StepProgress index={0} />
-            <DragonPicker value={dragonId} onChange={handleDragonPick} />
+            <DragonPicker value={dragonId} onChange={handleDragonPick} profile={profile} />
             {error ? <Text style={styles.error}>{error}</Text> : null}
           </View>
         </ScrollView>

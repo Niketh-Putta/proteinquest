@@ -5,6 +5,7 @@ import { router } from 'expo-router';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
+  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -32,22 +33,25 @@ import Animated, {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/Button';
+import { DragonPortrait } from '@/components/DragonPortrait';
 import {
   DISPLAY_NAME_TAKEN,
   isDisplayNameAvailable,
   isDisplayNameTakenError,
 } from '@/lib/display-name';
+import { DRAGONS, buildDragonNames, normalizeDragonName } from '@/lib/character';
 import { useLayout, usePinnedFooterGap } from '@/lib/layout';
 import { useSession } from '@/lib/session';
 import { setPreferredName } from '@/lib/xp';
+import type { DragonId } from '@/lib/types';
 import { colors, displayLH, fonts, noTextCaret, pressableWeb, spacing, textInputWeb } from '@/theme';
 
 const HERO_ART = require('@/assets/character/dragons/fire-5.png');
 const EMBERS_VIDEO = require('@/assets/video/embers.mp4');
 
-type Phase = 'hero' | 'name' | 'benefits' | 'manifesto';
+type Phase = 'hero' | 'name' | 'dragons' | 'benefits' | 'manifesto';
 
-const PHASES: Phase[] = ['hero', 'name', 'benefits', 'manifesto'];
+const PHASES: Phase[] = ['hero', 'name', 'dragons', 'benefits', 'manifesto'];
 
 /** Cinematic opening title sequence: each word holds, then yields to the next. */
 const TITLE_WORDS = ['FUEL.', 'FEED.', 'EVOLVE.'];
@@ -278,10 +282,13 @@ export default function IntroScreen() {
   const [wordIndex, setWordIndex] = useState(0);
   const [titleDone, setTitleDone] = useState(false);
   const [name, setName] = useState('');
+  const [dragonIndex, setDragonIndex] = useState(0);
+  const [dragonNames, setDragonNames] = useState<Partial<Record<DragonId, string>>>({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const phaseIndex = PHASES.indexOf(phase);
+  const namingDragon = DRAGONS[dragonIndex];
 
   // Opening title sequence: FUEL. FEED. EVOLVE. → settle on the brand statement.
   useEffect(() => {
@@ -308,7 +315,23 @@ export default function IntroScreen() {
 
   function back() {
     setError(null);
+    if (phase === 'dragons' && dragonIndex > 0) {
+      setDragonIndex((i) => i - 1);
+      return;
+    }
     if (phaseIndex > 0) setPhase(PHASES[phaseIndex - 1]);
+  }
+
+  function submitDragonName() {
+    setError(null);
+    const chosen =
+      normalizeDragonName(dragonNames[namingDragon.id] ?? '') || namingDragon.name;
+    setDragonNames((prev) => ({ ...prev, [namingDragon.id]: chosen }));
+    if (dragonIndex < DRAGONS.length - 1) {
+      setDragonIndex((i) => i + 1);
+    } else {
+      next();
+    }
   }
 
   async function submitName() {
@@ -318,6 +341,7 @@ export default function IntroScreen() {
         const available = await isDisplayNameAvailable(chosen);
         if (!available) {
           setError(DISPLAY_NAME_TAKEN);
+          Alert.alert('Username already exists', DISPLAY_NAME_TAKEN);
           return;
         }
       } catch (e) {
@@ -343,6 +367,7 @@ export default function IntroScreen() {
         const available = await isDisplayNameAvailable(chosen);
         if (!available) {
           setError(DISPLAY_NAME_TAKEN);
+          Alert.alert('Username already exists', DISPLAY_NAME_TAKEN);
           setSaving(false);
           setPhase('name');
           return;
@@ -351,12 +376,14 @@ export default function IntroScreen() {
       await saveProfile({
         intro_completed: true,
         ...(chosen ? { display_name: chosen } : {}),
+        dragon_names: buildDragonNames(dragonNames),
       });
       router.replace('/onboarding');
     } catch (e: unknown) {
       if (__DEV__ && e) console.error('[intro] saveProfile failed:', e);
       if (isDisplayNameTakenError(e)) {
         setError(DISPLAY_NAME_TAKEN);
+        Alert.alert('Username already exists', DISPLAY_NAME_TAKEN);
         setPhase('name');
       } else {
         setError(e instanceof Error ? e.message : 'Could not save progress');
@@ -486,6 +513,48 @@ export default function IntroScreen() {
               </Animated.View>
             ) : null}
 
+            {phase === 'dragons' ? (
+              <Animated.View
+                key={`dragons-${namingDragon.id}`}
+                entering={FadeInDown.duration(380)}
+                exiting={FadeOut.duration(160)}
+                style={styles.phaseBody}>
+                <Text style={styles.kicker}>
+                  DRAGON {dragonIndex + 1} OF {DRAGONS.length}
+                </Text>
+                <View style={styles.dragonReveal}>
+                  <DragonPortrait
+                    art={namingDragon.stages[0].art}
+                    accent={namingDragon.accent}
+                    level={1}
+                    dragonId={namingDragon.id}
+                    size={isCompact ? 140 : 180}
+                  />
+                </View>
+                <Text style={[styles.question, isCompact && styles.questionCompact]}>
+                  Name your{'\n'}
+                  {namingDragon.title.toLowerCase()}
+                </Text>
+                <Text style={styles.dragonHint}>
+                  Default: {namingDragon.name} · {namingDragon.motto}
+                </Text>
+                <TextInput
+                  style={[styles.nameInput, isCompact && styles.nameInputCompact, textInputWeb]}
+                  value={dragonNames[namingDragon.id] ?? ''}
+                  onChangeText={(text) =>
+                    setDragonNames((prev) => ({ ...prev, [namingDragon.id]: text }))
+                  }
+                  placeholder={namingDragon.name}
+                  placeholderTextColor={colors.textTertiary}
+                  autoCapitalize="words"
+                  autoCorrect={false}
+                  maxLength={24}
+                  returnKeyType="done"
+                  onSubmitEditing={submitDragonName}
+                />
+              </Animated.View>
+            ) : null}
+
             {phase === 'benefits' ? (
               <Animated.View
                 key="benefits"
@@ -541,6 +610,8 @@ export default function IntroScreen() {
               {error ? <Text style={styles.error}>{error}</Text> : null}
               {phase === 'name' ? (
                 <Button title="Continue" onPress={submitName} />
+              ) : phase === 'dragons' ? (
+                <Button title={dragonIndex < DRAGONS.length - 1 ? 'Next dragon' : 'Continue'} onPress={submitDragonName} />
               ) : phase === 'benefits' ? (
                 <Animated.View entering={FadeIn.delay(450 + BENEFITS.length * 380)}>
                   <Button title="Continue" onPress={next} />
@@ -703,6 +774,14 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.hairlineBright,
   },
   nameInputCompact: { fontSize: 26 },
+  dragonReveal: { alignItems: 'center', marginTop: spacing.lg, marginBottom: spacing.md },
+  dragonHint: {
+    fontFamily: fonts.body,
+    fontSize: 13,
+    lineHeight: 19,
+    color: colors.textSecondary,
+    marginTop: spacing.sm,
+  },
   benefitList: { gap: spacing.lg, marginTop: spacing.xl },
   benefitRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   benefitText: {

@@ -58,7 +58,13 @@ export function DailyDragonPicker() {
             Pick one dragon for today. All protein you log counts toward them only - locked until
             tomorrow.
           </Text>
-          <DragonPicker value={dragonId} onChange={setDragonId} compact tight={isCompact} />
+          <DragonPicker
+            value={dragonId}
+            onChange={setDragonId}
+            profile={profile}
+            compact
+            tight={isCompact}
+          />
         </Animated.View>
       </ScrollView>
 

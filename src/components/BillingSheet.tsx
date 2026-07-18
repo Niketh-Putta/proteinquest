@@ -33,9 +33,11 @@ type RowProps = {
   onPress: () => void;
   busy?: boolean;
   danger?: boolean;
+  /** External store link vs in-app action */
+  external?: boolean;
 };
 
-function ActionRow({ icon, title, subtitle, onPress, busy, danger }: RowProps) {
+function ActionRow({ icon, title, subtitle, onPress, busy, danger, external }: RowProps) {
   return (
     <Pressable
       onPress={onPress}
@@ -53,36 +55,73 @@ function ActionRow({ icon, title, subtitle, onPress, busy, danger }: RowProps) {
       {busy ? (
         <ActivityIndicator color={colors.textSecondary} />
       ) : (
-        <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+        <Ionicons
+          name={external ? 'open-outline' : 'chevron-forward'}
+          size={18}
+          color={colors.textTertiary}
+        />
       )}
     </Pressable>
   );
 }
 
+const STORE_NAME = Platform.OS === 'ios' ? 'App Store' : 'Google Play';
+
 export function BillingSheet({ visible, isPro, onClose, onRestored }: Props) {
   const [opening, setOpening] = useState(false);
   const [restoring, setRestoring] = useState(false);
 
-  async function openManagement() {
+  async function openStoreSubscriptions() {
     if (opening) return;
     setOpening(true);
     try {
       const url = await getBillingManagementUrl();
       const ok = await Linking.canOpenURL(url);
       if (ok) await Linking.openURL(url);
-      else Alert.alert('Could not open', 'Open your store account to manage this subscription.');
+      else {
+        Alert.alert(
+          `Open ${STORE_NAME}`,
+          Platform.OS === 'android'
+            ? 'Go to Play Store → Profile → Payments & subscriptions → Subscriptions, then choose ProteinQuest.'
+            : 'Go to Settings → Apple ID → Subscriptions, then choose ProteinQuest.',
+        );
+      }
     } catch {
-      Alert.alert('Something went wrong', 'Please try again from your store account.');
+      Alert.alert('Something went wrong', `Open ${STORE_NAME} and manage ProteinQuest from Subscriptions.`);
     } finally {
       setOpening(false);
     }
+  }
+
+  function confirmOpenStore(purpose: 'manage' | 'cancel') {
+    const title =
+      purpose === 'cancel' ? `Cancel in ${STORE_NAME}` : `Manage in ${STORE_NAME}`;
+    const message =
+      purpose === 'cancel'
+        ? Platform.OS === 'android'
+          ? 'ProteinQuest cannot cancel Play subscriptions in-app. Google Play will open so you can turn off auto-renew there. You keep Pro until the end of the paid period.'
+          : 'ProteinQuest cannot cancel App Store subscriptions in-app. The App Store will open so you can turn off auto-renew there. You keep Pro until the end of the paid period.'
+        : Platform.OS === 'android'
+          ? 'Payment method, plan changes, and cancellation are handled by Google Play — not inside ProteinQuest.'
+          : 'Payment method, plan changes, and cancellation are handled by the App Store — not inside ProteinQuest.';
+
+    Alert.alert(title, message, [
+      { text: 'Not now', style: 'cancel' },
+      {
+        text: `Open ${STORE_NAME}`,
+        style: purpose === 'cancel' ? 'destructive' : 'default',
+        onPress: () => {
+          void openStoreSubscriptions();
+        },
+      },
+    ]);
   }
 
   async function handleRestore() {
     if (restoring) return;
     const provider = getPaymentProvider();
     if (!provider.restore) {
-      Alert.alert('Not available', 'Restoring purchases is only available on device.');
+      Alert.alert('Not available', 'Restoring purchases is only available on this device.');
       return;
     }
     setRestoring(true);
@@ -90,9 +129,12 @@ export function BillingSheet({ visible, isPro, onClose, onRestored }: Props) {
       const ok = await provider.restore();
       if (ok) {
         onRestored?.();
-        Alert.alert('Restored', 'Your Pro subscription is active again.');
+        Alert.alert('Restored', 'Your Pro subscription is active on this device.');
       } else {
-        Alert.alert('No subscription found', 'We could not find an active Pro subscription.');
+        Alert.alert(
+          'No subscription found',
+          `We could not find an active Pro purchase for this ${STORE_NAME} account.`,
+        );
       }
     } catch (e: unknown) {
       Alert.alert('Restore failed', e instanceof Error ? e.message : 'Please try again.');
@@ -128,33 +170,42 @@ export function BillingSheet({ visible, isPro, onClose, onRestored }: Props) {
             style={styles.scroll}
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}>
-            <ActionRow
-              icon="card-outline"
-              title="Update payment method"
-              subtitle="Change the card or bank account on file"
-              onPress={openManagement}
-              busy={opening}
-            />
+            {isPro ? (
+              <>
+                <ActionRow
+                  icon="open-outline"
+                  title={`Manage on ${STORE_NAME}`}
+                  subtitle="Update payment method, change plan, or view invoices"
+                  onPress={() => confirmOpenStore('manage')}
+                  busy={opening}
+                  external
+                />
+                <ActionRow
+                  icon="close-circle-outline"
+                  title={`Cancel on ${STORE_NAME}`}
+                  subtitle="Opens the store — turn off auto-renew there (not in this app)"
+                  onPress={() => confirmOpenStore('cancel')}
+                  busy={opening}
+                  danger
+                  external
+                />
+              </>
+            ) : null}
+
             <ActionRow
               icon="refresh-outline"
               title="Restore purchases"
-              subtitle="Reactivate Pro on this device"
-              onPress={handleRestore}
+              subtitle={`Re-check this ${STORE_NAME} account for an active Pro plan`}
+              onPress={() => {
+                void handleRestore();
+              }}
               busy={restoring}
-            />
-            <ActionRow
-              icon="close-circle-outline"
-              title="Cancel subscription"
-              subtitle="Turn off auto-renew and stop billing"
-              onPress={openManagement}
-              busy={opening}
-              danger
             />
 
             <Text style={styles.note}>
-              Payment methods, billing history, and cancellations are securely handled by your{' '}
-              {Platform.OS === 'ios' ? 'Apple ID' : 'Google Play'} account. We&apos;ll take you
-              straight there.
+              {Platform.OS === 'android'
+                ? 'Google Play owns subscription billing. Cancel and payment changes only take effect in Play Store → Subscriptions. Restore only refreshes Pro status in the app.'
+                : 'Apple owns subscription billing. Cancel and payment changes only take effect in App Store → Subscriptions. Restore only refreshes Pro status in the app.'}
             </Text>
           </ScrollView>
         </Animated.View>

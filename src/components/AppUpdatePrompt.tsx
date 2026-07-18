@@ -83,7 +83,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
   },
   backdrop: {
-    ...StyleSheet.absoluteFillObject,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     backgroundColor: 'rgba(6, 6, 9, 0.78)',
   },
   card: {

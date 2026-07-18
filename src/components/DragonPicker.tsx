@@ -1,20 +1,37 @@
 import React from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { DRAGONS } from '@/lib/character';
-import type { DragonId } from '@/lib/types';
+import {
+  DRAGONS,
+  displayDragonName,
+  effectiveLevel,
+  getDragonArt,
+  getDragonProgress,
+  stageForXpLevel,
+} from '@/lib/character';
+import type { DragonId, Profile } from '@/lib/types';
 import { colors, displayLH, fonts, pressableWeb, radius, spacing } from '@/theme';
 
 interface Props {
   value: DragonId | null;
   onChange: (id: DragonId) => void;
+  profile?: Profile | null;
+  /** In-memory names before profile save (e.g. intro naming phase). */
+  dragonNames?: Partial<Record<DragonId, string>>;
   /** Hide onboarding headers when picking daily dragon on Today. */
   compact?: boolean;
   /** Tighter cards for short viewports (daily picker on small phones). */
   tight?: boolean;
 }
 
-export function DragonPicker({ value, onChange, compact = false, tight = false }: Props) {
+export function DragonPicker({
+  value,
+  onChange,
+  profile,
+  dragonNames,
+  compact = false,
+  tight = false,
+}: Props) {
   function pick(id: DragonId) {
     onChange(id);
   }
@@ -36,6 +53,11 @@ export function DragonPicker({ value, onChange, compact = false, tight = false }
       <View style={[styles.list, compact && { marginTop: 0 }, tight && styles.listTight]}>
         {DRAGONS.map((dragon) => {
           const active = value === dragon.id;
+          // Show the dragon at its current evolution stage, not always the baby.
+          const stage = profile
+            ? stageForXpLevel(effectiveLevel(getDragonProgress(profile, dragon.id)), dragon.id)
+            : null;
+          const art = stage ? getDragonArt(dragon.id, stage.index) : dragon.previewArt;
           return (
             <Pressable
               key={dragon.id}
@@ -49,13 +71,15 @@ export function DragonPicker({ value, onChange, compact = false, tight = false }
                     styles.artFrame,
                     active && { borderColor: dragon.accent, backgroundColor: colors.surface },
                   ]}>
-                  <Image source={dragon.previewArt} style={[styles.art, tight && styles.artTight]} />
+                  <Image source={art} style={[styles.art, tight && styles.artTight]} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.name, tight && styles.nameTight, active && { color: dragon.accent }]}>
-                    {dragon.name}
+                    {displayDragonName(profile, dragon.id, dragonNames)}
                   </Text>
-                  <Text style={[styles.titleSmall, tight && styles.titleSmallTight]}>{dragon.title}</Text>
+                  <Text style={[styles.titleSmall, tight && styles.titleSmallTight]}>
+                    {stage ? `${stage.name.toUpperCase()} · ${dragon.title}` : dragon.title}
+                  </Text>
                   <Text style={[styles.motto, tight && styles.mottoTight]}>{dragon.motto}</Text>
                 </View>
                 <View style={[styles.radio, active && { borderColor: dragon.accent }]}>

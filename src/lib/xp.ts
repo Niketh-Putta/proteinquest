@@ -35,35 +35,41 @@ export interface XpSnapshot {
   levelPct: number;
 }
 
-/** Rank ladder — first level of each band. */
-const RANK_BANDS: { name: string; minLevel: number }[] = [
-  { name: 'Rookie', minLevel: 1 },
-  { name: 'Iron', minLevel: 3 },
-  { name: 'Bronze', minLevel: 6 },
-  { name: 'Silver', minLevel: 10 },
-  { name: 'Gold', minLevel: 15 },
-  { name: 'Platinum', minLevel: 20 },
-  { name: 'Diamond', minLevel: 26 },
-  { name: 'Mythic', minLevel: 32 },
-  { name: 'Legend', minLevel: 40 },
+/**
+ * Trainer rank ladder — derived from account level (sum of all dragon XP).
+ * Each step unlocks at minLevel; levels between steps keep the previous title.
+ */
+const RANK_STEPS: { name: string; tier: string; minLevel: number }[] = [
+  { name: 'Rookie', tier: 'I', minLevel: 1 },
+  { name: 'Rookie', tier: 'II', minLevel: 2 },
+  { name: 'Rookie', tier: 'III', minLevel: 3 },
+  { name: 'Bronze', tier: 'I', minLevel: 6 },
+  { name: 'Bronze', tier: 'II', minLevel: 10 },
+  { name: 'Silver', tier: 'I', minLevel: 15 },
+  { name: 'Silver', tier: 'II', minLevel: 20 },
+  { name: 'Gold', tier: 'I', minLevel: 26 },
+  { name: 'Gold', tier: 'II', minLevel: 32 },
+  { name: 'Champion', tier: '', minLevel: 37 },
+  { name: 'Dragon Lord', tier: '', minLevel: 41 },
+  { name: 'Legend', tier: '', minLevel: 44 },
 ];
 
-const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'];
-
 export function rankForLevel(level: number): Rank {
-  let band = RANK_BANDS[0];
-  let next: { minLevel: number } | null = null;
-  for (let i = 0; i < RANK_BANDS.length; i++) {
-    if (level >= RANK_BANDS[i].minLevel) {
-      band = RANK_BANDS[i];
-      next = RANK_BANDS[i + 1] ?? null;
-    }
+  let step = RANK_STEPS[0];
+  for (const s of RANK_STEPS) {
+    if (level >= s.minLevel) step = s;
   }
-  const span = next ? next.minLevel - band.minLevel : 0;
-  const idx = Math.min(Math.max(level - band.minLevel, 0), Math.max(span - 1, 0));
-  const tier = span > 0 ? ROMAN[Math.min(idx, ROMAN.length - 1)] : '';
-  const label = tier ? `${band.name} ${tier}` : band.name;
-  return { name: band.name, tier, label };
+  const label = step.tier ? `${step.name} ${step.tier}` : step.name;
+  return { name: step.name, tier: step.tier, label };
+}
+
+/** Reference table for UI / docs — level threshold per rank title. */
+export function rankTierTable(): { label: string; minLevel: number; minXp: number }[] {
+  return RANK_STEPS.map((s) => ({
+    label: s.tier ? `${s.name} ${s.tier}` : s.name,
+    minLevel: s.minLevel,
+    minXp: xpForLevel(s.minLevel),
+  }));
 }
 
 /** Lifetime XP across all dragons (falls back to legacy flat fields). */

@@ -1,22 +1,24 @@
 import React from 'react';
 import { Image, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { DRAGONS } from '@/lib/character';
+import { DRAGONS, displayDragonName } from '@/lib/character';
+import type { Profile } from '@/lib/types';
 import { colors, fonts, radius, spacing } from '@/theme';
 
-export function DragonEvolutionGallery() {
+export function DragonEvolutionGallery({ profile }: { profile?: Profile | null }) {
   return (
     <View style={styles.wrap}>
       <Text style={styles.heading}>EVOLUTION FORMS</Text>
       <Text style={styles.sub}>
         Hit your daily protein goal to earn XP and level up. Five visual forms unlock at levels
-        1, 5, 12, 20, and 40 - Ember, Frost, and Moss each progress separately.
+        1, 5, 12, 20, and 40 -{' '}
+        {DRAGONS.map((d) => displayDragonName(profile, d.id)).join(', ')} each progress separately.
       </Text>
 
       {DRAGONS.map((dragon) => (
         <View key={dragon.id} style={styles.dragonBlock}>
           <Text style={[styles.dragonName, { color: dragon.accent }]}>
-            {dragon.name} · {dragon.title}
+            {displayDragonName(profile, dragon.id)} · {dragon.title}
           </Text>
           <ScrollView
             horizontal

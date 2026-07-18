@@ -17,17 +17,16 @@ import { CharacterCard } from '@/components/CharacterCard';
 import { DailyDragonPicker } from '@/components/DailyDragonPicker';
 import { PageCanvas } from '@/components/PageCanvas';
 import { ProgressRing } from '@/components/ProgressRing';
+import { TrainerRankCard } from '@/components/TrainerRankCard';
 import { deleteLog, fetchLogsForDate, countTodayPhotoScans } from '@/lib/api';
-import { applyDeleteLogToCharacter, dragonById, isDailyDragonLockedForToday } from '@/lib/character';
+import { applyDeleteLogToCharacter, displayDragonName, dragonById, isDailyDragonLockedForToday } from '@/lib/character';
 import { confirmDestructive } from '@/lib/confirm';
 import { flexFill, flexScroll, useLayout, useTabBarScrollInset } from '@/lib/layout';
 import { isPro, isInHabitGracePeriod, remainingFreeScans, shouldShowDelayedPaywall } from '@/lib/paywall-gate';
 import { todayISODate } from '@/lib/protein';
 import { useSession } from '@/lib/session';
 import type { ProteinLog } from '@/lib/types';
-import { formatXp } from '@/lib/leaderboard';
-import { xpSnapshot } from '@/lib/xp';
-import { colors, displayLH, fonts, noTextCaret, pressableWeb, spacing, type } from '@/theme';
+import { colors, displayLH, fonts, pressableWeb, spacing, type } from '@/theme';
 
 export default function TodayScreen() {
   const {
@@ -89,6 +88,10 @@ export default function TodayScreen() {
   const todayISO = todayISODate();
   const dragonLocked = profile ? isDailyDragonLockedForToday(profile, todayISO) : false;
   const todayDragon = profile && dragonLocked ? dragonById(profile.daily_dragon_id!) : null;
+  const todayDragonName =
+    profile && dragonLocked
+      ? displayDragonName(profile, profile.daily_dragon_id!)
+      : null;
 
   if (profile && !dragonLocked) {
     return (
@@ -155,7 +158,6 @@ export default function TodayScreen() {
     .toUpperCase();
 
   function renderHeader() {
-    const snapshot = xpSnapshot(profile);
     return (
       <View style={headerTopPad > 0 ? { paddingTop: headerTopPad } : undefined}>
         <View style={styles.header}>
@@ -189,30 +191,15 @@ export default function TodayScreen() {
               Today
             </Text>
           </View>
-          <Pressable
-            onPress={() => router.push('/league')}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel={`Trainer rank ${snapshot.rank.label}, ${formatXp(snapshot.xp)} total XP across all dragons. Open leaderboard`}
-            style={[styles.levelBadge, pressableWeb]}>
-            <Text selectable={false} style={styles.levelKind}>
-              TRAINER · ALL DRAGONS
-            </Text>
-            <Text selectable={false} style={styles.levelRankName}>
-              {snapshot.rank.label}
-            </Text>
-            <Text selectable={false} style={styles.levelXpLine}>
-              {formatXp(snapshot.xp)}
-              <Text style={styles.levelXpUnit}> XP total</Text>
-            </Text>
-          </Pressable>
-          <Pressable
-            onPress={() => router.push('/settings')}
-            hitSlop={12}
-            style={styles.gearBtn}>
-            <Ionicons name="options-outline" size={20} color={colors.textSecondary} />
-          </Pressable>
         </View>
+
+        {profile ? (
+          <TrainerRankCard
+            profile={profile}
+            variant="rich"
+            onPress={() => router.push('/league')}
+          />
+        ) : null}
 
         {!isPro(profile) && !isInHabitGracePeriod(profile) && scansLeft !== null ? (
           <Pressable onPress={() => router.push('/paywall')} style={styles.scansPill}>
@@ -225,11 +212,19 @@ export default function TodayScreen() {
           </Pressable>
         ) : null}
 
-        {todayDragon ? (
-          <View style={[styles.dailyBanner, { borderColor: todayDragon.accent }]}>
+        {todayDragon && todayDragonName ? (
+          <View
+            style={[
+              styles.dailyBanner,
+              {
+                borderColor: `${todayDragon.accent}99`,
+                backgroundColor: `${todayDragon.accent}12`,
+                shadowColor: todayDragon.accent,
+              },
+            ]}>
             <Ionicons name="lock-closed" size={12} color={todayDragon.accent} />
             <Text style={[styles.dailyBannerText, { color: todayDragon.accent }]}>
-              Growing {todayDragon.name} today
+              Growing {todayDragonName} today
             </Text>
           </View>
         ) : null}
@@ -422,6 +417,12 @@ const styles = StyleSheet.create({
   },
   statusTagPro: {
     backgroundColor: colors.accent,
+    borderWidth: 1,
+    borderColor: '#FFB09D',
+    shadowColor: colors.accent,
+    shadowOpacity: 0.24,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 3 },
   },
   statusTagFree: {
     backgroundColor: colors.surface,
@@ -440,64 +441,11 @@ const styles = StyleSheet.create({
     ...type.eyebrow,
     color: colors.accent,
     marginBottom: 6,
+    textShadowColor: 'rgba(255, 122, 89, 0.22)',
+    textShadowRadius: 8,
   },
   title: {
     ...type.pageTitle,
-  },
-  gearBtn: {
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  levelBadge: {
-    alignItems: 'flex-start',
-    gap: 1,
-    paddingHorizontal: 12,
-    paddingTop: 8,
-    paddingBottom: 5,
-    marginRight: spacing.md,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.hairlineBright,
-    backgroundColor: colors.surface,
-    marginTop: 2,
-  },
-  levelKind: {
-    ...noTextCaret,
-    fontFamily: fonts.mono,
-    fontSize: 8,
-    letterSpacing: 1.2,
-    color: colors.textTertiary,
-    lineHeight: 10,
-  },
-  levelRankName: {
-    ...noTextCaret,
-    fontFamily: fonts.monoBold,
-    fontSize: 11,
-    letterSpacing: 0.5,
-    color: colors.text,
-    lineHeight: 13,
-  },
-  levelXpLine: {
-    ...noTextCaret,
-    fontFamily: fonts.monoBold,
-    fontSize: 11,
-    letterSpacing: 0.2,
-    color: colors.text,
-    fontVariant: ['tabular-nums'],
-    lineHeight: 13,
-  },
-  levelXpSep: {
-    color: colors.textTertiary,
-    fontFamily: fonts.mono,
-    fontWeight: '600',
-  },
-  levelXpUnit: {
-    color: colors.textSecondary,
-    fontFamily: fonts.mono,
-    fontSize: 10,
-    fontWeight: '600',
   },
   scansPill: {
     flexDirection: 'row',
@@ -509,9 +457,9 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 999,
-    backgroundColor: colors.surface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.hairlineBright,
+    backgroundColor: 'rgba(255, 122, 89, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 122, 89, 0.28)',
   },
   scansPillText: {
     fontFamily: fonts.body,
@@ -524,16 +472,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     alignSelf: 'flex-start',
-    paddingVertical: 6,
-    paddingHorizontal: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
     marginBottom: spacing.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 6,
+    borderWidth: 1,
+    borderRadius: 10,
+    shadowOpacity: 0.14,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
   },
   dailyBannerText: {
-    fontFamily: fonts.mono,
+    fontFamily: fonts.monoBold,
     fontSize: 10,
-    letterSpacing: 1,
+    letterSpacing: 1.35,
     textTransform: 'uppercase',
   },
   hero: {

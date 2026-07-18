@@ -29,15 +29,15 @@ export interface DragonType {
 }
 
 /**
- * XP levels that unlock a new visual dragon form (5 stages). Early thresholds
- * are deliberately reachable — the first evolution lands around day 2 of
- * hitting your goal so the transformation hooks new users fast, then the
- * later forms stretch out to stay aspirational.
+ * XP levels that unlock a new visual dragon form (5 stages).
+ * Front-loaded on purpose: first evolution after one solid meal, second within
+ * the first few goal days — so new users feel the unique evolution loop fast.
+ * Later forms stretch out to stay aspirational.
  */
-export const VISUAL_EVOLUTION_LEVELS = [1, 3, 8, 16, 30] as const;
+export const VISUAL_EVOLUTION_LEVELS = [1, 2, 5, 12, 26] as const;
 
 const STAGE_NAMES = ['Baby', 'Juvenile', 'Adolescent', 'Adult', 'Legendary'] as const;
-const STAGE_GOALS = [0, 2, 7, 14, 30] as const;
+const STAGE_GOALS = [0, 1, 3, 10, 24] as const;
 
 const STAGE_TAGLINES = [
   'Just hatched. Feed me protein.',
@@ -265,12 +265,16 @@ export const DRAGONS: DragonType[] = [
   },
 ];
 
-/** Cumulative XP thresholds per level (index 0 = level 1). */
+/** Cumulative XP thresholds per level (index 0 = level 1). Early levels are cheap. */
 const LEVEL_XP_THRESHOLDS: number[] = (() => {
   const thresholds = [0];
-  let increment = 100;
+  let increment = 40;
   for (let level = 2; level <= 45; level++) {
-    if ((VISUAL_EVOLUTION_LEVELS as readonly number[]).includes(level)) {
+    const isEvolution = (VISUAL_EVOLUTION_LEVELS as readonly number[]).includes(level);
+    if (level <= 6) {
+      // New-user ramp: frequent level-ups + early evolutions.
+      increment += isEvolution ? 18 : Math.round(6 + level * 1.2);
+    } else if (isEvolution) {
       increment += 55;
     } else {
       increment += Math.round(18 + level * 2.2);
@@ -282,6 +286,34 @@ const LEVEL_XP_THRESHOLDS: number[] = (() => {
 
 export function dragonById(id: DragonId | null | undefined): DragonType {
   return DRAGONS.find((d) => d.id === id) ?? DRAGONS[0];
+}
+
+export const MAX_DRAGON_NAME_LEN = 24;
+
+export function normalizeDragonName(raw: string): string {
+  return raw.trim().slice(0, MAX_DRAGON_NAME_LEN);
+}
+
+/** Custom dragon name from profile or in-memory overrides, else default species name. */
+export function displayDragonName(
+  profile: Profile | null | undefined,
+  dragonId: DragonId,
+  overrides?: Partial<Record<DragonId, string>>,
+): string {
+  const custom = overrides?.[dragonId] ?? profile?.dragon_names?.[dragonId];
+  if (custom?.trim()) return custom.trim();
+  return dragonById(dragonId).name;
+}
+
+export function buildDragonNames(
+  input: Partial<Record<DragonId, string>>,
+): Partial<Record<DragonId, string>> {
+  const result: Partial<Record<DragonId, string>> = {};
+  for (const d of DRAGONS) {
+    const name = normalizeDragonName(input[d.id] ?? '');
+    if (name) result[d.id] = name;
+  }
+  return result;
 }
 
 export const XP_PER_GRAM = 1;
@@ -520,7 +552,7 @@ export function applyLogToCharacter(params: {
   const levelAfter = levelForXp(xp);
   const stageAfterIndex = stageForXpLevel(levelAfter, dragonId).index;
   const evolved = stageAfterIndex > stageBefore;
-  const leveledUp = goalJustHit && levelAfter > levelBefore;
+  const leveledUp = levelAfter > levelBefore;
   const perkUnlocked = leveledUp ? perkForLevel(levelAfter, dragonId) : null;
 
   const updatedProgress: DragonProgress = {

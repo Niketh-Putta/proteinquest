@@ -7,14 +7,18 @@ export type SquareMealPhoto = {
   height: number;
 };
 
-const SQUARE_EXPORT_WIDTH = 768;
+/** Enough detail for portions; smaller = faster upload + model TTFT. */
+const SQUARE_EXPORT_WIDTH = 512;
 
 /** Center-crop to square, then resize for analysis upload. */
 export async function prepareSquareMealPhoto(uri: string): Promise<SquareMealPhoto> {
+  // Image.getSize can return Fresco's downsampled dimensions on Android.
+  // Decode through ImageManipulator so crop coordinates match its actual bitmap.
   const source = await ImageManipulator.manipulate(uri).renderAsync();
-  const side = Math.min(source.width, source.height);
-  const originX = Math.floor((source.width - side) / 2);
-  const originY = Math.floor((source.height - side) / 2);
+  const { width, height } = source;
+  const side = Math.min(width, height);
+  const originX = Math.floor((width - side) / 2);
+  const originY = Math.floor((height - side) / 2);
 
   const rendered = await ImageManipulator.manipulate(uri)
     .crop({ originX, originY, width: side, height: side })
@@ -23,7 +27,7 @@ export async function prepareSquareMealPhoto(uri: string): Promise<SquareMealPho
 
   const saved = await rendered.saveAsync({
     format: SaveFormat.JPEG,
-    compress: 0.65,
+    compress: 0.55,
     base64: true,
   });
 

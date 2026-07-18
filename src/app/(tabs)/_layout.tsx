@@ -46,6 +46,7 @@ function ScanTabBar({ state, navigation }: TabBarProps) {
     today: { name: 'today', label: 'Today', icon: 'flash' as const },
     trends: { name: 'trends', label: 'Trends', icon: 'stats-chart' as const },
     league: { name: 'league', label: 'League', icon: 'trophy' as const },
+    profile: { name: 'profile', label: 'Profile', icon: 'person' as const },
   };
 
   return (
@@ -83,6 +84,12 @@ function ScanTabBar({ state, navigation }: TabBarProps) {
           tab={tabs.league}
           active={state.index === 2}
           onPress={() => navigation.navigate('league')}
+        />
+
+        <TabButton
+          tab={tabs.profile}
+          active={state.index === 3}
+          onPress={() => navigation.navigate('profile')}
         />
       </View>
     </View>
@@ -123,6 +130,7 @@ export default function TabsLayout() {
       <Tabs.Screen name="today" />
       <Tabs.Screen name="trends" />
       <Tabs.Screen name="league" />
+      <Tabs.Screen name="profile" />
     </Tabs>
   );
 }

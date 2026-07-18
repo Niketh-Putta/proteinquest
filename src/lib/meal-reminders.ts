@@ -3,6 +3,10 @@ import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 
+import { displayDragonId, displayDragonName } from '@/lib/character';
+import { todayISODate } from '@/lib/protein';
+import type { Profile } from '@/lib/types';
+
 const ENABLED_KEY = 'pq:meal-reminders-enabled';
 const ANDROID_CHANNEL = 'meal-reminders';
 
@@ -108,15 +112,40 @@ function pickMessage(slot: MealReminderSlot): { title: string; body: string } {
   return slot.messages[idx]!;
 }
 
+function personalizeReminderMessage(
+  slot: MealReminderSlot,
+  dragonName: string,
+  base: { title: string; body: string },
+): { title: string; body: string } {
+  const day = new Date().getDay();
+  const hungryTitles: Partial<Record<MealReminderKind, string[]>> = {
+    breakfast: [`${dragonName} is getting hungry`, 'Morning fuel', 'Rise & protein'],
+    lunch: [`${dragonName} wants lunch`, 'Lunchtime', 'Midday fuel'],
+    dinner: [`${dragonName} is ready for dinner`, 'Dinner call', 'Evening plate'],
+    snack: [`${dragonName} wants a snack`, base.title],
+  };
+  const titles = hungryTitles[slot.kind] ?? [base.title];
+  const title = titles[day % titles.length]!;
+
+  const body = base.body
+    .replace(/your dragon/gi, dragonName)
+    .replace(/Dragon's/g, `${dragonName}'s`);
+
+  return { title, body };
+}
+
 export async function isMealRemindersEnabled(): Promise<boolean> {
   const stored = await AsyncStorage.getItem(ENABLED_KEY);
   if (stored === null) return true;
   return stored === '1';
 }
 
-export async function setMealRemindersEnabled(enabled: boolean): Promise<boolean> {
+export async function setMealRemindersEnabled(
+  enabled: boolean,
+  profile?: Profile | null,
+): Promise<boolean> {
   await AsyncStorage.setItem(ENABLED_KEY, enabled ? '1' : '0');
-  if (enabled) return syncMealReminders();
+  if (enabled) return syncMealReminders(profile);
   await cancelMealReminders();
   return false;
 }
@@ -161,7 +190,7 @@ export async function cancelMealReminders(): Promise<void> {
   await Notifications.cancelAllScheduledNotificationsAsync();
 }
 
-export async function syncMealReminders(): Promise<boolean> {
+export async function syncMealReminders(profile?: Profile | null): Promise<boolean> {
   if (Platform.OS === 'web') return false;
 
   const enabled = await isMealRemindersEnabled();
@@ -175,8 +204,13 @@ export async function syncMealReminders(): Promise<boolean> {
 
   await cancelMealReminders();
 
+  const todayISO = todayISODate();
+  const dragonId = profile ? displayDragonId(profile, todayISO) : 'fire';
+  const dragonName = profile ? displayDragonName(profile, dragonId) : 'your dragon';
+
   for (const slot of MEAL_REMINDER_SLOTS) {
-    const copy = pickMessage(slot);
+    const base = pickMessage(slot);
+    const copy = personalizeReminderMessage(slot, dragonName, base);
     await Notifications.scheduleNotificationAsync({
       identifier: `meal-reminder-${slot.id}`,
       content: {

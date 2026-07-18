@@ -19,6 +19,7 @@ import { LevelUpNudge } from '@/components/LevelUpNudge';
 import {
   XP_GOAL_BONUS,
   displayDragonId,
+  displayDragonName,
   displayProgress,
   dragonById,
   effectiveLevel,
@@ -113,6 +114,7 @@ export function Celebration({
   const todayISO = todayISODate();
   const dragonId = displayDragonId(profile, todayISO);
   const dragon = dragonById(dragonId);
+  const dragonName = displayDragonName(profile, dragonId);
   const progress = displayProgress(profile, todayISO);
   const level = levelAfter ?? effectiveLevel(progress);
   const stage = stageForXpLevel(level, dragonId);
@@ -210,7 +212,7 @@ export function Celebration({
                 entering={FadeInUp.delay(showEvolution ? 120 : 80).springify()}
                 style={styles.title}>
                 {showEvolution
-                  ? `${dragon.name} evolved`
+                  ? `${dragonName} evolved`
                   : isQuickLevelUp
                     ? `+Level ${level}`
                     : leveledUp
@@ -238,12 +240,12 @@ export function Celebration({
                   : isQuickLevelUp && perkUnlocked
                     ? perkUnlocked
                     : isQuickLevelUp
-                      ? `${dragon.name} grows stronger. Keep hitting your goal.`
+                      ? `${dragonName} grows stronger. Keep hitting your goal.`
                       : leveledUp && perkUnlocked
                         ? `Perk unlocked: ${perkUnlocked}`
                         : leveledUp
-                          ? `${dragon.name} grows stronger. Keep hitting your goal.`
-                          : `${dragon.name} is fed. Keep reaching.`}
+                          ? `${dragonName} grows stronger. Keep hitting your goal.`
+                          : `${dragonName} is fed. Keep reaching.`}
               </Animated.Text>
 
               <Animated.View entering={FadeIn.delay(showEvolution ? 360 : 320)} style={styles.rewardRow}>
