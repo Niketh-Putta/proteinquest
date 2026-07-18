@@ -1,5 +1,4 @@
 import type { Profile } from './types';
-import { totalXp } from './xp';
 
 /** Free tier: AI photo scans per calendar day (UTC date on server). */
 export const FREE_DAILY_SCANS = 3;
@@ -39,18 +38,6 @@ export function isInHabitGracePeriod(
   return ageDays >= 0 && ageDays < HABIT_GRACE_DAYS;
 }
 
-/**
- * Cal AI-style soft gate: show after the user has logged protein once —
- * not on first landing after onboarding. Dismissible via paywall_dismissed.
- */
-export function shouldShowDelayedPaywall(profile: Profile | null | undefined): boolean {
-  if (!profile?.onboarded) return false;
-  if (isPro(profile)) return false;
-  if (isInHabitGracePeriod(profile)) return false;
-  if (profile.paywall_dismissed) return false;
-  return totalXp(profile) > 0;
-}
-
 /** Trends (7-day rhythm view) is free for all users. */
 export function canAccessTrends(_profile: Profile | null | undefined): boolean {
   return true;
@@ -60,6 +47,14 @@ export function canScan(profile: Profile | null | undefined, scansUsedToday: num
   if (isPro(profile)) return true;
   if (isInHabitGracePeriod(profile)) return true;
   return scansUsedToday < FREE_DAILY_SCANS;
+}
+
+/** The quota paywall is allowed only from an explicit tap on the Scan tab. */
+export function shouldOpenPaywallFromScanTap(
+  profile: Profile | null | undefined,
+  scansUsedToday: number,
+): boolean {
+  return !!profile && !canScan(profile, scansUsedToday);
 }
 
 export function remainingFreeScans(

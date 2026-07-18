@@ -6,7 +6,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { isDailyDragonLockedForToday } from '@/lib/character';
 import { useLayout } from '@/lib/layout';
-import { canScan, isInHabitGracePeriod, isPro } from '@/lib/paywall-gate';
+import {
+  isInHabitGracePeriod,
+  isPro,
+  shouldOpenPaywallFromScanTap,
+} from '@/lib/paywall-gate';
 import { countTodayPhotoScans } from '@/lib/api';
 import { todayISODate } from '@/lib/protein';
 import { useSession } from '@/lib/session';
@@ -30,7 +34,7 @@ function ScanTabBar({ state, navigation }: TabBarProps) {
     if (profile && !isPro(profile) && !isInHabitGracePeriod(profile)) {
       countTodayPhotoScans()
         .then((used) => {
-          if (!canScan(profile, used)) router.push('/paywall');
+          if (shouldOpenPaywallFromScanTap(profile, used)) router.push('/paywall');
           else router.push('/scan');
         })
         .catch(() => router.push('/scan'));

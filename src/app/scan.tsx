@@ -12,6 +12,7 @@ import {
   Text,
   TextInput,
   View,
+  type LayoutChangeEvent,
   useWindowDimensions,
 } from 'react-native';
 import Animated, {
@@ -46,7 +47,7 @@ import {
   clampProteinOverride,
   maxAllowedOverride,
 } from '@/lib/log-limits';
-import { prepareSquareMealPhoto } from '@/lib/meal-photo';
+import { prepareSquareMealPhoto, type CameraCrop } from '@/lib/meal-photo';
 import {
   canScan,
   isInHabitGracePeriod,
@@ -129,23 +130,29 @@ export default function ScanScreen() {
   const { horizontalPad, contentWidth, contentMaxWidth } = useLayout();
   const { width: screenW, height: screenH } = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  const [cameraViewport, setCameraViewport] = useState({
+    width: screenW,
+    height: screenH - insets.bottom,
+  });
   /** Keep chrome below Dynamic Island / front camera on all phones. */
   const headerTop = Math.max(insets.top, 44) + spacing.md;
   const headerChrome = headerTop + 44 + spacing.sm;
   const controlsChrome = 64 + spacing.lg + Math.max(insets.bottom, spacing.md);
   const viewfinderSize = Math.min(
-    screenW - 56,
-    screenH - headerChrome - controlsChrome - spacing.lg * 2,
+    cameraViewport.width - 56,
+    cameraViewport.height - headerChrome - controlsChrome - spacing.lg * 2,
   );
   const viewfinderTop =
-    headerChrome + (screenH - headerChrome - controlsChrome - viewfinderSize) / 2;
-  const viewfinderLeft = (screenW - viewfinderSize) / 2;
+    headerChrome +
+    (cameraViewport.height - headerChrome - controlsChrome - viewfinderSize) / 2;
+  const viewfinderLeft = (cameraViewport.width - viewfinderSize) / 2;
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
   /** Synchronous lock so rapid taps can't launch parallel capture/library flows. */
   const busyRef = useRef(false);
 
   const [phase, setPhase] = useState<Phase>('camera');
+  const [cameraInitialized, setCameraInitialized] = useState(false);
   const [capturing, setCapturing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [displayUri, setDisplayUri] = useState<string | null>(null);
@@ -164,6 +171,10 @@ export default function ScanScreen() {
     levelAfter: number;
     previousStageIndex?: number;
   } | null>(null);
+  const setCameraRef = useCallback((camera: CameraView | null) => {
+    cameraRef.current = camera;
+    if (!camera) setCameraInitialized(false);
+  }, []);
 
   const demoAutoScan = isDemoAutoScan();
 
@@ -204,7 +215,7 @@ export default function ScanScreen() {
     router.push('/paywall');
   }, []);
 
-  /** Keep Today pill and Scan gate on the same live count; never show a limit banner. */
+  /** Refresh the free-scan pill only — never auto-open paywall on focus (dismiss must stick). */
   useFocusEffect(
     useCallback(() => {
       if (!needsScanQuota) {
@@ -216,25 +227,31 @@ export default function ScanScreen() {
         .then((used) => {
           if (cancelled) return;
           setScansLeft(remainingFreeScans(used, profile));
-          // Only gate the camera entry — don't yank users off result after their last scan.
-          if (phase === 'camera' && !canScan(profile, used)) openPaywallForLimit();
         })
         .catch(() => {});
       return () => {
         cancelled = true;
       };
-    }, [needsScanQuota, openPaywallForLimit, phase, profile]),
+    }, [needsScanQuota, profile]),
   );
 
   useEffect(() => {
     if (phase !== 'analyzing') return;
-    setAnalyzeStep(0);
     const t = setInterval(
       () => setAnalyzeStep((s) => Math.min(s + 1, ANALYZING_STEPS.length - 1)),
       900,
     );
     return () => clearInterval(t);
   }, [phase]);
+
+  const onCameraLayout = useCallback((event: LayoutChangeEvent) => {
+    const { width, height } = event.nativeEvent.layout;
+    if (width > 0 && height > 0) {
+      setCameraViewport((current) =>
+        current.width === width && current.height === height ? current : { width, height },
+      );
+    }
+  }, []);
 
   async function capture() {
     // Synchronous lock guards against a second tap in the same frame launching
@@ -248,11 +265,19 @@ export default function ScanScreen() {
     try {
       const photo = await cameraRef.current?.takePictureAsync({ quality: 0.8 });
       if (!photo?.uri) throw new Error('Could not capture the photo');
-      // Freeze the captured frame immediately so there's no empty placeholder
-      // pop when we transition into the analyzing screen.
-      setDisplayUri(photo.uri);
-      setPhase('analyzing');
-      await analyze(photo.uri);
+      const cameraCrop: CameraCrop = {
+        viewportWidth: cameraViewport.width,
+        viewportHeight: cameraViewport.height,
+        viewfinder: {
+          originX: viewfinderLeft,
+          originY: viewfinderTop,
+          width: viewfinderSize,
+          height: viewfinderSize,
+        },
+      };
+      // Keep the live preview in place until the exact viewfinder crop is ready.
+      // Showing the raw capture here would briefly use a different cover crop.
+      await analyze(photo.uri, cameraCrop);
     } catch (e: any) {
       showError(e.message ?? 'Could not capture the photo. Try again.');
     } finally {
@@ -310,7 +335,7 @@ export default function ScanScreen() {
     return used;
   }
 
-  async function analyze(uri: string) {
+  async function analyze(uri: string, cameraCrop?: CameraCrop) {
     setError(null);
     if (profile && !isDailyDragonLockedForToday(profile, todayISODate())) {
       router.replace('/(tabs)/today');
@@ -326,14 +351,21 @@ export default function ScanScreen() {
       /* count failed — allow attempt; analyze path rechecks */
     }
 
-    setPhase('analyzing');
+    if (!cameraCrop) {
+      setAnalyzeStep(0);
+      setPhase('analyzing');
+    }
     try {
       const [square, used] = await Promise.all([
-        prepareSquareMealPhoto(uri),
+        prepareSquareMealPhoto(uri, cameraCrop),
         needsScanQuota ? countTodayPhotoScans() : Promise.resolve(null),
       ]);
 
       setDisplayUri(square.uri);
+      if (cameraCrop) {
+        setAnalyzeStep(0);
+        setPhase('analyzing');
+      }
 
       const usedNow = used ?? usedAtStart;
       if (needsScanQuota && usedNow !== null) {
@@ -473,7 +505,8 @@ export default function ScanScreen() {
     }
   }
 
-  const cameraReady = permission?.granted;
+  const hasCameraPermission = permission?.granted;
+  const cameraReady = hasCameraPermission && cameraInitialized;
 
   const headerTitle =
     phase === 'result' ? 'CONFIRM & LOG' : phase === 'analyzing' ? 'ANALYZING' : 'SCAN MEAL';
@@ -516,10 +549,15 @@ export default function ScanScreen() {
       ) : null}
 
       {phase === 'camera' && !demoAutoScan && (
-        <View style={styles.cameraWrap}>
+        <View style={styles.cameraWrap} onLayout={onCameraLayout}>
           {renderHeader(true)}
-          {cameraReady ? (
-            <CameraView ref={cameraRef} style={styles.camera} facing="back" />
+          {hasCameraPermission ? (
+            <CameraView
+              ref={setCameraRef}
+              style={styles.camera}
+              facing="back"
+              onCameraReady={() => setCameraInitialized(true)}
+            />
           ) : (
             <View style={[styles.camera, styles.cameraDenied]}>
               <Ionicons name="videocam-off-outline" size={32} color={colors.textTertiary} />
@@ -540,7 +578,7 @@ export default function ScanScreen() {
             </View>
           )}
 
-          {cameraReady ? (
+          {hasCameraPermission ? (
             <ScanViewfinder
               size={viewfinderSize}
               top={viewfinderTop}
