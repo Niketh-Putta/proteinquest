@@ -2,7 +2,7 @@
   "expo": {
     "name": "ProteinQuest",
     "slug": "proteinquest",
-    "version": "1.0.12",
+    "version": "1.0.15",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "proteinquest",
@@ -10,7 +10,7 @@
     "backgroundColor": "#0C0B10",
     "ios": {
       "bundleIdentifier": "com.proteinquest.app",
-      "buildNumber": "56",
+      "buildNumber": "21",
       "supportsTablet": true,
       "entitlements": {
         "aps-environment": "production"
@@ -34,7 +34,8 @@
         "com.android.vending.BILLING",
         "android.permission.RECORD_AUDIO",
         "android.permission.POST_NOTIFICATIONS"
-      ]
+      ],
+      "versionCode": 91
     },
     "web": {
       "output": "single",
@@ -46,8 +47,13 @@
         "expo-splash-screen",
         {
           "backgroundColor": "#0C0B10",
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 160
+          "image": "./assets/images/splash-logo.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "dark": {
+            "backgroundColor": "#0C0B10",
+            "image": "./assets/images/splash-logo.png"
+          }
         }
       ],
       [
@@ -77,9 +83,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "246d88eb-db0c-4937-a681-653a2b7c53fa"
+        "projectId": "16c8d824-5395-4173-aa70-88218dcb54d5"
       }
     },
-    "owner": "nikethputta1"
+    "owner": "nikethputta"
   }
 }

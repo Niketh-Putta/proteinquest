@@ -12,7 +12,14 @@ import fs from 'node:fs';
 const KEY_ID = process.env.ASC_KEY_ID || process.env.EXPO_ASC_KEY_ID || 'JZ3C87NKB9';
 const ISSUER_ID = process.env.ASC_ISSUER_ID || process.env.EXPO_ASC_ISSUER_ID || '75ae36fa-911c-462c-818e-f1bcc4222c24';
 const KEY_PATH =
-  process.env.ASC_KEY_PATH || process.env.EXPO_ASC_API_KEY_PATH || './store/AuthKey_JZ3C87NKB9.p8';
+  process.env.ASC_KEY_PATH || process.env.EXPO_ASC_API_KEY_PATH || './store/AuthKey_U5KW7AP443.p8';
+
+function readAscPrivateKey() {
+  if (process.env.ASC_KEY_P8?.trim()) {
+    return process.env.ASC_KEY_P8.replace(/\\n/g, '\n');
+  }
+  return fs.readFileSync(KEY_PATH, 'utf8');
+}
 
 function b64url(input) {
   return Buffer.from(input)
@@ -32,7 +39,7 @@ function makeJwt() {
     aud: 'appstoreconnect-v1',
   };
   const signingInput = `${b64url(JSON.stringify(header))}.${b64url(JSON.stringify(payload))}`;
-  const privateKey = fs.readFileSync(KEY_PATH, 'utf8');
+  const privateKey = readAscPrivateKey();
   const signer = crypto.createSign('SHA256');
   signer.update(signingInput);
   signer.end();

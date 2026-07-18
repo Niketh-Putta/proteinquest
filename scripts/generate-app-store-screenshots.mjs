@@ -337,25 +337,106 @@ async function injectSession(page, session) {
   );
 }
 
+async function buildScanAnalyzingCapture(page, outPath) {
+  const mealPath = path.join(ROOT, 'demo/meal-scan.jpg');
+  if (!fs.existsSync(mealPath)) throw new Error(`Missing ${mealPath}`);
+  const mealDataUrl = `data:image/jpeg;base64,${fs.readFileSync(mealPath).toString('base64')}`;
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Sora:wght@400;600;700&display=swap" rel="stylesheet"/>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    width: 393px; height: 852px; overflow: hidden;
+    background: #0C0B10; color: #F6F4F8;
+    font-family: 'Sora', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .topBar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 56px 16px 12px;
+  }
+  .iconBtn {
+    width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;
+    color: #F6F4F8; font-size: 22px; font-weight: 300;
+  }
+  .topTitle {
+    font-size: 11px; font-weight: 600; letter-spacing: 0.22em;
+    color: #A8A3B8; text-transform: uppercase;
+  }
+  .analyzingWrap {
+    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 24px; min-height: calc(852px - 112px);
+  }
+  .imageWrap { width: 100%; max-width: 320px; margin-bottom: 32px; position: relative; }
+  .previewShell {
+    width: 100%; aspect-ratio: 1; position: relative; overflow: hidden;
+    border: 1px solid #36344A; background: #18171F;
+  }
+  .previewShell img {
+    width: 100%; height: 100%; object-fit: cover; display: block;
+  }
+  .sweepLine {
+    position: absolute; left: 0; right: 0; top: 52%;
+    height: 2px; background: #FF7A59;
+    box-shadow: 0 0 12px rgba(255,122,89,0.65);
+  }
+  .title {
+    font-size: 20px; font-weight: 700; letter-spacing: -0.3px; color: #F6F4F8;
+    text-align: center;
+  }
+  .sub {
+    margin-top: 8px; font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; letter-spacing: 0.5px; color: #6B6578; text-align: center;
+  }
+</style>
+</head>
+<body>
+  <div class="topBar">
+    <div class="iconBtn">×</div>
+    <div class="topTitle">Analyzing</div>
+    <div style="width:44px"></div>
+  </div>
+  <div class="analyzingWrap">
+    <div class="imageWrap">
+      <div class="previewShell">
+        <img src="${mealDataUrl}" alt="Meal scan"/>
+        <div class="sweepLine"></div>
+      </div>
+    </div>
+    <div class="title">Identifying foods…</div>
+    <div class="sub">AI is reading your plate</div>
+  </div>
+</body>
+</html>`;
+
+  await page.setViewportSize({ width: 393, height: 852 });
+  await page.setContent(html, { waitUntil: 'networkidle' });
+  await page.waitForFunction(() => {
+    const img = document.querySelector('img');
+    return img && img.naturalWidth > 100;
+  });
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: outPath, fullPage: false });
+  console.log(`  built ${path.basename(outPath)} (analyzing + meal photo)`);
+}
+
 async function captureRawUi(page, captures = CAPTURES) {
   fs.mkdirSync(RAW_DIR, { recursive: true });
   for (const cap of captures) {
     const outPath = path.join(RAW_DIR, cap.name);
     try {
       if (cap.name === 'scan.png') {
-        await page.goto(`${APP}/scan`, { waitUntil: 'networkidle', timeout: 60000 });
-        const meal = path.join(ROOT, 'demo/meal-scan.jpg');
-        const [chooser] = await Promise.all([
-          page.waitForEvent('filechooser', { timeout: 10000 }),
-          page.getByLabel('Upload from library').click(),
-        ]);
-        await chooser.setFiles(meal);
-        await page.getByText(/Analyzing|Counting protein|Confirm|Log it/i).first().waitFor({ timeout: 30000 });
-      } else {
-        await page.goto(`${APP}${cap.path}`, { waitUntil: 'networkidle', timeout: 60000 });
-        await page.getByText(cap.wait, { exact: false }).first().waitFor({ timeout: 15000 });
+        await buildScanAnalyzingCapture(page, outPath);
+        continue;
       }
-      await page.waitForTimeout(cap.name === 'scan.png' ? 1200 : 800);
+      await page.goto(`${APP}${cap.path}`, { waitUntil: 'networkidle', timeout: 60000 });
+      await page.getByText(cap.wait, { exact: false }).first().waitFor({ timeout: 15000 });
+      await page.waitForTimeout(800);
       await page.screenshot({ path: outPath, fullPage: false });
       console.log(`  captured ${cap.name}`);
     } catch (err) {
@@ -365,11 +446,37 @@ async function captureRawUi(page, captures = CAPTURES) {
 }
 
 async function main() {
+  const scanOnly = process.argv.includes('--scan-only');
   const outDir = path.join(ROOT, 'store/screenshots/iphone67');
   fs.mkdirSync(outDir, { recursive: true });
   fs.mkdirSync(RAW_DIR, { recursive: true });
 
   const browser = await chromium.launch();
+
+  if (scanOnly) {
+    const capturePage = await browser.newPage({
+      viewport: { width: 393, height: 852 },
+      deviceScaleFactor: 3,
+    });
+    const rawPath = path.join(RAW_DIR, 'scan.png');
+    await buildScanAnalyzingCapture(capturePage, rawPath);
+    await capturePage.close();
+
+    const page = await browser.newPage({ viewport: { width: W, height: H } });
+    const slide = SLIDES.find((s) => s.out === '02.png');
+    const phoneDataUrl = `data:image/png;base64,${fs.readFileSync(rawPath).toString('base64')}`;
+    await page.setContent(slideHtml(slide, phoneDataUrl), { waitUntil: 'networkidle' });
+    await page.waitForTimeout(400);
+    const outPath = path.join(outDir, '02.png');
+    await page.screenshot({ path: outPath, type: 'png' });
+    const previewPath = path.join(ROOT, 'store/screenshots/preview-02-scan-fix.png');
+    fs.copyFileSync(outPath, previewPath);
+    console.log(`  02.png ← scan.png`);
+    console.log(`\nPreview: ${previewPath}`);
+    await browser.close();
+    return;
+  }
+
   const phoneContextOptions = {
     viewport: { width: 393, height: 852 },
     deviceScaleFactor: 3,

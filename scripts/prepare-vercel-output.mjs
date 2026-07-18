@@ -29,6 +29,37 @@ function copyLegalPage(slug) {
   );
 }
 
+function copyStatsPage() {
+  const slug = 'pqx-stats-k7m2n9';
+  const destDir = path.join(staticDir, slug);
+  fs.mkdirSync(destDir, { recursive: true });
+  fs.copyFileSync(path.join(marketingDir, `${slug}.html`), path.join(destDir, 'index.html'));
+  fs.copyFileSync(path.join(marketingDir, `${slug}.js`), path.join(staticDir, `${slug}.js`));
+}
+
+function prepareStatsFunction() {
+  const funcDir = path.join(outputDir, 'functions', 'api', 'pqx-stats-k7m2n9.func');
+  fs.mkdirSync(funcDir, { recursive: true });
+  fs.copyFileSync(path.join(root, 'api', 'pqx-stats-k7m2n9.mjs'), path.join(funcDir, 'index.mjs'));
+  fs.copyFileSync(
+    path.join(root, 'scripts/lib/store-download-stats.mjs'),
+    path.join(funcDir, 'store-download-stats.mjs'),
+  );
+  fs.writeFileSync(
+    path.join(funcDir, '.vc-config.json'),
+    `${JSON.stringify(
+      {
+        runtime: 'nodejs20.x',
+        handler: 'index.mjs',
+        launcherType: 'Nodejs',
+        maxDuration: 30,
+      },
+      null,
+      2,
+    )}\n`,
+  );
+}
+
 function main() {
   execFileSync('node', [path.join(root, 'scripts/prepare-marketing-assets.mjs')], {
     stdio: 'inherit',
@@ -56,6 +87,10 @@ function main() {
   copyLegalPage('privacy');
   copyLegalPage('terms');
 
+  // Private download stats dashboard (obscure URL, noindex)
+  copyStatsPage();
+  prepareStatsFunction();
+
   const securityHeaderMap = {
     'Strict-Transport-Security': 'max-age=63072000; includeSubDomains; preload',
     'X-Content-Type-Options': 'nosniff',
@@ -82,12 +117,13 @@ function main() {
         continue: true,
       },
       { handle: 'filesystem' },
+      { src: '/api/pqx-stats-k7m2n9', dest: '/api/pqx-stats-k7m2n9' },
       { src: '/(.*)', dest: '/index.html' },
     ],
   };
 
   fs.writeFileSync(path.join(outputDir, 'config.json'), `${JSON.stringify(config, null, 2)}\n`);
-  console.log('Prepared .vercel/output — marketing landing + static privacy/terms');
+  console.log('Prepared .vercel/output — marketing landing + stats dashboard + API');
 }
 
 main();
