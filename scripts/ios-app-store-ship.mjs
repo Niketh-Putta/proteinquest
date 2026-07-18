@@ -74,8 +74,9 @@ ready = check('App icon is PNG 1024×1024', (() => {
   }
 })()) && ready;
 
-ready = check('iPhone screenshots (1290×2796)', existsSync(join(ROOT, 'store/screenshots/ios/iphone-6.9/01-today.png'))) && ready;
-ready = check('iPad screenshots (2048×2732)', existsSync(join(ROOT, 'store/screenshots/ios/ipad-13/01-today.png'))) && ready;
+ready = check('iPhone screenshots (1290×2796)', existsSync(join(ROOT, 'store/screenshots/iphone67/01.png'))) && ready;
+ready = check('iPad screenshots (2064×2752)', existsSync(join(ROOT, 'store/screenshots/ipad13/01.png'))) && ready;
+ready = check('Mac screenshots (2880×1800)', existsSync(join(ROOT, 'store/screenshots/mac/01.png'))) && ready;
 ready = check('Listing metadata', !!listing.description && !!listing.privacyPolicyUrl) && ready;
 ready = check('Paywall Terms + Privacy + Restore', (() => {
   const src = readFileSync(join(ROOT, 'src/app/paywall.tsx'), 'utf8');

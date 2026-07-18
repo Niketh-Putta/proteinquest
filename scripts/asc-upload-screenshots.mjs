@@ -6,32 +6,38 @@ import { asc } from './asc-api.mjs';
 const APP_ID = '6781790996';
 const versionString = JSON.parse(fs.readFileSync('app.json', 'utf8')).expo.version;
 
-async function resolveVersionLocalizationId() {
+async function resolveVersionLocalizationId(platform) {
   const versions = await asc(
     'GET',
-    `/v1/apps/${APP_ID}/appStoreVersions?filter[versionString]=${versionString}&limit=1`,
+    `/v1/apps/${APP_ID}/appStoreVersions?filter[versionString]=${versionString}&filter[platform]=${platform}&limit=1`,
   );
-  const versionId = versions.json.data?.[0]?.id;
-  if (!versionId) {
-    throw new Error(`No App Store version ${versionString} — create it in ASC first`);
+  const version = versions.json.data?.[0];
+  if (!version) {
+    throw new Error(`No ${platform} App Store version ${versionString} — create it in ASC first`);
   }
-  const locs = await asc('GET', `/v1/appStoreVersions/${versionId}/appStoreVersionLocalizations`);
+  const state = version.attributes?.appStoreState;
+  if (state === 'READY_FOR_SALE') {
+    throw new Error(`${platform} version ${versionString} is READY_FOR_SALE; screenshots require an editable version`);
+  }
+  const locs = await asc('GET', `/v1/appStoreVersions/${version.id}/appStoreVersionLocalizations`);
   const locId = locs.json.data?.[0]?.id;
   if (!locId) {
-    throw new Error(`No localization on version ${versionString} (${versionId})`);
+    throw new Error(`No localization on ${platform} version ${versionString} (${version.id})`);
   }
-  console.log('Screenshot localization', versionString, locId);
+  console.log('Screenshot localization', platform, versionString, locId);
   return locId;
 }
 
 const sets = [
   {
-    displayType: 'APP_IPHONE_67',
-    dir: 'store/screenshots/iphone67',
-  },
-  {
+    platform: 'IOS',
     displayType: 'APP_IPAD_PRO_3GEN_129',
     dir: 'store/screenshots/ipad13',
+  },
+  {
+    platform: 'MAC_OS',
+    displayType: 'APP_DESKTOP',
+    dir: 'store/screenshots/mac',
   },
 ];
 
@@ -56,12 +62,25 @@ async function ensureScreenshotSet(locId, displayType) {
   return created.json.data.id;
 }
 
-async function clearScreenshotSet(setId) {
+async function listScreenshots(setId) {
   const existing = await asc('GET', `/v1/appScreenshotSets/${setId}/appScreenshots`);
-  for (const s of existing.json.data ?? []) {
-    const del = await asc('DELETE', `/v1/appScreenshots/${s.id}`);
-    console.log('  deleted old', s.id, del.status);
+  if (existing.status !== 200) {
+    throw new Error(`list screenshots: ${existing.status} ${existing.json.errors?.[0]?.detail}`);
   }
+  return existing.json.data ?? [];
+}
+
+async function waitUntilComplete(screenshotId) {
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    const current = await asc('GET', `/v1/appScreenshots/${screenshotId}`);
+    const delivery = current.json.data?.attributes?.assetDeliveryState;
+    if (delivery?.state === 'COMPLETE') return;
+    if (delivery?.errors?.length) {
+      throw new Error(`processing ${screenshotId}: ${delivery.errors.map((error) => error.description).join('; ')}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+  throw new Error(`processing ${screenshotId} did not complete within 60 seconds`);
 }
 
 async function uploadScreenshot(setId, filePath) {
@@ -77,7 +96,10 @@ async function uploadScreenshot(setId, filePath) {
     },
   });
   if (reserve.status !== 201) {
-    throw new Error(`reserve ${fileName}: ${reserve.status} ${reserve.json.errors?.[0]?.detail}`);
+    const apiError = reserve.json.errors?.[0];
+    throw new Error(
+      `reserve ${fileName}: ${reserve.status} ${apiError?.code ?? ''} ${apiError?.title ?? ''} ${apiError?.detail ?? ''}`.trim(),
+    );
   }
   const up = reserve.json.data.attributes.uploadOperations?.[0];
   if (!up) throw new Error(`no upload op for ${fileName}`);
@@ -99,18 +121,41 @@ async function uploadScreenshot(setId, filePath) {
   if (commit.status !== 200) {
     throw new Error(`commit ${fileName}: ${commit.status} ${commit.json.errors?.[0]?.detail}`);
   }
+  await waitUntilComplete(reserve.json.data.id);
   console.log('  uploaded', fileName);
+  return reserve.json.data.id;
 }
 
-const versionLocId = await resolveVersionLocalizationId();
-
-for (const { displayType, dir } of sets) {
-  const files = fs.readdirSync(dir).filter((f) => f.endsWith('.png')).sort();
-  console.log(displayType, files.length, 'files');
-  const setId = await ensureScreenshotSet(versionLocId, displayType);
-  await clearScreenshotSet(setId);
-  for (const f of files) {
-    await uploadScreenshot(setId, path.join(dir, f));
+async function replaceScreenshotSet(setId, files) {
+  const previous = await listScreenshots(setId);
+  const uploadedIds = [];
+  try {
+    for (const file of files) uploadedIds.push(await uploadScreenshot(setId, file));
+  } catch (error) {
+    for (const id of uploadedIds) await asc('DELETE', `/v1/appScreenshots/${id}`);
+    throw error;
+  }
+  for (const screenshot of previous) {
+    const deleted = await asc('DELETE', `/v1/appScreenshots/${screenshot.id}`);
+    if (deleted.status !== 204) {
+      throw new Error(`delete old ${screenshot.id}: ${deleted.status} ${deleted.json.errors?.[0]?.detail}`);
+    }
+    console.log('  deleted old', screenshot.id);
   }
 }
+
+const failures = [];
+for (const { platform, displayType, dir } of sets) {
+  try {
+    const versionLocId = await resolveVersionLocalizationId(platform);
+    const files = fs.readdirSync(dir).filter((f) => f.endsWith('.png')).sort();
+    console.log(displayType, files.length, 'files');
+    const setId = await ensureScreenshotSet(versionLocId, displayType);
+    await replaceScreenshotSet(setId, files.map((file) => path.join(dir, file)));
+  } catch (error) {
+    failures.push(`${displayType}: ${error.message}`);
+    console.error('blocked', displayType, error.message);
+  }
+}
+if (failures.length) throw new Error(failures.join('\n'));
 console.log('screenshots done');

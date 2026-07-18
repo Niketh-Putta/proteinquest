@@ -82,13 +82,18 @@
   "screenshots": {
     "iphone69": {
       "requiredSize": "1290x2796 (also accepts 1320x2868)",
-      "directory": "store/screenshots/ios/iphone-6.9",
-      "notes": "Generated from web captures, scaled to width 1290 and letterboxed with the app background colour #0C0B10. Review quality before upload; re-capture from a real device/simulator if too soft."
+      "directory": "store/screenshots/iphone67",
+      "notes": "Latest approved iPhone App Store preview set."
     },
     "ipad13": {
       "requiredSize": "2064x2752 or 2048x2732 — required because supportsTablet is true in app.json",
-      "directory": "store/screenshots/ios/ipad-13",
-      "notes": "Pillarboxed from portrait web captures. If you prefer to skip iPad screenshots entirely, set ios.supportsTablet to false in app.json before building."
+      "directory": "store/screenshots/ipad13",
+      "notes": "Reuses the latest iPhone preview content, contained on the app background with no new composition."
+    },
+    "mac": {
+      "requiredSize": "2880x1800 (16:10; also accepts 2560x1600, 1440x900, or 1280x800)",
+      "directory": "store/screenshots/mac",
+      "notes": "Reuses the latest iPhone preview content, contained on the app background with no new composition."
     }
   },
   "inAppPurchases": [
@@ -120,7 +125,7 @@
     "Copy the numeric Apple App ID into eas.json submit.production.ios.ascAppId (plus appleId and appleTeamId)",
     "Create subscription group 'ProteinQuest Pro' with pro_weekly (£6.99/wk) and pro_yearly (£29.99/yr)",
     "In RevenueCat: add iOS app for com.proteinquest.app, upload In-App Purchase key, copy the appl_ public SDK key into EXPO_PUBLIC_REVENUECAT_IOS_KEY (must be set at build time)",
-    "Upload screenshots from store/screenshots/ios/ (6.9-inch iPhone; iPad 13-inch required while supportsTablet is true)",
+    "Upload screenshots from store/screenshots/iphone67, store/screenshots/ipad13, and store/screenshots/mac",
     "Fill App Information, pricing (Free), and paste listing fields from this file",
     "Complete App Privacy questionnaire using the appPrivacy section above",
     "Complete age rating questionnaire using ageRatingAnswers above (expect 4+)",
