@@ -102,8 +102,8 @@ export function BillingSheet({ visible, isPro, onClose, onRestored }: Props) {
           ? 'ProteinQuest cannot cancel Play subscriptions in-app. Google Play will open so you can turn off auto-renew there. You keep Pro until the end of the paid period.'
           : 'ProteinQuest cannot cancel App Store subscriptions in-app. The App Store will open so you can turn off auto-renew there. You keep Pro until the end of the paid period.'
         : Platform.OS === 'android'
-          ? 'Payment method, plan changes, and cancellation are handled by Google Play — not inside ProteinQuest.'
-          : 'Payment method, plan changes, and cancellation are handled by the App Store — not inside ProteinQuest.';
+          ? 'Payment method, plan changes, and cancellation are handled by Google Play, not inside ProteinQuest.'
+          : 'Payment method, plan changes, and cancellation are handled by the App Store, not inside ProteinQuest.';
 
     Alert.alert(title, message, [
       { text: 'Not now', style: 'cancel' },
@@ -183,7 +183,7 @@ export function BillingSheet({ visible, isPro, onClose, onRestored }: Props) {
                 <ActionRow
                   icon="close-circle-outline"
                   title={`Cancel on ${STORE_NAME}`}
-                  subtitle="Opens the store — turn off auto-renew there (not in this app)"
+                  subtitle="Opens the store. Turn off auto-renew there (not in this app)"
                   onPress={() => confirmOpenStore('cancel')}
                   busy={opening}
                   danger

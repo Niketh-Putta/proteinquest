@@ -14,6 +14,14 @@ export interface DragonProgress {
   last_goal_date: string | null;
 }
 
+/** Client-persisted retention extras (loot, freeze, care days). */
+export interface RetentionState {
+  loot_meals_since_drop?: number;
+  egg_shards?: number;
+  streak_freeze_week?: string | null;
+  care_days?: string[];
+}
+
 export interface Profile {
   id: string;
   display_name: string | null;
@@ -50,6 +58,20 @@ export interface Profile {
   dragon_progress: Partial<Record<DragonId, DragonProgress>>;
   /** User-chosen names keyed by dragon id; falls back to species name when missing. */
   dragon_names?: Partial<Record<DragonId, string>>;
+  /** Loot / streak-freeze / care-day state. */
+  retention?: RetentionState;
+}
+
+export interface ProteinDuel {
+  id: string;
+  challenger_id: string;
+  opponent_id: string;
+  start_date: string;
+  end_date: string;
+  challenger_protein: number;
+  opponent_protein: number;
+  status: 'active' | 'completed' | 'declined';
+  created_at: string;
 }
 
 export interface FoodItem {

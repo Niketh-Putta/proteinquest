@@ -39,7 +39,7 @@ export const PLANS: PaymentPlan[] = [
     id: 'pro_weekly',
     title: 'Weekly',
     price: '\u00A36.99/wk',
-    caption: 'Flexible. Cancel anytime',
+    caption: 'Flexible. Cancel anytime.',
   },
   {
     id: 'pro_yearly',

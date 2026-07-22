@@ -166,7 +166,7 @@ function buildDetails(info: CustomerInfo): SubscriptionBillingDetails {
     status = 'cancelled';
     statusHeadline = 'Cancelled. Pro still active';
     statusDetail = accessUntil
-      ? `Auto-renew is off. You keep unlimited scans until ${formatBillingDate(accessUntil)}, then return to the free plan (3 scans/day).`
+      ? `Auto-renew is off. You keep unlimited scans until ${formatBillingDate(accessUntil)}, then AI scans require Pro.`
       : 'Auto-renew is off. You keep Pro until the end of your current billing period.';
   } else if (isPro) {
     status = 'active';
