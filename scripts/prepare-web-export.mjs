@@ -5,7 +5,14 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, '..');
-const indexPath = path.join(root, 'dist', 'index.html');
+const distDir = path.join(root, 'dist');
+const indexPath = path.join(distDir, 'index.html');
+
+/** Vercel always ignores `node_modules` paths — Expo puts fonts under assets/node_modules. */
+const ASSETS_NM = path.join(distDir, 'assets', 'node_modules');
+const ASSETS_BUNDLED = path.join(distDir, 'assets', 'bundled');
+const NM_URL_FROM = 'assets/node_modules';
+const NM_URL_TO = 'assets/bundled';
 
 const ICON_LINKS = [
   '<link rel="icon" href="/favicon.ico" sizes="any" />',
@@ -23,13 +30,43 @@ const PUBLIC_ICONS = [
 
 function copyPublicIcons() {
   const publicDir = path.join(root, 'public');
-  const distDir = path.join(root, 'dist');
   for (const file of PUBLIC_ICONS) {
     const src = path.join(publicDir, file);
     if (!fs.existsSync(src)) continue;
     fs.copyFileSync(src, path.join(distDir, file));
   }
   console.log('Copied public favicon assets to dist/');
+}
+
+function walkFiles(dir, out = []) {
+  if (!fs.existsSync(dir)) return out;
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) walkFiles(full, out);
+    else out.push(full);
+  }
+  return out;
+}
+
+/** Rename assets/node_modules → assets/bundled and rewrite URLs in the export. */
+function relocateBundledAssets() {
+  if (!fs.existsSync(ASSETS_NM)) {
+    console.log('No assets/node_modules to relocate');
+    return;
+  }
+  if (fs.existsSync(ASSETS_BUNDLED)) {
+    fs.rmSync(ASSETS_BUNDLED, { recursive: true, force: true });
+  }
+  fs.renameSync(ASSETS_NM, ASSETS_BUNDLED);
+
+  const textExt = new Set(['.js', '.html', '.json', '.css', '.map', '.txt']);
+  for (const file of walkFiles(distDir)) {
+    if (!textExt.has(path.extname(file))) continue;
+    const before = fs.readFileSync(file, 'utf8');
+    if (!before.includes(NM_URL_FROM)) continue;
+    fs.writeFileSync(file, before.split(NM_URL_FROM).join(NM_URL_TO));
+  }
+  console.log('Relocated assets/node_modules → assets/bundled for Vercel upload');
 }
 
 function main() {
@@ -39,6 +76,7 @@ function main() {
   }
 
   copyPublicIcons();
+  relocateBundledAssets();
 
   let html = fs.readFileSync(indexPath, 'utf8');
 
@@ -55,13 +93,14 @@ function main() {
   fs.writeFileSync(indexPath, html);
   console.log('Updated dist/index.html with branded favicon links');
 
+  // SPA fallback only — existing static files win on Vercel.
   const vercelConfig = {
     buildCommand: '',
     installCommand: '',
     framework: null,
-    rewrites: [{ source: '/(.*)', destination: '/index.html' }],
+    rewrites: [{ source: '/((?!_expo/|assets/).*)', destination: '/index.html' }],
   };
-  fs.writeFileSync(path.join(root, 'dist', 'vercel.json'), `${JSON.stringify(vercelConfig, null, 2)}\n`);
+  fs.writeFileSync(path.join(distDir, 'vercel.json'), `${JSON.stringify(vercelConfig, null, 2)}\n`);
   console.log('Wrote dist/vercel.json for SPA routing');
 }
 

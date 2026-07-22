@@ -32,13 +32,21 @@ import { Celebration } from '@/components/Celebration';
 import { MealPhotoPreview } from '@/components/MealPhotoPreview';
 import {
   analyzeFoodPhoto,
+  countLifetimeMeals,
   countTodayPhotoScans,
   fetchLogsForDate,
   insertLog,
   recordPhotoScan,
   uploadFoodPhoto,
 } from '@/lib/api';
-import { applyLogToCharacter, isDailyDragonLockedForToday } from '@/lib/character';
+import { trackEvent } from '@/lib/analytics';
+import {
+  applyLogToCharacter,
+  displayDragonId,
+  displayDragonName,
+  isDailyDragonLockedForToday,
+} from '@/lib/character';
+import { clearNeedsFirstScan, needsFirstScan } from '@/lib/first-scan';
 import { useLayout } from '@/lib/layout';
 import {
   CALORIE_OVERRIDE_BUFFER,
@@ -48,6 +56,7 @@ import {
   maxAllowedOverride,
 } from '@/lib/log-limits';
 import { prepareSquareMealPhoto, type CameraCrop } from '@/lib/meal-photo';
+import { scheduleSecondMealNudge } from '@/lib/meal-reminders';
 import {
   canScan,
   isInHabitGracePeriod,
@@ -56,6 +65,7 @@ import {
   remainingFreeScans,
 } from '@/lib/paywall-gate';
 import { todayISODate } from '@/lib/protein';
+import { getRetention, markCareDay, rollLootDrop } from '@/lib/retention';
 import { useSession } from '@/lib/session';
 import type { Analysis } from '@/lib/types';
 import { colors, displayLH, fonts, spacing, textInputWeb } from '@/theme';
@@ -73,7 +83,22 @@ function isDemoAutoScan(): boolean {
   }
 }
 
-function goHome() {
+function goHome(opts?: {
+  fed?: boolean;
+  protein?: number;
+  loot?: boolean;
+  freeze?: boolean;
+  food?: string;
+}) {
+  if (opts?.fed) {
+    const q = new URLSearchParams({ fed: '1' });
+    if (opts.protein != null) q.set('protein', String(Math.round(opts.protein)));
+    if (opts.loot) q.set('loot', '1');
+    if (opts.freeze) q.set('freeze', '1');
+    if (opts.food?.trim()) q.set('food', opts.food.trim().slice(0, 40));
+    router.replace(`/(tabs)/today?${q.toString()}`);
+    return;
+  }
   if (router.canGoBack()) router.back();
   else router.replace('/(tabs)/today');
 }
@@ -154,8 +179,12 @@ export default function ScanScreen() {
   const [phase, setPhase] = useState<Phase>('camera');
   const [cameraInitialized, setCameraInitialized] = useState(false);
   const [capturing, setCapturing] = useState(false);
+  /** True when onboarding just finished and Scan is required until they skip or log. */
+  const [firstScanRequired, setFirstScanRequired] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [displayUri, setDisplayUri] = useState<string | null>(null);
+  /** Square frame only for live camera viewfinder crops — library keeps full aspect. */
+  const [previewSquare, setPreviewSquare] = useState(true);
   const [imageBase64, setImageBase64] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [proteinOverride, setProteinOverride] = useState('');
@@ -193,6 +222,16 @@ export default function ScanScreen() {
       requestPermission();
     }
   }, [demoAutoScan, permission, requestPermission]);
+
+  useEffect(() => {
+    let cancelled = false;
+    needsFirstScan().then((needs) => {
+      if (!cancelled) setFirstScanRequired(needs);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!demoAutoScan || phase !== 'camera') return;
@@ -326,9 +365,9 @@ export default function ScanScreen() {
 
   async function ensureCanScan(): Promise<number | null> {
     if (!needsScanQuota) return null;
-    const used = await countTodayPhotoScans();
-    setScansLeft(remainingFreeScans(used, profile));
-    if (!canScan(profile, used)) {
+    const [used, life] = await Promise.all([countTodayPhotoScans(), countLifetimeMeals()]);
+    setScansLeft(remainingFreeScans(used, profile, life));
+    if (!canScan(profile, used, life)) {
       openPaywallForLimit();
       return null;
     }
@@ -354,6 +393,7 @@ export default function ScanScreen() {
     if (!cameraCrop) {
       setAnalyzeStep(0);
       setPhase('analyzing');
+      trackEvent('first_scan_started', {});
     }
     try {
       const [square, used] = await Promise.all([
@@ -362,9 +402,11 @@ export default function ScanScreen() {
       ]);
 
       setDisplayUri(square.uri);
+      setPreviewSquare(Boolean(cameraCrop));
       if (cameraCrop) {
         setAnalyzeStep(0);
         setPhase('analyzing');
+        trackEvent('first_scan_started', {});
       }
 
       const usedNow = used ?? usedAtStart;
@@ -420,7 +462,7 @@ export default function ScanScreen() {
     if (proteinClamp.clamped) {
       setProteinOverride(String(proteinClamp.max));
       setError(
-        `Protein capped at ${proteinClamp.max}g — the most we can verify from this photo. Scan again to log more.`,
+        `Protein capped at ${proteinClamp.max}g, the most we can verify from this photo. Scan again to log more.`,
       );
       return;
     }
@@ -442,7 +484,7 @@ export default function ScanScreen() {
     if (calorieClamp.clamped) {
       setCalorieOverride(String(calorieClamp.max));
       setError(
-        `Calories capped at ${calorieClamp.max} — the most we can verify from this photo.`,
+        `Calories capped at ${calorieClamp.max}, the most we can verify from this photo.`,
       );
       return;
     }
@@ -476,6 +518,7 @@ export default function ScanScreen() {
         levelBefore,
         levelAfter,
         stageBeforeIndex,
+        streakFreezeUsed,
       } = applyLogToCharacter({
         profile,
         todayTotalBefore,
@@ -483,7 +526,28 @@ export default function ScanScreen() {
         todayISO: todayISODate(),
         yesterdayISO: todayISODate(-1),
       });
-      await saveProfile(updates);
+
+      const todayISO = todayISODate();
+      let retention = markCareDay(getRetention({ ...profile, ...updates }), todayISO);
+      const loot = rollLootDrop(retention);
+      retention = loot.next;
+      const merged = { ...updates, retention };
+      const wasFirstEver = await needsFirstScan();
+      await saveProfile(merged);
+      await clearNeedsFirstScan();
+
+      const mealsToday = todayLogs.length + 1;
+      const dragonId = displayDragonId(profile, todayISO);
+      const dragonName = displayDragonName(profile, dragonId);
+      trackEvent(wasFirstEver ? 'first_meal_logged' : 'meal_logged', {
+        protein_g: proteinG,
+        meals_today: mealsToday,
+      });
+      if (loot.dropped) trackEvent('loot_drop', { shards: retention.egg_shards ?? 0 });
+      if (streakFreezeUsed) trackEvent('streak_freeze_used', {});
+      if (mealsToday === 1) {
+        void scheduleSecondMealNudge(dragonName).catch(() => {});
+      }
 
       if (goalJustHit || evolved || leveledUp) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
@@ -496,7 +560,14 @@ export default function ScanScreen() {
           previousStageIndex: stageBeforeIndex,
         });
       } else {
-        goHome();
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+        goHome({
+          fed: true,
+          protein: proteinG,
+          loot: loot.dropped,
+          freeze: streakFreezeUsed,
+          food: analysis.food_name,
+        });
       }
     } catch (e: any) {
       setError(e.message ?? 'Could not save the log. Try again.');
@@ -511,6 +582,12 @@ export default function ScanScreen() {
   const headerTitle =
     phase === 'result' ? 'CONFIRM & LOG' : phase === 'analyzing' ? 'ANALYZING' : 'SCAN MEAL';
 
+  async function skipFirstScan() {
+    await clearNeedsFirstScan();
+    setFirstScanRequired(false);
+    goHome();
+  }
+
   const renderHeader = (overlay = false) => (
     <View
       style={[
@@ -519,7 +596,14 @@ export default function ScanScreen() {
         { paddingTop: headerTop },
       ]}
       pointerEvents={overlay ? 'box-none' : 'auto'}>
-      <Pressable onPress={goHome} hitSlop={12} style={styles.iconBtn}>
+      <Pressable
+        onPress={() => {
+          if (firstScanRequired) void skipFirstScan();
+          else goHome();
+        }}
+        hitSlop={12}
+        style={styles.iconBtn}
+        accessibilityLabel={firstScanRequired ? 'Skip for now' : 'Close'}>
         <Ionicons name="close" size={22} color={colors.text} />
       </Pressable>
       <Text style={[styles.topTitle, overlay && styles.topTitleOverlay]}>{headerTitle}</Text>
@@ -592,6 +676,11 @@ export default function ScanScreen() {
           />
 
           <View style={styles.controls}>
+            {firstScanRequired ? (
+              <Text style={styles.firstScanHint}>
+                No food handy? Upload a photo, or skip and scan later.
+              </Text>
+            ) : null}
             <View style={styles.shutterRow}>
               <Pressable
                 onPress={pickFromLibrary}
@@ -616,6 +705,17 @@ export default function ScanScreen() {
 
               <View style={styles.libraryBtnPlaceholder} />
             </View>
+            {firstScanRequired ? (
+              <Pressable
+                onPress={() => void skipFirstScan()}
+                disabled={capturing}
+                hitSlop={10}
+                style={styles.skipFirstScanBtn}
+                accessibilityRole="button"
+                accessibilityLabel="Skip scan for now">
+                <Text style={styles.skipFirstScanText}>Skip for now</Text>
+              </Pressable>
+            ) : null}
           </View>
         </View>
       )}
@@ -625,7 +725,7 @@ export default function ScanScreen() {
           <View style={styles.analyzingImageWrap}>
             {displayUri ? (
               <View style={styles.analyzingPreviewShell}>
-                <MealPhotoPreview uri={displayUri} square bordered />
+                <MealPhotoPreview uri={displayUri} square={previewSquare} bordered />
                 <ScanSweep />
               </View>
             ) : (
@@ -651,7 +751,7 @@ export default function ScanScreen() {
           showsVerticalScrollIndicator={false}>
           {displayUri ? (
             <Animated.View entering={FadeIn} style={styles.resultImageWrap}>
-              <MealPhotoPreview uri={displayUri} square bordered />
+              <MealPhotoPreview uri={displayUri} square={previewSquare} bordered />
             </Animated.View>
           ) : null}
 
@@ -708,7 +808,13 @@ export default function ScanScreen() {
             <Text style={styles.totalLabel}>TOTAL PROTEIN</Text>
             <View style={styles.totalInputRow}>
               <TextInput
-                style={[styles.totalInput, textInputWeb]}
+                style={[
+                  styles.totalInput,
+                  textInputWeb,
+                  Platform.OS === 'web'
+                    ? ({ width: `${Math.max(proteinOverride.length, 1)}ch` } as object)
+                    : null,
+                ]}
                 value={proteinOverride}
                 onChangeText={(t) => setProteinOverride(t.replace(/[^0-9.]/g, ''))}
                 keyboardType="numeric"
@@ -725,7 +831,13 @@ export default function ScanScreen() {
             <Text style={styles.totalLabel}>CALORIES</Text>
             <View style={styles.totalInputRow}>
               <TextInput
-                style={[styles.totalInput, textInputWeb]}
+                style={[
+                  styles.totalInput,
+                  textInputWeb,
+                  Platform.OS === 'web'
+                    ? ({ width: `${Math.max(calorieOverride.length, 1)}ch` } as object)
+                    : null,
+                ]}
                 value={calorieOverride}
                 onChangeText={(t) => setCalorieOverride(t.replace(/[^0-9.]/g, ''))}
                 keyboardType="numeric"
@@ -767,7 +879,11 @@ export default function ScanScreen() {
           previousStageIndex={celebration?.previousStageIndex}
           onDone={() => {
             setCelebration(null);
-            goHome();
+            goHome({
+              fed: true,
+              protein: Number(proteinOverride) || undefined,
+              food: analysis?.food_name,
+            });
           }}
         />
       ) : null}
@@ -885,6 +1001,28 @@ const styles = StyleSheet.create({
     right: 0,
     alignItems: 'center',
     paddingBottom: spacing.lg,
+    gap: spacing.sm,
+  },
+  firstScanHint: {
+    fontFamily: fonts.body,
+    fontSize: 13,
+    color: colors.text,
+    textAlign: 'center',
+    paddingHorizontal: spacing.lg,
+    textShadowColor: 'rgba(0,0,0,0.65)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+    marginBottom: spacing.xs,
+  },
+  skipFirstScanBtn: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+  },
+  skipFirstScanText: {
+    fontFamily: fonts.displayMedium,
+    fontSize: 14,
+    color: colors.textSecondary,
+    textAlign: 'center',
   },
   shutterRow: {
     flexDirection: 'row',
@@ -1048,7 +1186,13 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
     color: colors.textTertiary,
   },
-  totalInputRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 4, marginTop: 4 },
+  totalInputRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    alignSelf: 'flex-start',
+    gap: 6,
+    marginTop: 4,
+  },
   totalInput: {
     fontSize: 56,
     lineHeight: displayLH(56),
@@ -1056,7 +1200,7 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontVariant: ['tabular-nums'],
     padding: 0,
-    minWidth: 60,
+    minWidth: 40,
     letterSpacing: -2,
   },
   totalUnit: {
@@ -1064,7 +1208,8 @@ const styles = StyleSheet.create({
     lineHeight: displayLH(22),
     fontFamily: fonts.display,
     color: colors.textTertiary,
-    marginBottom: 8,
+    marginBottom: 10,
+    marginLeft: 2,
   },
   totalCal: {
     fontSize: 14,

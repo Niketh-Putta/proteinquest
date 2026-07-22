@@ -3,10 +3,10 @@ import {
   JetBrainsMono_700Bold,
 } from '@expo-google-fonts/jetbrains-mono';
 import {
-  Sora_600SemiBold,
-  Sora_700Bold,
-  Sora_800ExtraBold,
-} from '@expo-google-fonts/sora';
+  Outfit_400Regular,
+  Outfit_500Medium,
+  Outfit_600SemiBold,
+} from '@expo-google-fonts/outfit';
 import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
@@ -40,9 +40,9 @@ function SplashGate({
 
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({
-    Sora_600SemiBold,
-    Sora_700Bold,
-    Sora_800ExtraBold,
+    Outfit_400Regular,
+    Outfit_500Medium,
+    Outfit_600SemiBold,
     JetBrainsMono_500Medium,
     JetBrainsMono_700Bold,
   });

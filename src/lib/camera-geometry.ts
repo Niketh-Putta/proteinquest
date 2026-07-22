@@ -48,3 +48,14 @@ export function cameraViewfinderCrop(
     height: Math.max(1, Math.floor(side)),
   };
 }
+
+/** Longest-side cap for library photos (keeps full aspect ratio; no square crop). */
+export function libraryExportResize(
+  width: number,
+  height: number,
+  maxSide = 512,
+): { width: number } | { height: number } | null {
+  const long = Math.max(width, height);
+  if (long <= maxSide) return null;
+  return width >= height ? { width: maxSide } : { height: maxSide };
+}

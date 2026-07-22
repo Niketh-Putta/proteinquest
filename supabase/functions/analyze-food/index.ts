@@ -1,4 +1,4 @@
-// Protein analysis via server Gemini key (primary) or OpenAI fallback.
+// Protein analysis via server OpenAI gpt-4o (primary) or Gemini fallback.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import {
@@ -17,15 +17,40 @@ const OPENAI_MODEL = Deno.env.get("OPENAI_MODEL") ?? "gpt-4o";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+/** Gemini fallback chain. Override with GEMINI_MODEL; upgrades: gemini-2.5-pro. */
 const GEMINI_MODELS = [
   Deno.env.get("GEMINI_MODEL") ?? "gemini-2.5-flash",
   "gemini-2.5-pro",
-  "gemini-2.0-flash",
-  "gemini-2.0-flash-lite",
 ];
+/** Thinking tokens for 2.5 models. 0 = fastest; 128–256 = better portion math; 768 = slow/costly. */
+const GEMINI_THINKING_BUDGET = (() => {
+  const raw = Number(Deno.env.get("GEMINI_THINKING_BUDGET") ?? "256");
+  if (!Number.isFinite(raw) || raw < 0) return 256;
+  return Math.min(1024, Math.round(raw));
+})();
 
-/** Final downward nudge on visual scans after USDA anchor calibration. */
-const VISUAL_CALORIE_BIAS = 0.88;
+/** Skip OpenAI for a while after hard account failures (billing/quota) so scans stay fast. */
+const OPENAI_CIRCUIT_MS = 10 * 60 * 1000;
+let openaiCircuitOpenUntil = 0;
+let openaiCircuitReason = "";
+
+function isHardOpenAIFailure(message: string): boolean {
+  return /billing_not_active|billing|insufficient_quota|exceeded.?your.?current.?quota|account.?deactivated|invalid.?api.?key|incorrect.?api.?key/i
+    .test(message);
+}
+
+function openaiCircuitOpen(): boolean {
+  return Date.now() < openaiCircuitOpenUntil;
+}
+
+function tripOpenAICircuit(reason: string): void {
+  openaiCircuitOpenUntil = Date.now() + OPENAI_CIRCUIT_MS;
+  openaiCircuitReason = reason.slice(0, 240);
+  console.warn(
+    `OpenAI circuit open for ${OPENAI_CIRCUIT_MS / 1000}s:`,
+    openaiCircuitReason,
+  );
+}
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -35,6 +60,7 @@ const corsHeaders = {
 };
 
 const SYSTEM_PROMPT = `You are an expert sports nutritionist who estimates PROTEIN and CALORIES from food photos.
+Be accurate and realistic — do NOT systematically undercount calories. Cooking fat and true portion size matter.
 
 WORK IN 5 STEPS (reason internally, output final JSON only):
 0. LABEL / TEXT DETECTION (do this FIRST — highest priority):
@@ -46,22 +72,22 @@ WORK IN 5 STEPS (reason internally, output final JSON only):
    - If explicit calories/kcal are visible with high confidence → use label_calories_g as calories total. Label wins over visual estimation.
    - Label wins over visual estimation. A nutrition label showing "Protein 50g" means total_protein_g≈50 even if the food photo alone looks smaller.
    - Set items to reflect the labeled product (e.g. one item "Protein powder (label)" with protein_g matching label). estimated_grams optional when source is label.
-1. IDENTIFY every visible food component (skip if step 0 found authoritative label text). Separate visible items from likely hidden ingredients (sauce, oil, cheese dust, marinade). Note cooking method (grilled, fried, baked) — affects weight more than protein density.
+1. IDENTIFY every visible food component (skip if step 0 found authoritative label text). Note cooking method (grilled, sautéed, fried, baked). Infer cooking fat when greens look glossy/sautéed or meat looks oil-brushed — even if oil is not a separate puddle.
 2. ESTIMATE PORTION SIZE for each item using visual anchors (only when protein_source is "visual" or "mixed"):
    - Standard dinner plate ~26cm; fork ~19cm; palm ~10cm wide
-   - Palm-sized chicken breast (cooked) ~120g; large breast ~160-180g
-   - Sliced/strip chicken: count strips × ~18-22g each (7 strips ≈130-150g, NOT full plate weight)
+   - Palm-sized chicken breast (cooked) ~120-140g; large breast covering much of the plate ~200-250g
+   - Sliced/strip chicken: count strips × ~25-35g each when thick/wide; a full plate of strips is often 200-250g total edible chicken, not 130g
    - 1 large egg ~50g (~6g protein); 2 eggs ~100g (~13g protein)
    - Deck-of-cards meat portion ~85g; fist-sized rice/pasta ~150g cooked
-   - Greens/kale bed under protein: ~60-100g (shares plate with protein above)
+   - Greens/kale/broccolini bed: ~80-150g when filling half the plate
+   - Cooking oil/butter when sautéed or dressed greens, or oil-sheen on grilled meat: add a separate item "~1 tbsp olive oil" (~14g, ~120 kcal) unless the plate looks dry/steamed
    - Protein bar ~60g; yogurt cup small ~125g, large ~170g
 3. CALCULATE protein_g = estimated_grams × (protein per 100g for that food) / 100
-   Densities: chicken breast 31, ground beef 26, salmon 25, egg 13, greek yogurt 10, tofu 17, kale/spinach 3, rice 2.7, cheese 25, protein bar 30
+   Densities: chicken breast 31, ground beef 26, salmon 25, egg 13, greek yogurt 10, tofu 17, kale/spinach 3, rice 2.7, cheese 25, protein bar 30, oil/butter 0
 4. CALCULATE calories_g per item = estimated_grams × (kcal per 100g for that food) / 100
-   Energy densities (cooked, lean/grilled defaults): chicken breast 165, ground beef 250, salmon 208, egg 155, greek yogurt 97, tofu 76, kale/spinach 35, rice 130, pasta 131, cheese 350, protein bar 400, bread 265
-   Default to grilled/steamed/baked — not deep-fried. Only add extra kcal if oil/butter/frying is clearly visible. Do NOT guess hidden butter or restaurant oil.
-   When portion size is ambiguous, use the LOWER end of the weight range. Bias conservative on calories.
-   Calories MUST equal estimated_grams × density / 100 per item — do not guess extra oil, butter, or restaurant fat unless clearly visible.
+   Energy densities (cooked defaults): chicken breast 165, ground beef 250, salmon 208, egg 155, greek yogurt 97, tofu 76, kale/spinach 35, rice 130, pasta 131, cheese 350, protein bar 400, bread 265, olive oil/butter 717
+   Prefer mid-range realistic portions. Restaurant plates often use more oil (+50-100 kcal) than home cooking.
+   Include oil/butter as its own item when prep implies it. Never zero out cooking fat on sautéed/glossy plates.
 5. SUM all item protein_g → total_protein_g (must match within 0.5g). SUM all item calories_g → calories (must match within 15 kcal). Round estimated_grams to nearest 5g.
 
 Rules:
@@ -70,27 +96,29 @@ Rules:
 - label_calories_g: set when step 0 finds explicit Calories/Energy/kcal on a label or screen; null/omit otherwise.
 - Each item must include calories_g (integer kcal for that component).
 - If NOT food: is_food=false, empty food_name, empty items, zeros, protein_source="visual", explain in notes.
-- If food: list protein-bearing components only (chicken, eggs, meat, fish, tofu, beans, cheese, yogurt). Skip zero-protein garnishes (lemon wedge, herbs, pickles).
-- LAYERED PLATES: items share plate space — do NOT assign full plate area to each item. Greens under chicken are typically 60-120g, not equal to the protein portion.
-- portion must describe size AND method ("~150g grilled, 6 strips", "~80g sautéed bed under chicken").
-- estimated_grams = cooked edible weight only. Typical dinner plate total food ~250-450g.
+- If food: list calorie- and/or protein-bearing components (chicken, eggs, meat, fish, tofu, beans, cheese, yogurt, rice, oil/butter, substantial veg). Skip only zero-calorie garnishes (lemon wedge, herbs, pickles).
+- LAYERED PLATES: items share plate space — do NOT assign full plate area to each item. Greens under chicken are typically 80-150g.
+- portion must describe size AND method ("~220g grilled breast", "~100g sautéed greens", "~14g olive oil for cooking").
+- estimated_grams = cooked edible weight only. Typical dinner plate total food ~300-550g including oil.
 - Per-item confidence: low (ambiguous size), medium (reasonable estimate), high (clear size + familiar food).
-- Never hallucinate food not visible. Hidden ingredients only if strongly implied (curry sauce, burger patty under bun).
+- Never hallucinate food not visible. Hidden ingredients only if strongly implied (curry sauce, burger patty under bun, cooking oil on sautéed greens).
 - Keep notes under 100 characters. No double quotes, backslashes, or line breaks inside strings.
 
 Few-shot calibration examples (do NOT copy blindly — adapt to the photo):
-A) Grilled chicken strips (7 strips ~140g) + sautéed kale (~80g) + parmesan dust (~5g):
-   chicken 140g×31%=43.4g, kale 80g×3%=2.4g, cheese 5g×25%=1.3g → total ~47g, confidence medium-high
-B) 2 scrambled eggs (~100g) + toast (~30g):
-   eggs 13g, toast 2.7g → total ~16g
-C) Chicken curry bowl: visible chicken ~120g (37g) + sauce/veg ~200g (6g) → total ~43g
+A) Full plate grilled chicken (~230g) + sautéed kale/broccolini (~100g) + parmesan (~10g) + olive oil (~14g):
+   chicken 230g×31%≈71g, greens≈3g, cheese≈2.5g → protein ~76g
+   calories ≈230×1.65 + 100×0.35 + 10×3.5 + 14×7.17 ≈ 380+35+35+100 ≈ 550 kcal
+B) 2 scrambled eggs (~100g) + toast (~30g) + butter (~5g):
+   protein ~16g, calories ≈155+80+36 ≈ 270 kcal
+C) Chicken curry bowl: visible chicken ~120g (37g) + sauce/veg ~200g (6g) → protein ~43g; calories higher due to oil in sauce (~450-550 kcal)
 D) Empty plate or non-food → is_food=false
 E) Nutrition label photo showing "Protein 50g" per serving, whole product visible:
    protein_source="label", label_protein_g=50, one item from label → total_protein_g=50, confidence high
 F) Supplement tub label "24g protein per scoop" with one scoop shown → label_protein_g=24, total 24g
 G) Macro app screenshot showing "Protein: 48g" for logged meal → label_protein_g=48, trust screen text
 H) Nutrition label "Calories 320" per serving → label_calories_g=320, calories=320
-I) Grilled chicken strips (7 strips ~140g) + kale (~80g): protein ~47g, calories ~140×1.65 + 80×0.35 ≈ 260 kcal (do not add oil unless visible)`;
+I) Smaller strip plate (7 thin strips ~150g) + dry steamed greens (~80g), no oil sheen:
+   protein ~48g, calories ≈150×1.65 + 80×0.35 ≈ 275 kcal`;
 
 const OPENAI_SCHEMA = {
   type: "object",
@@ -118,8 +146,9 @@ const OPENAI_SCHEMA = {
     calories: { type: "number" },
     confidence: { type: "string", enum: ["low", "medium", "high"] },
     notes: { type: "string" },
-    label_protein_g: { type: "number" },
-    label_calories_g: { type: "number" },
+    // strict json_schema requires every property in `required`; use null when no label.
+    label_protein_g: { type: ["number", "null"] },
+    label_calories_g: { type: ["number", "null"] },
     protein_source: { type: "string", enum: ["label", "visual", "mixed"] },
   },
   required: [
@@ -130,6 +159,8 @@ const OPENAI_SCHEMA = {
     "calories",
     "confidence",
     "notes",
+    "label_protein_g",
+    "label_calories_g",
     "protein_source",
   ],
 };
@@ -189,31 +220,63 @@ Deno.serve(async (req) => {
       return json({ error: "image_base64 is required" }, 400);
     }
 
-    if (GEMINI_API_KEY) {
+    if (OPENAI_API_KEY && !openaiCircuitOpen()) {
       try {
-        const { raw, model } = await callGeminiWithRetry(
-          GEMINI_API_KEY,
-          image_base64,
-          mime_type,
-        );
-        return json({ analysis: normalize(raw), model, provider: "gemini" });
-      } catch (geminiErr) {
-        console.error("Gemini chain failed:", geminiErr);
-        if (OPENAI_API_KEY) {
-          console.warn("Falling back to OpenAI after Gemini failure");
-          const raw = await callOpenAI(image_base64, mime_type);
-          return json({ analysis: normalize(raw), model: OPENAI_MODEL, provider: "openai" });
+        const raw = await callOpenAI(image_base64, mime_type);
+        return json({ analysis: normalize(raw), model: OPENAI_MODEL, provider: "openai" });
+      } catch (openaiErr) {
+        const openaiMessage =
+          openaiErr instanceof Error ? openaiErr.message : String(openaiErr);
+        console.error("OpenAI primary failed:", openaiMessage);
+        if (isHardOpenAIFailure(openaiMessage)) {
+          tripOpenAICircuit(openaiMessage);
         }
-        throw geminiErr;
+        if (GEMINI_API_KEY) {
+          console.warn("Falling back to Gemini after OpenAI failure");
+          const { raw, model } = await callGeminiWithRetry(
+            GEMINI_API_KEY,
+            image_base64,
+            mime_type,
+          );
+          return json({
+            analysis: normalize(raw),
+            model,
+            provider: "gemini",
+            fallback_from: "openai",
+            fallback_model: OPENAI_MODEL,
+            fallback_reason: openaiMessage.slice(0, 240),
+          });
+        }
+        throw openaiErr;
       }
     }
 
-    if (!OPENAI_API_KEY) {
+    if (OPENAI_API_KEY && openaiCircuitOpen() && GEMINI_API_KEY) {
+      const { raw, model } = await callGeminiWithRetry(
+        GEMINI_API_KEY,
+        image_base64,
+        mime_type,
+      );
+      return json({
+        analysis: normalize(raw),
+        model,
+        provider: "gemini",
+        fallback_from: "openai",
+        fallback_model: OPENAI_MODEL,
+        fallback_reason: `circuit_open: ${openaiCircuitReason}`.slice(0, 240),
+      });
+    }
+
+    if (!GEMINI_API_KEY) {
       return json({ error: "AI service is not configured. Please try again later." }, 503);
     }
 
-    const raw = await callOpenAI(image_base64, mime_type);
-    return json({ analysis: normalize(raw), model: OPENAI_MODEL, provider: "openai" });
+    const { raw, model } = await callGeminiWithRetry(
+      GEMINI_API_KEY,
+      image_base64,
+      mime_type,
+    );
+    return json({ analysis: normalize(raw), model, provider: "gemini" });
   } catch (err) {
     console.error("analyze-food error:", err);
     const message = err instanceof Error ? err.message : "Unexpected error analyzing the photo";
@@ -232,8 +295,14 @@ function isRetryableGeminiError(message: string, status?: number): boolean {
   );
 }
 
+function isDeadGeminiModel(message: string): boolean {
+  return /no longer available|not found|is not supported|INVALID_ARGUMENT.*model/i.test(
+    message,
+  );
+}
+
 function supportsThinking(model: string): boolean {
-  return /gemini-2\.5-(flash|pro)/i.test(model);
+  return /gemini-2\.5-(flash|flash-lite|pro)/i.test(model);
 }
 
 async function callGeminiWithRetry(
@@ -243,7 +312,8 @@ async function callGeminiWithRetry(
 ): Promise<{ raw: Record<string, unknown>; model: string }> {
   let lastErr: Error | null = null;
 
-  for (const model of GEMINI_MODELS) {
+  const models = [...new Set(GEMINI_MODELS.filter(Boolean))];
+  for (const model of models) {
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
         const raw = await callGemini(apiKey, imageBase64, mimeType, model, attempt);
@@ -257,8 +327,9 @@ async function callGeminiWithRetry(
           `Gemini ${model} attempt ${attempt + 1} failed:`,
           lastErr.message,
         );
+        if (isDeadGeminiModel(lastErr.message)) break;
         if (!retryable || isLastAttempt) break;
-        await sleep(400 * (attempt + 1));
+        await sleep(200 * (attempt + 1));
       }
     }
   }
@@ -277,13 +348,15 @@ async function callGemini(
 
   const generationConfig: Record<string, unknown> = {
     temperature: 0,
-    maxOutputTokens: 2048,
+    maxOutputTokens: 1024,
     responseMimeType: "application/json",
     responseSchema: GEMINI_SCHEMA,
   };
 
-  if (attempt === 0 && supportsThinking(model)) {
-    generationConfig.thinkingConfig = { thinkingBudget: 768 };
+  // Low thinking budget: improves portion/oil reasoning vs 0, still much faster/cheaper than 768.
+  // USDA density calibration still anchors macros after the model responds.
+  if (supportsThinking(model)) {
+    generationConfig.thinkingConfig = { thinkingBudget: GEMINI_THINKING_BUDGET };
   }
 
   const res = await fetch(url, {
@@ -422,7 +495,9 @@ async function callOpenAI(
     try {
       const parsed = JSON.parse(errText);
       if (parsed?.error?.code === "billing_not_active") {
-        message = "AI service unavailable. Please try again later.";
+        message = "billing_not_active: enable OpenAI billing for gpt-4o primary";
+      } else if (parsed?.error?.code === "insufficient_quota") {
+        message = "insufficient_quota: OpenAI quota exceeded";
       } else if (parsed?.error?.message) {
         message = parsed.error.message;
       }
@@ -486,7 +561,19 @@ function snapGrams(grams: number): number {
   return Math.max(5, Math.round(grams / 5) * 5);
 }
 
-/** Anchor calories to USDA densities; pull down LLM overestimates, never inflate above model. */
+/**
+ * Real prepared/restaurant portions carry absorbed cooking fat, oil, sauce, glaze and
+ * marinade that bare USDA "cooked" densities exclude, so lean anchors run ~8% low vs how
+ * references (e.g. ChatGPT) score the same plate. Lift whole-food anchors to prepared level.
+ * Pure fats (oil/butter) are already accurate at 717 kcal/100g, so they are excluded.
+ */
+const CALORIE_REALISM_FACTOR = 1.08;
+
+function isPureFatItem(name: string): boolean {
+  return /\b(oil|butter|ghee|lard|dressing|mayo)\b/i.test(name);
+}
+
+/** Anchor calories to USDA densities — correct both over- and under-estimates. */
 function calibrateItemCalories(item: NormalizedItem, skipCalibration = false): NormalizedItem {
   if (skipCalibration) return item;
 
@@ -496,29 +583,65 @@ function calibrateItemCalories(item: NormalizedItem, skipCalibration = false): N
   const calorieDensity = lookupCalorieDensity(item.name);
   if (!calorieDensity) return item;
 
-  const anchor = caloriesFromDensity(grams, calorieDensity);
+  const rawAnchor = caloriesFromDensity(grams, calorieDensity);
+  const anchor = isPureFatItem(item.name)
+    ? rawAnchor
+    : Math.round(rawAnchor * CALORIE_REALISM_FACTOR);
   const llmCalories = item.calories_g > 0 ? item.calories_g : anchor;
 
-  if (llmCalories > anchor * 1.02) {
+  // LLM far above density (likely hallucinated oil already counted) → blend toward anchor.
+  if (llmCalories > anchor * 1.35) {
     const excess = anchor > 0 ? (llmCalories - anchor) / llmCalories : 0;
-    const anchorWeight = Math.min(0.8, 0.45 + excess * 0.5);
+    const anchorWeight = Math.min(0.65, 0.35 + excess * 0.4);
     const blended = Math.round(anchor * anchorWeight + llmCalories * (1 - anchorWeight));
     return {
       ...item,
-      calories_g: Math.min(blended, llmCalories, Math.round(anchor * 1.05)),
-      confidence: excess > 0.25 ? "medium" : item.confidence,
+      calories_g: Math.max(anchor, Math.min(blended, Math.round(anchor * 1.25))),
+      confidence: excess > 0.35 ? "medium" : item.confidence,
     };
   }
 
-  if (llmCalories < anchor * 0.55) {
+  // LLM under density → pull up to the realistic anchor (common failure mode).
+  if (llmCalories < anchor * 0.85) {
+    const shortfall = anchor > 0 ? (anchor - llmCalories) / anchor : 0;
+    const densityWeight = shortfall > 0.4 ? 0.7 : 0.5;
+    const blended = Math.round(anchor * densityWeight + llmCalories * (1 - densityWeight));
     return {
       ...item,
-      calories_g: Math.round(anchor * 0.92),
-      confidence: item.confidence === "high" ? "medium" : item.confidence,
+      calories_g: Math.max(blended, llmCalories, anchor),
+      confidence: shortfall > 0.5 ? "medium" : item.confidence,
     };
   }
 
-  return { ...item, calories_g: Math.round(anchor * 0.55 + llmCalories * 0.45) };
+  // Near anchor — favor the realistic prepared anchor and never pull below the model's own
+  // estimate, so calibration stops shaving calories off already-reasonable numbers.
+  const blended = Math.round(anchor * 0.6 + llmCalories * 0.4);
+  return { ...item, calories_g: Math.max(llmCalories, blended) };
+}
+
+const OILY_PREP_PATTERN =
+  /fried|deep.?fried|saut[eé]|pan.?fried|crispy|butter|oil|olive|curry|cream|cheese sauce|mayo|dressing|gravy|battered|breaded|roasted in|glossy/i;
+
+function hasCookingFatItem(items: NormalizedItem[]): boolean {
+  return items.some((i) => /\b(oil|butter|ghee|lard|dressing|mayo)\b/i.test(i.name));
+}
+
+/** Add ~1 tbsp oil when prep implies fat but model omitted it. */
+function ensureCookingFatCalories(items: NormalizedItem[]): NormalizedItem[] {
+  if (items.length === 0 || hasCookingFatItem(items)) return items;
+  const oily = items.some((i) => OILY_PREP_PATTERN.test(`${i.portion} ${i.name}`));
+  if (!oily) return items;
+  return [
+    ...items,
+    {
+      name: "olive oil (cooking)",
+      portion: "~1 tbsp cooking fat (implied)",
+      estimated_grams: 14,
+      protein_g: 0,
+      calories_g: 120,
+      confidence: "medium",
+    },
+  ];
 }
 
 function parseLabelCalories(raw: Record<string, unknown>): number | null {
@@ -587,26 +710,29 @@ function normalize(raw: Record<string, unknown>) {
   const fromLabel = isLabelSource(raw) && (labelProtein !== null || labelCalories !== null);
   const skipCalibration = fromLabel;
 
-  const items = ((raw.items as Record<string, unknown>[]) ?? [])
-    .map((item) => {
-      const rawGrams = Math.round(Number(item.estimated_grams) || 0);
-      const grams = rawGrams > 0 ? snapGrams(rawGrams) : undefined;
-      const calorieDensity = grams ? lookupCalorieDensity(String(item.name ?? '')) : null;
-      const llmCalories = Math.round(Number(item.calories_g) || 0);
-      const fallbackCalories =
-        grams && calorieDensity ? caloriesFromDensity(grams, calorieDensity) : llmCalories;
+  const items = ensureCookingFatCalories(
+    ((raw.items as Record<string, unknown>[]) ?? [])
+      .map((item) => {
+        const rawGrams = Math.round(Number(item.estimated_grams) || 0);
+        const grams = rawGrams > 0 ? snapGrams(rawGrams) : undefined;
+        const calorieDensity = grams ? lookupCalorieDensity(String(item.name ?? '')) : null;
+        const llmCalories = Math.round(Number(item.calories_g) || 0);
+        const fallbackCalories =
+          grams && calorieDensity ? caloriesFromDensity(grams, calorieDensity) : llmCalories;
 
-      const base: NormalizedItem = {
-        name: sanitizeField(item.name, 60) || 'Unknown',
-        portion: sanitizeField(item.portion, 80),
-        estimated_grams: grams,
-        protein_g: round1(Number(item.protein_g) || 0),
-        calories_g: llmCalories > 0 ? llmCalories : fallbackCalories,
-        confidence: String(item.confidence ?? 'medium'),
-      };
-      return calibrateItem(base, skipCalibration);
-    })
-    .filter((item) => item.protein_g >= 0.5);
+        const base: NormalizedItem = {
+          name: sanitizeField(item.name, 60) || 'Unknown',
+          portion: sanitizeField(item.portion, 80),
+          estimated_grams: grams,
+          protein_g: round1(Number(item.protein_g) || 0),
+          calories_g: llmCalories > 0 ? llmCalories : fallbackCalories,
+          confidence: String(item.confidence ?? 'medium'),
+        };
+        return calibrateItem(base, skipCalibration);
+      })
+      // Keep calorie-dense items (oil/butter) even with ~0 protein.
+      .filter((item) => item.protein_g >= 0.5 || item.calories_g >= 40),
+  );
 
   let sum = round1(items.reduce((s, i) => s + i.protein_g, 0));
   let total = round1(Number(raw.total_protein_g) || sum);
@@ -681,10 +807,6 @@ function normalize(raw: Record<string, unknown>) {
   } else if (caloriesSum > 0) {
     // Density-calibrated item sum wins over volatile model total.
     calories = caloriesSum;
-  }
-
-  if (!fromLabel && calories > 0) {
-    calories = Math.round(calories * VISUAL_CALORIE_BIAS);
   }
 
   if (calories > 3500) calories = 3500;
@@ -774,9 +896,15 @@ async function enforcePhotoScanLimit(req: Request): Promise<Response | null> {
     .eq("id", userId)
     .maybeSingle();
 
+  const { count: lifetimeMeals } = await admin
+    .from("protein_logs")
+    .select("*", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .in("source", ["photo", "manual"]);
+
   // Count only photo_scan rows — each AI analysis records one. Do NOT also
   // count logged `photo` meals or free users effectively get ~2 scans (scan+log
-  // would burn two slots toward FREE_DAILY_SCANS=3).
+  // would burn two slots toward FREE_DAILY_SCANS).
   const today = new Date().toISOString().slice(0, 10);
   const { count } = await admin
     .from("protein_logs")
@@ -789,6 +917,7 @@ async function enforcePhotoScanLimit(req: Request): Promise<Response | null> {
     isPremium: profile?.is_premium === true,
     createdAt: profile?.created_at ?? null,
     scansUsedToday: count ?? 0,
+    lifetimeMeals: lifetimeMeals ?? 0,
   });
 
   if (!decision.allowed) {

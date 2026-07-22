@@ -231,3 +231,68 @@ export async function syncMealReminders(profile?: Profile | null): Promise<boole
 
   return true;
 }
+
+/** One-shot: ~3h after first meal — “peckish again”. */
+export async function scheduleSecondMealNudge(dragonName: string): Promise<void> {
+  if (Platform.OS === 'web') return;
+  const enabled = await isMealRemindersEnabled();
+  if (!enabled) return;
+  const granted = await requestMealReminderPermission();
+  if (!granted) return;
+
+  await Notifications.cancelScheduledNotificationAsync('second-meal-nudge').catch(() => {});
+  const when = new Date(Date.now() + 3 * 60 * 60 * 1000);
+  await Notifications.scheduleNotificationAsync({
+    identifier: 'second-meal-nudge',
+    content: {
+      title: `${dragonName} is peckish again`,
+      body: 'Log another meal to keep them glowing.',
+      data: { screen: 'scan', kind: 'second_meal' },
+      sound: 'default',
+      ...(Platform.OS === 'android' ? { channelId: ANDROID_CHANNEL } : {}),
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.DATE,
+      date: when,
+      ...(Platform.OS === 'android' ? { channelId: ANDROID_CHANNEL } : {}),
+    },
+  });
+}
+
+/** Evening streak-at-risk if no meals today (fires once around 8pm local). */
+export async function scheduleStreakAtRiskNudge(
+  dragonName: string,
+  hasMealToday: boolean,
+): Promise<void> {
+  if (Platform.OS === 'web') return;
+  await Notifications.cancelScheduledNotificationAsync('streak-at-risk').catch(() => {});
+  if (hasMealToday) return;
+
+  const enabled = await isMealRemindersEnabled();
+  if (!enabled) return;
+  const granted = await requestMealReminderPermission();
+  if (!granted) return;
+
+  const when = new Date();
+  when.setHours(20, 0, 0, 0);
+  if (when.getTime() <= Date.now()) {
+    // Too late tonight — nudge in 20 minutes instead.
+    when.setTime(Date.now() + 20 * 60 * 1000);
+  }
+
+  await Notifications.scheduleNotificationAsync({
+    identifier: 'streak-at-risk',
+    content: {
+      title: 'Streak dies at midnight',
+      body: `${dragonName} goes to sleep hungry. One scan saves the day.`,
+      data: { screen: 'scan', kind: 'streak_at_risk' },
+      sound: 'default',
+      ...(Platform.OS === 'android' ? { channelId: ANDROID_CHANNEL } : {}),
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.DATE,
+      date: when,
+      ...(Platform.OS === 'android' ? { channelId: ANDROID_CHANNEL } : {}),
+    },
+  });
+}

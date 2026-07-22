@@ -22,6 +22,9 @@ import { Button } from '@/components/Button';
 import { DragonPicker } from '@/components/DragonPicker';
 import { GoalEditor } from '@/components/GoalEditor';
 import { emptyDragonProgress } from '@/lib/character';
+import { trackEvent } from '@/lib/analytics';
+import { markNeedsFirstScan } from '@/lib/first-scan';
+import { setMealRemindersEnabled } from '@/lib/meal-reminders';
 import { todayISODate } from '@/lib/protein';
 import { useLayout, usePinnedFooterGap } from '@/lib/layout';
 import { useSession } from '@/lib/session';
@@ -148,6 +151,10 @@ export default function Onboarding() {
         last_goal_date: null,
         onboarded: true,
       });
+      await markNeedsFirstScan();
+      trackEvent('onboarding_complete', { dragon_id: dragonId });
+      // Meal reminders default ON (opt-out in Settings).
+      void setMealRemindersEnabled(true).catch(() => {});
       setStep('forging');
     } catch (e: any) {
       setError(e.message ?? 'Could not save. Please try again.');
@@ -159,7 +166,7 @@ export default function Onboarding() {
   if (step === 'forging') {
     return (
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-        <ForgingScreen onDone={() => router.replace('/')} />
+        <ForgingScreen onDone={() => router.replace('/scan')} />
       </SafeAreaView>
     );
   }

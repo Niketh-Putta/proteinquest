@@ -1,6 +1,6 @@
 import { Platform } from 'react-native';
 
-import { SITE_URL } from '@/lib/site';
+import { publicSiteOrigin } from '@/lib/site';
 import {
   checkProEntitlement,
   ensureRevenueCatReady,
@@ -59,10 +59,7 @@ const stripeProvider: PaymentProvider = {
   isConfigured: stripeEnabled,
   plans: PLANS,
   async purchase(planId: string, opts?: { userId?: string; email?: string }) {
-    const origin =
-      Platform.OS === 'web' && typeof window !== 'undefined'
-        ? window.location.origin
-        : SITE_URL;
+    const origin = publicSiteOrigin();
     const { data, error } = await supabase.functions.invoke('create-checkout', {
       body: {
         plan_id: planId,

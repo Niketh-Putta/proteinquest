@@ -1,4 +1,7 @@
-node_modules/
+# Root deps only — do NOT use a bare `node_modules/` (it also strips Expo
+# `assets/node_modules` font paths; prepare-web-export renames those to assets/bundled).
+/node_modules
+/node_modules/
 .expo/
 dist/
 web-build/

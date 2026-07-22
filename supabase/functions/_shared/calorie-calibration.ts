@@ -6,11 +6,8 @@ export type CalorieItem = {
   estimated_grams?: number;
 };
 
-/** Final downward nudge on visual scans after USDA anchor pass. */
-export const VISUAL_CALORIE_BIAS = 0.88;
-
 const OILY_PREP_PATTERN =
-  /fried|deep.?fried|saut[eé]|pan.?fried|crispy|butter|oil|curry|cream|cheese sauce|mayo|dressing|gravy|battered|breaded|roasted in/i;
+  /fried|deep.?fried|saut[eé]|pan.?fried|crispy|butter|oil|olive|curry|cream|cheese sauce|mayo|dressing|gravy|battered|breaded|roasted in|glossy/i;
 
 export function caloriesFromDensity(items: CalorieItem[]): number {
   let sum = 0;
@@ -23,16 +20,23 @@ export function caloriesFromDensity(items: CalorieItem[]): number {
   return sum;
 }
 
+/**
+ * Bare USDA "cooked" densities exclude absorbed cooking fat, oil, sauce and marinade, so
+ * whole-food anchors run ~8% low vs reference scoring. Lift the density sum to a realistic
+ * prepared level; oily/fried prep pushes it a little further.
+ */
+const CALORIE_REALISM_FACTOR = 1.08;
+
 export function prepMethodBuffer(items: CalorieItem[]): number {
   for (const item of items) {
     const text = `${item.portion ?? ""} ${item.name ?? ""}`;
-    if (OILY_PREP_PATTERN.test(text)) return 1.08;
+    if (OILY_PREP_PATTERN.test(text)) return CALORIE_REALISM_FACTOR * 1.05;
   }
-  return 1;
+  return CALORIE_REALISM_FACTOR;
 }
 
 /**
- * Conservative calorie total for visual scans — USDA density anchors, no upward bias.
+ * Realistic calorie total for visual scans — USDA density anchors + prep fat buffer.
  * Label calories are trusted when present.
  */
 export function deriveCalibratedCalories(
@@ -47,8 +51,11 @@ export function deriveCalibratedCalories(
   if (densitySum > 0) densitySum *= prepMethodBuffer(items);
 
   if (fromLabel && fromModel > 0) return fromModel;
-  if (densitySum <= 0) return fromModel > 0 ? Math.round(fromModel * VISUAL_CALORIE_BIAS) : 0;
+  if (densitySum <= 0) return fromModel > 0 ? fromModel : 0;
 
-  const base = fromModel > 0 ? Math.min(fromModel, densitySum) : densitySum;
-  return Math.round(base * VISUAL_CALORIE_BIAS);
+  // Prefer density sum; if model is higher but within 25%, take midpoint.
+  if (fromModel <= 0) return Math.round(densitySum);
+  if (fromModel > densitySum * 1.25) return Math.round(densitySum * 1.1);
+  if (fromModel < densitySum * 0.85) return Math.round(densitySum);
+  return Math.round(densitySum * 0.55 + fromModel * 0.45);
 }

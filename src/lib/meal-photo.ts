@@ -1,6 +1,6 @@
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 
-import { cameraViewfinderCrop, type CameraCrop } from './camera-geometry';
+import { cameraViewfinderCrop, libraryExportResize, type CameraCrop } from './camera-geometry';
 
 export type SquareMealPhoto = {
   uri: string;
@@ -12,9 +12,13 @@ export type SquareMealPhoto = {
 export type { CameraCrop } from './camera-geometry';
 
 /** Enough detail for portions; smaller = faster upload + model TTFT. */
-const SQUARE_EXPORT_WIDTH = 512;
+const EXPORT_MAX_SIDE = 512;
 
-/** Crop to the visible camera square (or the center for library photos), then resize. */
+/**
+ * Prepare a meal photo for analyze.
+ * - Live camera: crop to the square viewfinder, then resize to EXPORT_MAX_SIDE.
+ * - Library import: keep the full image aspect ratio (no square crop); only downscale.
+ */
 export async function prepareSquareMealPhoto(
   uri: string,
   cameraCrop?: CameraCrop,
@@ -23,20 +27,18 @@ export async function prepareSquareMealPhoto(
   // Decode through ImageManipulator so crop coordinates match its actual bitmap.
   const source = await ImageManipulator.manipulate(uri).renderAsync();
   const { width, height } = source;
-  const side = Math.min(width, height);
-  const crop = cameraCrop
-    ? cameraViewfinderCrop(width, height, cameraCrop)
-    : {
-        originX: Math.floor((width - side) / 2),
-        originY: Math.floor((height - side) / 2),
-        width: side,
-        height: side,
-      };
 
-  const rendered = await ImageManipulator.manipulate(uri)
-    .crop(crop)
-    .resize({ width: SQUARE_EXPORT_WIDTH })
-    .renderAsync();
+  let chain = ImageManipulator.manipulate(uri);
+
+  if (cameraCrop) {
+    const crop = cameraViewfinderCrop(width, height, cameraCrop);
+    chain = chain.crop(crop).resize({ width: EXPORT_MAX_SIDE });
+  } else {
+    const resize = libraryExportResize(width, height, EXPORT_MAX_SIDE);
+    if (resize) chain = chain.resize(resize);
+  }
+
+  const rendered = await chain.renderAsync();
 
   const saved = await rendered.saveAsync({
     format: SaveFormat.JPEG,

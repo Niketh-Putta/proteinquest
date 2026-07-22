@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { useEffect } from 'react';
-import { Image, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -26,9 +26,19 @@ import {
   stageForXpLevel,
   xpProgressInLevel,
 } from '@/lib/character';
+import {
+  hungerArtOpacity,
+  hungerBreathMs,
+  hungerGlowMul,
+  hungerLabel,
+  hungerSceneCaption,
+  hungerVoice,
+  type HungerLevel,
+} from '@/lib/dragon-hunger';
 import { formatXp } from '@/lib/leaderboard';
 import { todayISODate } from '@/lib/protein';
 import { useLayout } from '@/lib/layout';
+import { careStreakDays, getRetention } from '@/lib/retention';
 import type { Profile } from '@/lib/types';
 import { colors, displayLH, fonts, radius, spacing } from '@/theme';
 
@@ -40,6 +50,12 @@ interface Props {
   dragonLocked?: boolean;
   /** Responsive scale - 1 phone, ~1.08 tablet, ~1.2 desktop sidebar */
   scale?: number;
+  /** 0 fed → 3 starving; derived from last meal. */
+  hunger?: HungerLevel;
+  /** Brief post-log feed celebration. */
+  fedPulse?: boolean;
+  /** Show Feed CTA under hunger chip. */
+  onFeedPress?: () => void;
 }
 
 function CharacterCardInner({
@@ -48,6 +64,9 @@ function CharacterCardInner({
   showSwitcher = true,
   dragonLocked = false,
   scale: scaleProp,
+  hunger = 0,
+  fedPulse = false,
+  onFeedPress,
 }: Props) {
   const { characterScale: layoutScale } = useLayout();
   const scale = scaleProp ?? layoutScale;
@@ -64,47 +83,82 @@ function CharacterCardInner({
   const stage = stageForXpLevel(level, dragonId);
   const next = nextEvolutionStage(level, dragonId);
   const streak = effectiveStreak(progress, todayISO, todayISODate(-1));
+  const bondDays = careStreakDays(getRetention(profile), todayISO, todayISODate(-1));
+  const trainerName = profile.display_name?.trim() || null;
 
   const micro = microProgress(level, dragonId);
   const stretchComp = (micro.scaleY - 1) * (sceneH * 0.12);
+  const breathMs = hungerBreathMs(hunger);
+  const breathAmp = hunger === 0 || fedPulse ? 1.035 : hunger >= 3 ? 1.012 : 1.02;
+  const floatAmp = hunger >= 3 ? 1.5 : hunger === 0 || fedPulse ? 4 : 3;
 
-  // Slow, calm breathing only — no bounce. Keeps the dragon feeling alive
-  // without the springy, jittery motion the previous build had.
+  // Mood-linked breath: fed = lively, starving = slow and shallow.
   const breath = useSharedValue(1);
   const float = useSharedValue(0);
+  const tilt = useSharedValue(0);
+  const feedGlow = useSharedValue(1);
 
   useEffect(() => {
     breath.value = withRepeat(
       withSequence(
-        withTiming(1.02, { duration: 3600, easing: Easing.inOut(Easing.sin) }),
-        withTiming(1, { duration: 3600, easing: Easing.inOut(Easing.sin) }),
+        withTiming(breathAmp, { duration: breathMs, easing: Easing.inOut(Easing.sin) }),
+        withTiming(1, { duration: breathMs, easing: Easing.inOut(Easing.sin) }),
       ),
       -1,
     );
     float.value = withRepeat(
       withSequence(
-        withTiming(-3, { duration: 3800, easing: Easing.inOut(Easing.sin) }),
-        withTiming(2, { duration: 3800, easing: Easing.inOut(Easing.sin) }),
+        withTiming(-floatAmp, { duration: breathMs + 200, easing: Easing.inOut(Easing.sin) }),
+        withTiming(floatAmp * 0.6, { duration: breathMs + 200, easing: Easing.inOut(Easing.sin) }),
       ),
       -1,
     );
-  }, [breath, float]);
+    // Peckish: slight look-aside; starving: almost still.
+    const tiltDeg = hunger === 1 ? 2.2 : hunger >= 3 ? 0.4 : 0;
+    tilt.value = withRepeat(
+      withSequence(
+        withTiming(tiltDeg, { duration: 4200, easing: Easing.inOut(Easing.sin) }),
+        withTiming(-tiltDeg, { duration: 4200, easing: Easing.inOut(Easing.sin) }),
+      ),
+      -1,
+    );
+  }, [breath, float, tilt, breathMs, breathAmp, floatAmp, hunger]);
+
+  useEffect(() => {
+    if (!fedPulse) {
+      feedGlow.value = 1;
+      return;
+    }
+    feedGlow.value = withSequence(
+      withTiming(2.4, { duration: 280, easing: Easing.out(Easing.cubic) }),
+      withTiming(1.6, { duration: 420, easing: Easing.inOut(Easing.sin) }),
+      withTiming(1, { duration: 900, easing: Easing.out(Easing.quad) }),
+    );
+  }, [fedPulse, feedGlow]);
+
+  const artOpacity = hungerArtOpacity(hunger);
+  const glowMul = hungerGlowMul(hunger);
+  const hungerChipColor =
+    hunger === 0 ? dragon.accent : hunger === 1 ? colors.flame : colors.warning;
 
   const characterStyle = useAnimatedStyle(() => ({
+    opacity: artOpacity,
     transform: [
       { translateY: float.value + micro.translateY - stretchComp },
-      { scaleX: breath.value * micro.scale },
-      { scaleY: breath.value * micro.scaleY },
+      { rotate: `${tilt.value}deg` },
+      { scaleX: breath.value * micro.scale * (fedPulse ? 1.04 : 1) },
+      { scaleY: breath.value * micro.scaleY * (fedPulse ? 1.04 : 1) },
     ],
   }));
 
-  const progressToNext = next
-    ? Math.min((level - stage.levelRequired) / (next.levelRequired - stage.levelRequired), 1)
-    : 1;
+  const glowStyle = useAnimatedStyle(() => ({
+    opacity: micro.glowOpacity * 0.35 * glowMul * feedGlow.value,
+  }));
+
   const levelsToEvo = next ? next.levelRequired - level : 0;
   const xpPct = xpProgressInLevel(progress.xp, level) * 100;
-
-  const evoLabel = next ? `Lv ${next.levelRequired} to evolve` : 'max form';
+  const sceneCaption = fedPulse ? null : hungerSceneCaption(hunger);
+  const evoLabel = next ? `${levelsToEvo} lv → evolve` : 'max form';
 
   return (
     <View
@@ -118,20 +172,50 @@ function CharacterCardInner({
         <View style={[styles.scene, { width: sceneW, height: sceneH }]}>
           <Animated.View style={[StyleSheet.absoluteFill, characterStyle]}>
             <Image source={stage.art} style={styles.sceneArt} resizeMode="cover" />
+            {hunger >= 1 ? (
+              <View
+                pointerEvents="none"
+                style={[
+                  StyleSheet.absoluteFill,
+                  styles.hungerVeil,
+                  {
+                    opacity: hunger === 1 ? 0.12 : hunger === 2 ? 0.28 : 0.42,
+                    backgroundColor: hunger >= 2 ? '#1A1420' : '#0B0D12',
+                  },
+                ]}
+              />
+            ) : null}
           </Animated.View>
-          <View
+          <Animated.View
             pointerEvents="none"
             style={[
               styles.sceneGlow,
+              glowStyle,
               {
                 backgroundColor: dragon.accent,
-                opacity: micro.glowOpacity * 0.35,
                 width: sceneW * 0.7,
                 height: sceneH * 0.5,
                 borderRadius: sceneW * 0.35,
               },
             ]}
           />
+          {sceneCaption ? (
+            <View style={styles.sceneCaptionWrap} pointerEvents="none">
+              <View
+                style={[
+                  styles.sceneCaption,
+                  {
+                    borderColor: `${hungerChipColor}66`,
+                    backgroundColor: 'rgba(8,10,14,0.72)',
+                  },
+                ]}>
+                <Ionicons name="restaurant-outline" size={9} color={hungerChipColor} />
+                <Text style={[styles.sceneCaptionText, { color: hungerChipColor }]}>
+                  {sceneCaption}
+                </Text>
+              </View>
+            </View>
+          ) : null}
           {/* Feather the rectangular art edges into the page background on all
               four sides so the dragon reads as a character living in its
               scene rather than a pasted-on image. */}
@@ -155,34 +239,71 @@ function CharacterCardInner({
           <Text style={[styles.name, { fontSize: nameSize, lineHeight: displayLH(nameSize) }]}>
             {dragonName}
           </Text>
-          <Text style={[styles.stageLabel, { color: dragon.accent }]}>
-            {dragonName} · Lv {level} · {stage.name}
+          <View style={styles.metaRow}>
+            <Text style={[styles.stageLabel, { color: dragon.accent }]}>
+              Lv {level} · {stage.name}
+            </Text>
+            {bondDays > 0 ? (
+              <>
+                <Text style={styles.metaDot}>·</Text>
+                <Text style={styles.bondLine}>cared {bondDays}d</Text>
+              </>
+            ) : null}
+          </View>
+          <View
+            style={[
+              styles.hungerChip,
+              {
+                borderColor: `${hungerChipColor}88`,
+                backgroundColor: `${hungerChipColor}14`,
+              },
+            ]}>
+            <Ionicons
+              name={
+                fedPulse || hunger === 0
+                  ? 'happy-outline'
+                  : hunger >= 2
+                    ? 'restaurant-outline'
+                    : 'time-outline'
+              }
+              size={10}
+              color={hungerChipColor}
+            />
+            <Text style={[styles.hungerChipText, { color: hungerChipColor }]}>
+              {fedPulse ? 'Just fed' : hungerLabel(hunger)}
+            </Text>
+          </View>
+          <Text style={styles.hungerHint}>
+            {fedPulse ? `Yum. That hit the spot.` : hungerVoice(hunger, trainerName)}
           </Text>
-          <Text style={styles.dragonScope}>This dragon only</Text>
+          {onFeedPress && hunger >= 1 ? (
+            <Pressable onPress={onFeedPress} style={styles.feedCta} hitSlop={8}>
+              <Ionicons name="restaurant" size={11} color={colors.onAccent} />
+              <Text style={styles.feedCtaText}>Feed {dragonName}</Text>
+            </Pressable>
+          ) : null}
         </View>
 
         <View style={styles.statsRow}>
           {streak > 0 ? (
             <View style={styles.streakBit}>
               <Ionicons name="flame" size={10} color={colors.flame} />
-              <Text style={[styles.statsLine, { color: colors.flame }]}>
-                {streak} day streak
-              </Text>
+              <Text style={[styles.statsLine, { color: colors.flame }]}>{streak}d streak</Text>
             </View>
           ) : (
-            <Text style={styles.statsLine}>0 day streak</Text>
+            <Text style={styles.statsLine}>no streak yet</Text>
           )}
           <Text style={styles.statsDot}>·</Text>
-          <Text style={styles.statsLine}>
-            {formatXp(xpIntoLevel)} / {formatXp(xpForNext)} XP
-          </Text>
-          <Text style={styles.statsDot}>·</Text>
-          <Text style={styles.statsLine}>
-            {next ? `${levelsToEvo} lv to evolve` : evoLabel}
-          </Text>
+          <Text style={styles.statsLine}>{evoLabel}</Text>
         </View>
 
         <View style={styles.bars}>
+          <View style={styles.barHeader}>
+            <Text style={styles.barLabel}>XP</Text>
+            <Text style={styles.barLabel}>
+              {formatXp(xpIntoLevel)} / {formatXp(xpForNext)}
+            </Text>
+          </View>
           <View style={styles.barTrack}>
             <View
               style={[
@@ -191,21 +312,7 @@ function CharacterCardInner({
               ]}
             />
           </View>
-          {next ? (
-            <View style={[styles.barTrack, { marginTop: 6 }]}>
-              <View
-                style={[
-                  styles.barFill,
-                  { width: `${progressToNext * 100}%`, backgroundColor: dragon.accent },
-                ]}
-              />
-            </View>
-          ) : null}
         </View>
-
-        {stage.tagline ? (
-          <Text style={styles.tagline}>{stage.tagline}</Text>
-        ) : null}
       </View>
 
       {showSwitcher ? (
@@ -299,9 +406,35 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
+  hungerVeil: {
+    backgroundColor: '#0B0D12',
+  },
+  sceneCaptionWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 10,
+    alignItems: 'center',
+    zIndex: 3,
+  },
+  sceneCaption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  sceneCaptionText: {
+    fontFamily: fonts.monoBold,
+    fontSize: 9,
+    letterSpacing: 0.8,
+    textTransform: 'lowercase',
+  },
   identity: {
     alignItems: 'center',
-    gap: 2,
+    gap: 3,
     marginTop: spacing.sm,
     zIndex: 1,
   },
@@ -310,18 +443,72 @@ const styles = StyleSheet.create({
     color: colors.text,
     letterSpacing: -0.6,
   },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+  },
+  metaDot: {
+    fontFamily: fonts.mono,
+    fontSize: 9,
+    color: colors.hairlineBright,
+  },
+  hungerChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 2,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  hungerChipText: {
+    fontFamily: fonts.monoBold,
+    fontSize: 9,
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+  },
   stageLabel: {
     fontFamily: fonts.mono,
     fontSize: 10,
     letterSpacing: 0.8,
     textTransform: 'capitalize',
   },
-  dragonScope: {
+  bondLine: {
     fontFamily: fonts.mono,
-    fontSize: 8,
-    letterSpacing: 0.6,
+    fontSize: 9,
+    letterSpacing: 0.5,
     color: colors.textTertiary,
+  },
+  hungerHint: {
+    fontFamily: fonts.mono,
+    fontSize: 10,
+    letterSpacing: 0.2,
+    color: colors.textSecondary,
     marginTop: 2,
+    textAlign: 'center',
+    paddingHorizontal: spacing.md,
+    fontStyle: 'italic',
+  },
+  feedCta: {
+    marginTop: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: colors.accent,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+  feedCtaText: {
+    fontFamily: fonts.monoBold,
+    fontSize: 10,
+    letterSpacing: 0.8,
+    color: colors.onAccent,
+    textTransform: 'uppercase',
   },
   statsRow: {
     flexDirection: 'row',
@@ -340,23 +527,36 @@ const styles = StyleSheet.create({
   },
   statsLine: {
     fontFamily: fonts.mono,
-    fontSize: 11,
+    fontSize: 10,
     color: colors.textTertiary,
     letterSpacing: 0.2,
   },
   statsDot: {
     fontFamily: fonts.mono,
-    fontSize: 11,
+    fontSize: 10,
     color: colors.hairlineBright,
   },
   bars: {
-    width: '72%',
-    maxWidth: 220,
+    width: '64%',
+    maxWidth: 200,
     marginTop: spacing.sm,
     zIndex: 1,
+    gap: 4,
+  },
+  barHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  barLabel: {
+    fontFamily: fonts.mono,
+    fontSize: 9,
+    letterSpacing: 0.6,
+    color: colors.textTertiary,
+    textTransform: 'uppercase',
   },
   barTrack: {
-    height: 2,
+    height: 3,
     backgroundColor: colors.ringTrack,
     borderRadius: radius.full,
     overflow: 'hidden',
@@ -364,16 +564,6 @@ const styles = StyleSheet.create({
   barFill: {
     height: '100%',
     borderRadius: radius.full,
-  },
-  tagline: {
-    fontFamily: fonts.body,
-    fontSize: 12,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    marginTop: spacing.sm,
-    maxWidth: 260,
-    lineHeight: 17,
-    zIndex: 1,
   },
   switcher: {
     width: '100%',

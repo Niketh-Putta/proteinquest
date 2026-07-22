@@ -39,6 +39,7 @@ import {
   isDisplayNameAvailable,
   isDisplayNameTakenError,
 } from '@/lib/display-name';
+import { trackEvent } from '@/lib/analytics';
 import { DRAGONS, buildDragonNames, normalizeDragonName } from '@/lib/character';
 import { useLayout, usePinnedFooterGap } from '@/lib/layout';
 import { useSession } from '@/lib/session';
@@ -373,11 +374,13 @@ export default function IntroScreen() {
           return;
         }
       }
+      const names = buildDragonNames(dragonNames);
       await saveProfile({
         intro_completed: true,
         ...(chosen ? { display_name: chosen } : {}),
-        dragon_names: buildDragonNames(dragonNames),
+        dragon_names: names,
       });
+      trackEvent('dragon_named', { named: Object.keys(names).length });
       router.replace('/onboarding');
     } catch (e: unknown) {
       if (__DEV__ && e) console.error('[intro] saveProfile failed:', e);

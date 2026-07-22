@@ -49,20 +49,21 @@ export const radius = {
 } as const;
 
 export const fonts = {
-  display: 'Sora_700Bold',
-  displayHeavy: 'Sora_800ExtraBold',
-  displayMedium: 'Sora_600SemiBold',
+  /** Primary UI sans — Outfit at medium weights (premium, not heavy). */
+  display: 'Outfit_500Medium',
+  displayHeavy: 'Outfit_600SemiBold',
+  displayMedium: 'Outfit_500Medium',
   mono: 'JetBrainsMono_500Medium',
   monoBold: 'JetBrainsMono_700Bold',
-  body: Platform.select({ ios: 'system-ui', default: 'sans-serif' })!,
+  body: 'Outfit_400Regular',
 } as const;
 
 /**
- * Sora ExtraBold/Bold clip glyph tops when lineHeight ≈ fontSize.
+ * Display titles need a little air so ascenders never clip.
  * Use this for display titles and hero numbers instead of 1:1 leading.
  */
 export function displayLH(fontSize: number): number {
-  return Math.round(fontSize * 1.2);
+  return Math.round(fontSize * 1.18);
 }
 
 export const type = {
@@ -84,12 +85,12 @@ export const type = {
     textTransform: 'uppercase' as const,
     color: colors.textTertiary,
   },
-  /** Screen titles (Rhythm, Today, etc.) — ExtraBold + negative tracking needs air. */
+  /** Screen titles (Today, League, etc.) — semi-bold with light tracking. */
   pageTitle: {
     fontFamily: fonts.displayHeavy,
-    fontSize: 38,
-    lineHeight: displayLH(38),
-    letterSpacing: -1.2,
+    fontSize: 36,
+    lineHeight: displayLH(36),
+    letterSpacing: -0.6,
     color: colors.text,
     ...(Platform.OS === 'android' ? { includeFontPadding: true } : null),
   },

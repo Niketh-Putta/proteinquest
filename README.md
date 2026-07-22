@@ -72,7 +72,7 @@ Anonymous Supabase session only — no sign-in UI. Sessions are created automati
 | App | React Native + Expo (SDK 56), expo-router, TypeScript |
 | Web deploy | Vercel (static export), https://proteinquest.vercel.app |
 | Backend | Supabase `csxdkvpvcasuknhnprxp` (Postgres + RLS, anonymous auth, Storage, Edge Functions) |
-| AI | OpenAI vision (`gpt-4o-mini`) via the `analyze-food` Edge Function — key stays server-side |
+| AI | OpenAI vision (`gpt-4o` primary, Gemini fallback) via the `analyze-food` Edge Function — key stays server-side |
 
 ## Project layout
 

@@ -27,7 +27,7 @@
 | Track | Status |
 |-------|--------|
 | Web | Live at https://proteinquest.vercel.app — redeploy with `npm run deploy:prod` after code changes |
-| AI scanning | Gemini 2.5 Flash on Supabase edge function (verify: `node demo/test-analyze.mjs`) |
+| AI scanning | OpenAI gpt-4o primary on Supabase edge function; Gemini fallback (verify: `node demo/test-analyze.mjs`) |
 | Android EAS build | Production build `a6331091` **FINISHED** today — download with `npx eas build:download --platform android --latest` |
 | iOS EAS build | Not confirmed finished — run `npx eas build --platform ios --profile production` |
 | Play Store listing | Copy in `store/play-store-listing.json`; 5 screenshots + feature graphic ready |
@@ -41,14 +41,16 @@
 
 ### 1. AI food scanning — **working**
 
-Server-side **Gemini 2.5 Flash** powers all users (no per-user API keys).
+Server-side **OpenAI gpt-4o** powers scans (no per-user API keys). Gemini is the fallback if OpenAI fails.
 
 ```bash
 cd ~/proteinlens
 node demo/test-analyze.mjs   # should return real food analysis
 ```
 
-OpenAI is an optional fallback if you set `OPENAI_API_KEY` in Supabase secrets.
+Set `OPENAI_API_KEY` in Supabase secrets (required for gpt-4o primary). Optional: `OPENAI_MODEL` (default `gpt-4o`), `GEMINI_API_KEY` for fallback.
+
+**Blocker:** if OpenAI returns `billing_not_active`, scans seamlessly fall back to Gemini (circuit skips OpenAI for 10m per isolate). Enable billing at https://platform.openai.com/settings/organization/billing so primary gpt-4o actually runs.
 
 ### 2. Anonymous auth — **working**
 

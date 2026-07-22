@@ -11,7 +11,7 @@ import {
   isPro,
   shouldOpenPaywallFromScanTap,
 } from '@/lib/paywall-gate';
-import { countTodayPhotoScans } from '@/lib/api';
+import { countLifetimeMeals, countTodayPhotoScans } from '@/lib/api';
 import { todayISODate } from '@/lib/protein';
 import { useSession } from '@/lib/session';
 import { colors, fonts, noTextCaret, pressableWeb, spacing } from '@/theme';
@@ -32,9 +32,9 @@ function ScanTabBar({ state, navigation }: TabBarProps) {
       return;
     }
     if (profile && !isPro(profile) && !isInHabitGracePeriod(profile)) {
-      countTodayPhotoScans()
-        .then((used) => {
-          if (shouldOpenPaywallFromScanTap(profile, used)) router.push('/paywall');
+      Promise.all([countTodayPhotoScans(), countLifetimeMeals()])
+        .then(([used, life]) => {
+          if (shouldOpenPaywallFromScanTap(profile, used, life)) router.push('/paywall');
           else router.push('/scan');
         })
         .catch(() => router.push('/scan'));

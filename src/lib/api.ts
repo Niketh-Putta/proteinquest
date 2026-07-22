@@ -32,11 +32,11 @@ function friendlyAnalysisError(message: string): string {
   if (/quota|RESOURCE_EXHAUSTED|high demand|overloaded|temporarily unavailable/i.test(message)) {
     return 'AI is busy right now. Try again in a moment.';
   }
-  if (/suspended|permission denied/i.test(message)) {
-    return 'AI key was revoked by Google. Create a new key in AI Studio and update Supabase GEMINI_API_KEY.';
+  if (/suspended|permission denied|invalid.?api.?key|incorrect.?api.?key/i.test(message)) {
+    return 'AI key is invalid or revoked. Update Supabase OPENAI_API_KEY (or GEMINI_API_KEY fallback).';
   }
   if (/billing|not active|postpay|payment/i.test(message)) {
-    return 'AI billing is not active. Enable billing in Google AI Studio (or OpenAI) and try again.';
+    return 'AI billing is not active. Enable billing for OpenAI (or Gemini fallback) and try again.';
   }
   if (/malformed|Unterminated string|Unexpected token|JSON/i.test(message)) {
     return 'Analysis hit a glitch. Tap scan and try again.';
@@ -195,6 +195,29 @@ export async function fetchLogsForDate(date: string): Promise<ProteinLog[]> {
     .order('created_at', { ascending: false });
   if (error) throw error;
   return (data ?? []) as ProteinLog[];
+}
+
+/** Most recent meal log timestamp (for dragon hunger). */
+export async function fetchLatestMealAt(): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('protein_logs')
+    .select('created_at')
+    .in('source', ['photo', 'manual'])
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return data?.created_at ?? null;
+}
+
+/** Lifetime meal logs (photo + manual) for grandfathering / paywall value checks. */
+export async function countLifetimeMeals(): Promise<number> {
+  const { count, error } = await supabase
+    .from('protein_logs')
+    .select('*', { count: 'exact', head: true })
+    .in('source', ['photo', 'manual']);
+  if (error) throw error;
+  return count ?? 0;
 }
 
 /** Records one AI analysis for free-tier daily scan limits (not a logged meal). */

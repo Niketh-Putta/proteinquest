@@ -1,5 +1,6 @@
 import type { ImageSourcePropType } from 'react-native';
 
+import { canUseStreakFreeze, isoWeekKey } from './retention';
 import type { DragonId, DragonProgress, Profile } from './types';
 
 export interface DragonStage {
@@ -493,13 +494,27 @@ export function nextStage(goalsHit: number, dragonId: DragonId): DragonStage | n
   return dragonById(dragonId).stages.find((s) => s.goalsRequired > goalsHit) ?? null;
 }
 
+function dayBeforeISO(iso: string): string {
+  const d = new Date(`${iso}T12:00:00`);
+  d.setDate(d.getDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
 export function effectiveStreak(
   progress: DragonProgress,
   todayISO: string,
   yesterdayISO: string,
+  opts?: { freezeKeepsAlive?: boolean },
 ): number {
   if (!progress.last_goal_date) return 0;
   if (progress.last_goal_date === todayISO || progress.last_goal_date === yesterdayISO) {
+    return progress.streak ?? 0;
+  }
+  // Pro streak freeze: still show streak if last goal was the day before yesterday.
+  if (
+    opts?.freezeKeepsAlive &&
+    progress.last_goal_date === dayBeforeISO(yesterdayISO)
+  ) {
     return progress.streak ?? 0;
   }
   return 0;
@@ -522,6 +537,7 @@ export function applyLogToCharacter(params: {
   levelBefore: number;
   levelAfter: number;
   dragonId: DragonId;
+  streakFreezeUsed: boolean;
 } {
   const { profile, todayTotalBefore, loggedProtein, todayISO, yesterdayISO } = params;
   const dragonId = todayDragonId(profile, todayISO) ?? activeDragonId(profile);
@@ -534,6 +550,8 @@ export function applyLogToCharacter(params: {
   let bestStreak = progress.best_streak;
   let goalsHit = progress.goals_hit;
   let lastGoalDate = progress.last_goal_date;
+  let streakFreezeUsed = false;
+  let retention = { ...(profile.retention ?? {}) };
 
   const levelBefore = effectiveLevel(progress);
   const stageBefore = stageForXpLevel(levelBefore, dragonId).index;
@@ -544,7 +562,16 @@ export function applyLogToCharacter(params: {
   if (goalJustHit) {
     xp += XP_GOAL_BONUS;
     goalsHit += 1;
-    streak = lastGoalDate === yesterdayISO ? streak + 1 : 1;
+    const dayBeforeYesterday = dayBeforeISO(yesterdayISO);
+    if (lastGoalDate === yesterdayISO) {
+      streak = streak + 1;
+    } else if (lastGoalDate === dayBeforeYesterday && canUseStreakFreeze(profile)) {
+      streak = streak + 1;
+      streakFreezeUsed = true;
+      retention = { ...retention, streak_freeze_week: isoWeekKey() };
+    } else {
+      streak = 1;
+    }
     bestStreak = Math.max(bestStreak, streak);
     lastGoalDate = todayISO;
   }
@@ -572,6 +599,7 @@ export function applyLogToCharacter(params: {
       best_streak: updatedProgress.best_streak,
       goals_hit: updatedProgress.goals_hit,
       last_goal_date: updatedProgress.last_goal_date,
+      ...(streakFreezeUsed ? { retention } : {}),
     },
     goalJustHit,
     evolved,
@@ -582,6 +610,7 @@ export function applyLogToCharacter(params: {
     levelBefore,
     levelAfter,
     dragonId,
+    streakFreezeUsed,
   };
 }
 

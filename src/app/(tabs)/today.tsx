@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
-import { router, useFocusEffect } from 'expo-router';
-import React, { useCallback, useState } from 'react';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   FlatList,
   Platform,
@@ -15,15 +15,34 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { CharacterCard } from '@/components/CharacterCard';
 import { DailyDragonPicker } from '@/components/DailyDragonPicker';
+import { FeedQuest } from '@/components/FeedQuest';
+import { FeedToast } from '@/components/FeedToast';
 import { PageCanvas } from '@/components/PageCanvas';
 import { ProgressRing } from '@/components/ProgressRing';
 import { TrainerRankCard } from '@/components/TrainerRankCard';
-import { deleteLog, fetchLogsForDate, countTodayPhotoScans } from '@/lib/api';
-import { applyDeleteLogToCharacter, displayDragonName, dragonById, isDailyDragonLockedForToday } from '@/lib/character';
+import { trackEvent } from '@/lib/analytics';
+import {
+  countLifetimeMeals,
+  countTodayPhotoScans,
+  deleteLog,
+  fetchLatestMealAt,
+  fetchLogsForDate,
+} from '@/lib/api';
+import {
+  applyDeleteLogToCharacter,
+  displayDragonId,
+  displayDragonName,
+  dragonById,
+  isDailyDragonLockedForToday,
+} from '@/lib/character';
 import { confirmDestructive } from '@/lib/confirm';
+import { hungerFromLastMealAt, hungerVoice } from '@/lib/dragon-hunger';
 import { flexFill, flexScroll, useLayout, useTabBarScrollInset } from '@/lib/layout';
+import { needsFirstScan } from '@/lib/first-scan';
+import { scheduleStreakAtRiskNudge } from '@/lib/meal-reminders';
 import { isPro, isInHabitGracePeriod, remainingFreeScans } from '@/lib/paywall-gate';
 import { todayISODate } from '@/lib/protein';
+import { getRetention } from '@/lib/retention';
 import { useSession } from '@/lib/session';
 import type { ProteinLog } from '@/lib/types';
 import { colors, displayLH, fonts, pressableWeb, spacing, type } from '@/theme';
@@ -41,8 +60,21 @@ export default function TodayScreen() {
   } = useLayout();
   const tabBarScrollInset = useTabBarScrollInset(isNarrow);
   const insets = useSafeAreaInsets();
+  const { fed, protein, loot, freeze, food } = useLocalSearchParams<{
+    fed?: string;
+    protein?: string;
+    loot?: string;
+    freeze?: string;
+    food?: string;
+  }>();
   const { profile, saveProfile } = useSession();
   const [logs, setLogs] = useState<ProteinLog[]>([]);
+  const [lastMealAt, setLastMealAt] = useState<string | null>(null);
+  const [lifetimeMeals, setLifetimeMeals] = useState(0);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const [fedPulse, setFedPulse] = useState(false);
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const starveTrackedDay = useRef<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [scansLeft, setScansLeft] = useState<number | null>(null);
@@ -53,15 +85,27 @@ export default function TodayScreen() {
     try {
       if (isPro(profile)) {
         setScansLeft(null);
-        setLogs(await fetchLogsForDate(todayISODate()));
-      } else {
-        const [logsData, used] = await Promise.all([
+        const [logsData, latest, life] = await Promise.all([
           fetchLogsForDate(todayISODate()),
-          countTodayPhotoScans(),
+          fetchLatestMealAt(),
+          countLifetimeMeals(),
         ]);
         setLogs(logsData);
-        setScansLeft(remainingFreeScans(used, profile));
+        setLastMealAt(latest);
+        setLifetimeMeals(life);
+      } else {
+        const [logsData, used, latest, life] = await Promise.all([
+          fetchLogsForDate(todayISODate()),
+          countTodayPhotoScans(),
+          fetchLatestMealAt(),
+          countLifetimeMeals(),
+        ]);
+        setLogs(logsData);
+        setScansLeft(remainingFreeScans(used, profile, life));
+        setLastMealAt(latest);
+        setLifetimeMeals(life);
       }
+      setNowMs(Date.now());
     } catch (e) {
       console.error('Failed to load logs:', e);
     }
@@ -69,9 +113,63 @@ export default function TodayScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      load();
-    }, [load]),
+      let active = true;
+      void needsFirstScan().then((needs) => {
+        if (active && needs) router.replace('/scan');
+      });
+      void load().then(() => {
+        if (!active || !profile) return;
+        const name = displayDragonName(profile, displayDragonId(profile, todayISODate()));
+        // Schedule after load — cancel if meals already logged today.
+        void fetchLogsForDate(todayISODate()).then((dayLogs) => {
+          scheduleStreakAtRiskNudge(name, dayLogs.length > 0).catch(() => {});
+          if (dayLogs.length === 0) trackEvent('streak_at_risk_shown', { via: 'schedule' });
+        });
+      });
+      trackEvent('app_open', {});
+      const tick = setInterval(() => setNowMs(Date.now()), 60_000);
+      return () => {
+        active = false;
+        clearInterval(tick);
+      };
+    }, [load, profile?.id]),
   );
+
+  useEffect(() => {
+    if (fed !== '1') return;
+    setFedPulse(true);
+    setLastMealAt(new Date().toISOString());
+    const name = hungerDragonNameSafe();
+    const g = protein ? Number(protein) : 0;
+    const meal = typeof food === 'string' && food.trim() ? food.trim().slice(0, 36) : null;
+    const loved = meal ? `${name} loved the ${meal}` : `${name} loved that`;
+    const parts = [
+      loved,
+      g > 0 ? `+${Math.round(g)}g` : null,
+      loot === '1' ? 'Egg shard!' : null,
+      freeze === '1' ? 'Streak freeze' : null,
+    ].filter(Boolean);
+    setToastMsg(parts.join(' · '));
+    trackEvent('fed_celebration_shown', {
+      protein_g: g || undefined,
+      loot: loot === '1',
+      freeze: freeze === '1',
+    });
+    router.setParams({
+      fed: undefined,
+      protein: undefined,
+      loot: undefined,
+      freeze: undefined,
+      food: undefined,
+    });
+    const t = setTimeout(() => setFedPulse(false), 2400);
+    return () => clearTimeout(t);
+  }, [fed, protein, loot, freeze, food]);
+
+  function hungerDragonNameSafe() {
+    if (!profile) return 'Dragon';
+    return displayDragonName(profile, displayDragonId(profile, todayISODate()));
+  }
 
   const consumed = logs.reduce((sum, l) => sum + Number(l.protein_g), 0);
   const goal = profile?.protein_goal_g ?? 0;
@@ -84,6 +182,23 @@ export default function TodayScreen() {
     profile && dragonLocked
       ? displayDragonName(profile, profile.daily_dragon_id!)
       : null;
+  const hunger = fedPulse ? 0 : hungerFromLastMealAt(lastMealAt, nowMs);
+  const hungerDragonName = profile
+    ? displayDragonName(profile, displayDragonId(profile, todayISO))
+    : 'Your dragon';
+  const shards = getRetention(profile).egg_shards ?? 0;
+
+  useEffect(() => {
+    if (hunger < 3 || !profile) return;
+    if (starveTrackedDay.current === todayISO) return;
+    starveTrackedDay.current = todayISO;
+    trackEvent('starve_state_viewed', { dragon: hungerDragonName });
+  }, [hunger, profile?.id, todayISO, hungerDragonName]);
+
+  const openFeed = () => {
+    trackEvent('feed_cta_tapped', { source: 'today' });
+    router.push('/scan');
+  };
 
   if (profile && !dragonLocked) {
     return (
@@ -236,6 +351,10 @@ export default function TodayScreen() {
               <Text style={styles.proteinMeta}>set your goal in settings</Text>
             ) : hitGoal ? (
               <Text style={styles.proteinMeta}>goal complete - your dragon is fed</Text>
+            ) : hunger >= 2 ? (
+              <Text style={styles.proteinMeta}>
+                {hungerVoice(hunger, profile?.display_name)}
+              </Text>
             ) : null}
           </View>
 
@@ -243,10 +362,28 @@ export default function TodayScreen() {
             <Animated.View
               entering={FadeInDown.delay(100).duration(440)}
               style={heroLayout === 'split' ? { flex: 1 } : undefined}>
-              <CharacterCard profile={profile} dragonLocked />
+              <CharacterCard
+                profile={profile}
+                dragonLocked
+                hunger={hunger}
+                fedPulse={fedPulse}
+                onFeedPress={openFeed}
+              />
             </Animated.View>
           ) : null}
         </View>
+
+        <FeedQuest
+          dragonName={hungerDragonName}
+          mealsToday={logs.length}
+          consumed={consumed}
+          goal={goal}
+        />
+        {shards > 0 ? (
+          <Text style={styles.proteinMeta}>
+            {shards} egg shard{shards === 1 ? '' : 's'} collected
+          </Text>
+        ) : null}
 
         <View style={styles.rule} />
 
@@ -254,10 +391,23 @@ export default function TodayScreen() {
           <Text style={styles.sectionTitle}>LOGGED TODAY</Text>
         ) : (
           <View style={styles.empty}>
-            <Text style={styles.emptyTitle}>Your dragon is waiting</Text>
-            <Text style={styles.emptyText}>
-              Scan your first meal - every gram of protein brings you closer.
+            <Text style={styles.emptyTitle}>
+              {hunger >= 2 ? `${hungerDragonName} is starving` : 'Your dragon is waiting'}
             </Text>
+            <Text style={styles.emptyText}>
+              {hunger >= 2
+                ? 'Scan a meal to feed them. They dim until you do.'
+                : 'Scan your first meal - every gram of protein brings you closer.'}
+            </Text>
+            <Pressable
+              onPress={openFeed}
+              style={({ pressed }) => [
+                styles.feedEmptyCta,
+                pressableWeb,
+                pressed && { opacity: 0.85 },
+              ]}>
+              <Text style={styles.feedEmptyCtaText}>Feed {hungerDragonName} now</Text>
+            </Pressable>
           </View>
         )}
       </View>
@@ -325,6 +475,7 @@ export default function TodayScreen() {
   return (
     <PageCanvas>
       <SafeAreaView style={styles.safe} edges={['top']}>
+        <FeedToast visible={!!toastMsg} message={toastMsg ?? ''} onHide={() => setToastMsg(null)} />
         {heroLayout === 'sidebar' ? (
           <View
             style={[
@@ -346,7 +497,13 @@ export default function TodayScreen() {
               />
               {profile ? (
                 <View style={[styles.desktopAside, { width: asideWidth }]}>
-                  <CharacterCard profile={profile} dragonLocked />
+                  <CharacterCard
+                    profile={profile}
+                    dragonLocked
+                    hunger={hunger}
+                    fedPulse={fedPulse}
+                    onFeedPress={openFeed}
+                  />
                 </View>
               ) : null}
             </View>
@@ -521,6 +678,21 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.textSecondary,
     lineHeight: 19,
+  },
+  feedEmptyCta: {
+    marginTop: spacing.md,
+    alignSelf: 'flex-start',
+    backgroundColor: colors.accent,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+  },
+  feedEmptyCtaText: {
+    fontFamily: fonts.monoBold,
+    fontSize: 11,
+    letterSpacing: 0.8,
+    color: colors.onAccent,
+    textTransform: 'uppercase',
   },
   logRow: {
     flexDirection: 'row',

@@ -22,14 +22,25 @@ import Svg, {
   Stop,
 } from 'react-native-svg';
 import { PageCanvas } from '@/components/PageCanvas';
+import { trackEvent } from '@/lib/analytics';
 import { confirmDestructive } from '@/lib/confirm';
 import {
   displayDragonId,
+  displayDragonName,
   displayProgress,
   effectiveLevel,
   stageForXpLevel,
 } from '@/lib/character';
+import {
+  createDuel,
+  dragonShareCardMessage,
+  duelDaysLeft,
+  duelShareMessage,
+  fetchActiveDuels,
+  refreshDuelTotals,
+} from '@/lib/duels';
 import { flexFill, flexScroll, useLayout, useTabBarScrollInset } from '@/lib/layout';
+import { fetchLogsForDate } from '@/lib/api';
 import {
   buildLeaderboard,
   fetchLeaderboard,
@@ -41,7 +52,8 @@ import {
 } from '@/lib/leaderboard';
 import { todayISODate } from '@/lib/protein';
 import { useSession } from '@/lib/session';
-import { SITE_URL } from '@/lib/site';
+import { publicSiteOrigin } from '@/lib/site';
+import type { ProteinDuel } from '@/lib/types';
 import { colors, displayLH, fonts, noTextCaret, pressableWeb, radius, spacing } from '@/theme';
 
 const AVATAR_HUES = ['#FF7A59', '#9B8CFF', '#5BC8F5', '#5AD67A', '#FFB454', '#FF6B7A'];
@@ -315,11 +327,22 @@ export default function LeagueTab() {
   const [inviteStatus, setInviteStatus] = useState<string | null>(null);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
+  const [duels, setDuels] = useState<ProteinDuel[]>([]);
+  const [duelBusy, setDuelBusy] = useState(false);
 
   const reloadLeaderboard = useCallback(() => {
     setLoading(true);
-    return fetchLeaderboard()
-      .then(setRows)
+    return Promise.all([
+      fetchLeaderboard().then(setRows),
+      fetchActiveDuels()
+        .then(async (list) => {
+          const refreshed = await Promise.all(
+            list.map((d) => refreshDuelTotals(d.id).catch(() => d)),
+          );
+          setDuels(refreshed);
+        })
+        .catch(() => setDuels([])),
+    ])
       .catch((e) => {
         if (__DEV__) console.warn('[friends] leaderboard failed:', e);
         setRows([]);
@@ -329,25 +352,93 @@ export default function LeagueTab() {
 
   useFocusEffect(
     useCallback(() => {
-      let cancelled = false;
-      setLoading(true);
-      fetchLeaderboard()
-        .then((next) => {
-          if (!cancelled) setRows(next);
-        })
-        .catch((e) => {
-          if (__DEV__) console.warn('[friends] leaderboard failed:', e);
-          if (!cancelled) setRows([]);
-        })
-        .finally(() => {
-          if (!cancelled) setLoading(false);
-        });
-
-      return () => {
-        cancelled = true;
-      };
-    }, []),
+      reloadLeaderboard();
+    }, [reloadLeaderboard]),
   );
+
+  async function challengeFriend(friendId: string) {
+    if (duelBusy) return;
+    setDuelBusy(true);
+    try {
+      const duel = await createDuel(friendId);
+      trackEvent('duel_created', { duel_id: duel.id });
+      await reloadLeaderboard();
+      setInviteStatus('7-day protein duel started. Scan to climb.');
+      setTimeout(() => setInviteStatus(null), 2800);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Could not start duel';
+      setInviteStatus(msg);
+      setTimeout(() => setInviteStatus(null), 2800);
+    } finally {
+      setDuelBusy(false);
+    }
+  }
+
+  async function shareDragonCard() {
+    if (!profile) return;
+    const origin = publicSiteOrigin();
+    const url = inviteUrl(profile, origin);
+    const todayISO = todayISODate();
+    const dragonName = displayDragonName(profile, displayDragonId(profile, todayISO));
+    let proteinToday = 0;
+    try {
+      const dayLogs = await fetchLogsForDate(todayISO);
+      proteinToday = dayLogs.reduce((sum, log) => sum + Number(log.protein_g), 0);
+    } catch {
+      /* fall back to 0 if today's logs fail to load */
+    }
+    const message = dragonShareCardMessage({
+      dragonName,
+      proteinToday,
+      goal: profile.protein_goal_g ?? 0,
+      inviteUrl: url,
+    });
+    trackEvent('duel_share', { kind: 'dragon_card' });
+    try {
+      if (Platform.OS === 'web' && typeof navigator !== 'undefined') {
+        const nav = navigator as unknown as {
+          share?: (d: { title: string; text: string }) => Promise<void>;
+          clipboard?: { writeText?: (t: string) => Promise<void> };
+        };
+        setInviteLink(message);
+        if (nav.clipboard?.writeText) await nav.clipboard.writeText(message);
+        if (nav.share) await nav.share({ title: 'ProteinQuest', text: message }).catch(() => {});
+        setInviteStatus('Share card copied.');
+      } else {
+        await Share.share({ message });
+      }
+    } catch {
+      /* cancelled */
+    }
+  }
+
+  async function shareDuel(duel: ProteinDuel) {
+    const uid = session?.user.id;
+    if (!uid || !profile) return;
+    const mine =
+      uid === duel.challenger_id ? Number(duel.challenger_protein) : Number(duel.opponent_protein);
+    const theirs =
+      uid === duel.challenger_id ? Number(duel.opponent_protein) : Number(duel.challenger_protein);
+    const origin = publicSiteOrigin();
+    const message = duelShareMessage({
+      myName: profile.display_name?.trim() || 'I',
+      myProtein: mine,
+      theirProtein: theirs,
+      daysLeft: duelDaysLeft(duel.end_date),
+      inviteUrl: inviteUrl(profile, origin),
+    });
+    trackEvent('duel_share', { kind: 'duel', duel_id: duel.id });
+    try {
+      if (Platform.OS === 'web') {
+        setInviteLink(message);
+        setInviteStatus('Duel status ready to share.');
+      } else {
+        await Share.share({ message });
+      }
+    } catch {
+      /* cancelled */
+    }
+  }
 
   function confirmRemove(entry: LeaderboardEntry) {
     if (!canRemove(entry)) return;
@@ -378,10 +469,7 @@ export default function LeagueTab() {
     : undefined;
 
   async function invite() {
-    const origin =
-      Platform.OS === 'web' && typeof window !== 'undefined'
-        ? window.location.origin
-        : SITE_URL;
+    const origin = publicSiteOrigin();
     const url = inviteUrl(profile, origin);
     if (!url) {
       setInviteStatus('Preparing your invite link. Try again in a moment.');
@@ -450,6 +538,19 @@ export default function LeagueTab() {
               </Text>
             </View>
             <Pressable
+              onPress={shareDragonCard}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Share dragon card"
+              style={({ pressed }) => [
+                styles.invite,
+                pressableWeb,
+                { marginRight: 8 },
+                pressed && { opacity: 0.7 },
+              ]}>
+              <Ionicons name="share-outline" size={18} color={colors.text} />
+            </Pressable>
+            <Pressable
               onPress={invite}
               hitSlop={8}
               accessibilityRole="button"
@@ -492,6 +593,34 @@ export default function LeagueTab() {
             </Pressable>
           ) : null}
 
+          {duels.length > 0 ? (
+            <View style={styles.duelBox}>
+              <Text style={styles.duelTitle}>ACTIVE DUELS</Text>
+              {duels.map((d) => {
+                const uid = session?.user.id;
+                const mine =
+                  uid === d.challenger_id
+                    ? Number(d.challenger_protein)
+                    : Number(d.opponent_protein);
+                const theirs =
+                  uid === d.challenger_id
+                    ? Number(d.opponent_protein)
+                    : Number(d.challenger_protein);
+                return (
+                  <Pressable
+                    key={d.id}
+                    onPress={() => shareDuel(d)}
+                    style={({ pressed }) => [styles.duelRow, pressableWeb, pressed && { opacity: 0.8 }]}>
+                    <Text style={styles.duelScore}>
+                      {Math.round(mine)}g vs {Math.round(theirs)}g
+                    </Text>
+                    <Text style={styles.duelMeta}>{duelDaysLeft(d.end_date)}d left · tap to share</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          ) : null}
+
           <View style={styles.podium}>
             <PodiumColumn entry={podium[1]} place={2} youArt={youDragonArt} onRemove={confirmRemove} />
             <PodiumColumn entry={podium[0]} place={1} youArt={youDragonArt} onRemove={confirmRemove} />
@@ -522,6 +651,17 @@ export default function LeagueTab() {
                 <Text style={styles.rowXp}>
                   {formatXp(entry.xp)} <Text style={styles.rowXpUnit}>XP</Text>
                 </Text>
+                {canRemove(entry) ? (
+                  <Pressable
+                    onPress={() => challengeFriend(entry.id)}
+                    disabled={duelBusy}
+                    hitSlop={8}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Duel ${entry.displayName}`}
+                    style={({ pressed }) => [styles.rowDuel, pressableWeb, pressed && { opacity: 0.7 }]}>
+                    <Ionicons name="flash" size={14} color={colors.accent} />
+                  </Pressable>
+                ) : null}
                 {canRemove(entry) ? (
                   <Pressable
                     onPress={() => confirmRemove(entry)}
@@ -870,6 +1010,35 @@ const styles = StyleSheet.create({
     fontSize: 9,
     letterSpacing: 0.5,
     color: RED.bright,
+  },
+  duelBox: {
+    marginBottom: spacing.lg,
+    padding: spacing.md,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,122,89,0.35)',
+    gap: 8,
+  },
+  duelTitle: {
+    fontFamily: fonts.monoBold,
+    fontSize: 10,
+    letterSpacing: 1.4,
+    color: colors.textTertiary,
+  },
+  duelRow: { gap: 2, paddingVertical: 4 },
+  duelScore: {
+    fontFamily: fonts.displayMedium,
+    fontSize: 15,
+    color: colors.text,
+  },
+  duelMeta: {
+    fontFamily: fonts.mono,
+    fontSize: 10,
+    color: colors.textTertiary,
+  },
+  rowDuel: {
+    padding: 6,
+    marginRight: 2,
   },
   rowRemove: {
     width: 28,

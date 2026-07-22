@@ -1,9 +1,10 @@
 {
   "name": "proteinquest",
   "main": "expo-router/entry",
-  "version": "1.0.16",
+  "version": "1.0.17",
   "dependencies": {
     "@expo-google-fonts/jetbrains-mono": "^0.4.1",
+    "@expo-google-fonts/outfit": "^0.4.3",
     "@expo-google-fonts/sora": "^0.4.2",
     "@expo/ui": "~56.0.20",
     "@expo/vector-icons": "^15.0.2",
