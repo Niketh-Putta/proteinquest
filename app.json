@@ -2,7 +2,7 @@
   "expo": {
     "name": "ProteinQuest",
     "slug": "proteinquest",
-    "version": "1.0.17",
+    "version": "1.0.19",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "proteinquest",
@@ -10,7 +10,7 @@
     "backgroundColor": "#0C0B10",
     "ios": {
       "bundleIdentifier": "com.proteinquest.app",
-      "buildNumber": "29",
+      "buildNumber": "36",
       "supportsTablet": true,
       "entitlements": {
         "aps-environment": "production"
@@ -19,7 +19,8 @@
         "NSCameraUsageDescription": "ProteinQuest uses the camera to photograph your meals and estimate their protein content.",
         "NSPhotoLibraryUsageDescription": "ProteinQuest uses your photo library so you can analyze meals you've already photographed.",
         "NSUserNotificationsUsageDescription": "ProteinQuest sends friendly reminders to log meals and feed your dragon.",
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "LSMinimumSystemVersion": "12.0"
       }
     },
     "android": {
@@ -35,7 +36,7 @@
         "android.permission.RECORD_AUDIO",
         "android.permission.POST_NOTIFICATIONS"
       ],
-      "versionCode": 100
+      "versionCode": 108
     },
     "web": {
       "output": "single",

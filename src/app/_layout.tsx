@@ -78,6 +78,10 @@ export default function RootLayout() {
                   options={{ presentation: 'fullScreenModal', animation: 'slide_from_bottom' }}
                 />
                 <Stack.Screen
+                  name="meal/[id]"
+                  options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+                />
+                <Stack.Screen
                   name="settings"
                   options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
                 />

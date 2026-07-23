@@ -141,6 +141,56 @@ export async function uploadFoodPhoto(userId: string, imageBase64: string): Prom
   }
 }
 
+/** Signed URL for a private food-photos object (null if missing). */
+export async function getFoodPhotoUrl(imagePath: string | null | undefined): Promise<string | null> {
+  if (!imagePath) return null;
+  try {
+    const { data, error } = await supabase.storage
+      .from('food-photos')
+      .createSignedUrl(imagePath, 60 * 60);
+    if (error || !data?.signedUrl) return null;
+    return data.signedUrl;
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchLogById(id: string): Promise<ProteinLog | null> {
+  const { data, error } = await supabase
+    .from('protein_logs')
+    .select('*')
+    .eq('id', id)
+    .in('source', ['photo', 'manual'])
+    .maybeSingle();
+  if (error) throw error;
+  return (data as ProteinLog | null) ?? null;
+}
+
+export async function updateLog(
+  id: string,
+  updates: {
+    foodName: string;
+    proteinG: number;
+    calories: number | null;
+    items?: FoodItem[];
+  },
+): Promise<ProteinLog> {
+  const { data, error } = await supabase
+    .from('protein_logs')
+    .update({
+      food_name: updates.foodName,
+      protein_g: updates.proteinG,
+      calories: updates.calories,
+      ...(updates.items ? { items: updates.items } : {}),
+    })
+    .eq('id', id)
+    .in('source', ['photo', 'manual'])
+    .select()
+    .single();
+  if (error) throw error;
+  return data as ProteinLog;
+}
+
 /**
  * Uploads a square avatar to the public `avatars` bucket under the user's own
  * folder and returns a cache-busted public URL. Returns null on failure so the

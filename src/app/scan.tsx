@@ -164,15 +164,15 @@ export default function ScanScreen() {
   const headerTop = Math.max(insets.top, 44) + spacing.md;
   const headerChrome = headerTop + 44 + spacing.sm;
   const noteChrome = 48 + spacing.sm;
-  const controlsChrome =
-    64 + spacing.lg + Math.max(insets.bottom, spacing.md) + noteChrome;
+  const controlsChrome = 64 + spacing.lg + Math.max(insets.bottom, spacing.md);
   const viewfinderSize = Math.min(
     cameraViewport.width - 56,
-    cameraViewport.height - headerChrome - controlsChrome - spacing.lg * 2,
+    cameraViewport.height - headerChrome - noteChrome - controlsChrome - spacing.lg * 2,
   );
   const viewfinderTop =
     headerChrome +
-    (cameraViewport.height - headerChrome - controlsChrome - viewfinderSize) / 2;
+    noteChrome +
+    (cameraViewport.height - headerChrome - noteChrome - controlsChrome - viewfinderSize) / 2;
   const viewfinderLeft = (cameraViewport.width - viewfinderSize) / 2;
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
@@ -687,7 +687,7 @@ export default function ScanScreen() {
             style={[
               styles.noteWrap,
               {
-                top: viewfinderTop + viewfinderSize + spacing.sm,
+                top: viewfinderTop - noteChrome,
                 left: viewfinderLeft,
                 width: viewfinderSize,
               },

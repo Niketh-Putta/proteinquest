@@ -431,7 +431,18 @@ export default function TodayScreen() {
     ),
     renderItem: ({ item, index }: { item: ProteinLog; index: number }) => (
       <Animated.View entering={FadeInDown.delay(60 * Math.min(index, 5)).duration(380)}>
-        <View style={[styles.logRow, index > 0 && styles.logRowBorder]}>
+        <Pressable
+          onPress={() =>
+            router.push({ pathname: '/meal/[id]', params: { id: item.id } } as never)
+          }
+          accessibilityRole="button"
+          accessibilityLabel={`Open analysis for ${item.food_name}`}
+          style={({ pressed }) => [
+            styles.logRow,
+            index > 0 && styles.logRowBorder,
+            pressableWeb,
+            pressed && { opacity: 0.82 },
+          ]}>
           <View style={{ flex: 1 }}>
             <Text style={styles.logName} numberOfLines={1}>
               {item.food_name}
@@ -451,7 +462,10 @@ export default function TodayScreen() {
             ) : null}
           </Text>
           <Pressable
-            onPress={() => confirmDelete(item)}
+            onPress={(e) => {
+              e.stopPropagation?.();
+              confirmDelete(item);
+            }}
             disabled={deletingId === item.id}
             accessibilityLabel="Delete meal"
             accessibilityRole="button"
@@ -467,7 +481,7 @@ export default function TodayScreen() {
               color={colors.textTertiary}
             />
           </Pressable>
-        </View>
+        </Pressable>
       </Animated.View>
     ),
   };
