@@ -5,6 +5,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { router, useFocusEffect } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
@@ -162,7 +163,9 @@ export default function ScanScreen() {
   /** Keep chrome below Dynamic Island / front camera on all phones. */
   const headerTop = Math.max(insets.top, 44) + spacing.md;
   const headerChrome = headerTop + 44 + spacing.sm;
-  const controlsChrome = 64 + spacing.lg + Math.max(insets.bottom, spacing.md);
+  const noteChrome = 48 + spacing.sm;
+  const controlsChrome =
+    64 + spacing.lg + Math.max(insets.bottom, spacing.md) + noteChrome;
   const viewfinderSize = Math.min(
     cameraViewport.width - 56,
     cameraViewport.height - headerChrome - controlsChrome - spacing.lg * 2,
@@ -189,6 +192,7 @@ export default function ScanScreen() {
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [proteinOverride, setProteinOverride] = useState('');
   const [calorieOverride, setCalorieOverride] = useState('');
+  const [scanNote, setScanNote] = useState('');
   const [analyzeStep, setAnalyzeStep] = useState(0);
   const [saving, setSaving] = useState(false);
   const [scansLeft, setScansLeft] = useState<number | null>(null);
@@ -419,7 +423,7 @@ export default function ScanScreen() {
       }
       setImageBase64(square.base64);
 
-      const res = await analyzeFoodPhoto(square.base64);
+      const res = await analyzeFoodPhoto(square.base64, 'image/jpeg', scanNote);
       if (!res.is_food) {
         showError(res.notes || "This doesn't look like food. Point the camera at your meal.");
         return;
@@ -633,7 +637,10 @@ export default function ScanScreen() {
       ) : null}
 
       {phase === 'camera' && !demoAutoScan && (
-        <View style={styles.cameraWrap} onLayout={onCameraLayout}>
+        <KeyboardAvoidingView
+          style={styles.cameraWrap}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          onLayout={onCameraLayout}>
           {renderHeader(true)}
           {hasCameraPermission ? (
             <CameraView
@@ -674,6 +681,30 @@ export default function ScanScreen() {
             pointerEvents="none"
             style={[StyleSheet.absoluteFill, styles.flash, flashStyle]}
           />
+
+          <View
+            style={[
+              styles.noteWrap,
+              {
+                top: viewfinderTop + viewfinderSize + spacing.sm,
+                left: viewfinderLeft,
+                width: viewfinderSize,
+              },
+            ]}>
+            <TextInput
+              style={[styles.noteInput, textInputWeb]}
+              value={scanNote}
+              onChangeText={setScanNote}
+              placeholder="Optional: chicken bowl, no sauce..."
+              placeholderTextColor="rgba(232,228,240,0.45)"
+              maxLength={280}
+              returnKeyType="done"
+              autoCorrect
+              autoCapitalize="sentences"
+              editable={!capturing}
+              accessibilityLabel="Optional meal note for AI"
+            />
+          </View>
 
           <View style={styles.controls}>
             {firstScanRequired ? (
@@ -717,7 +748,7 @@ export default function ScanScreen() {
               </Pressable>
             ) : null}
           </View>
-        </View>
+        </KeyboardAvoidingView>
       )}
 
       {phase === 'analyzing' && (
@@ -949,6 +980,21 @@ const styles = StyleSheet.create({
   },
   errorText: { flex: 1, fontFamily: fonts.body, fontSize: 13, color: colors.danger },
   cameraWrap: { flex: 1 },
+  noteWrap: {
+    position: 'absolute',
+    zIndex: 8,
+  },
+  noteInput: {
+    height: 44,
+    borderRadius: 12,
+    paddingHorizontal: spacing.md,
+    backgroundColor: 'rgba(12, 11, 16, 0.78)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.hairlineBright,
+    fontFamily: fonts.body,
+    fontSize: 14,
+    color: colors.text,
+  },
   camera: { flex: 1, overflow: 'hidden' },
   cameraDenied: {
     alignItems: 'center',

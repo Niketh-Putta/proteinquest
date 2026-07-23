@@ -1,6 +1,6 @@
 /** Server-side mirror of src/lib/paywall-gate.ts scan limits. */
 
-export const FREE_DAILY_SCANS = 0;
+export const FREE_DAILY_SCANS = 1;
 export const HABIT_GRACE_DAYS = 2;
 export const GRANDFATHER_CUTOFF_ISO = '2026-07-21T00:00:00.000Z';
 export const GRANDFATHER_MIN_MEALS = 3;

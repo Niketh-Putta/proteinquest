@@ -2,7 +2,7 @@ import type { Profile, RetentionState } from './types';
 
 export type { RetentionState };
 
-/** Accounts created before hard paywall keep 1 free scan/day after trial. */
+/** Accounts created before soft paywall cutoff keep 1 free scan/day after trial. */
 export const GRANDFATHER_CUTOFF_ISO = '2026-07-21T00:00:00.000Z';
 export const GRANDFATHER_MIN_MEALS = 3;
 export const GRANDFATHER_FREE_DAILY_SCANS = 1;

@@ -106,7 +106,7 @@ export default function PrivacyScreen() {
         <Section title="Subscriptions and payments">
           <Paragraph>
             ProteinQuest Pro is an optional subscription that unlocks unlimited AI meal scans. Free
-            users get a 2-day unlimited scan trial, then AI scans require Pro. Trends and
+            users get a 2-day unlimited scan trial, then 1 free AI scan per day. Trends and
             weekly history are available to all users.
           </Paragraph>
           <Bullet>

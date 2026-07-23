@@ -14,6 +14,16 @@ import { canScanPhoto } from "../_shared/scan-entitlement.ts";
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
 const OPENAI_MODEL = Deno.env.get("OPENAI_MODEL") ?? "gpt-4o";
+/** auto = cheap/fast tiles; high = more OCR fidelity (≈2–3× image tokens). */
+const OPENAI_IMAGE_DETAIL = (() => {
+  const raw = (Deno.env.get("OPENAI_IMAGE_DETAIL") ?? "auto").toLowerCase();
+  return raw === "high" || raw === "low" || raw === "auto" ? raw : "auto";
+})();
+const OPENAI_MAX_TOKENS = (() => {
+  const raw = Number(Deno.env.get("OPENAI_MAX_TOKENS") ?? "900");
+  if (!Number.isFinite(raw) || raw < 400) return 900;
+  return Math.min(1600, Math.round(raw));
+})();
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -22,10 +32,10 @@ const GEMINI_MODELS = [
   Deno.env.get("GEMINI_MODEL") ?? "gemini-2.5-flash",
   "gemini-2.5-pro",
 ];
-/** Thinking tokens for 2.5 models. 0 = fastest; 128–256 = better portion math; 768 = slow/costly. */
+/** Thinking tokens for 2.5 models. Lower = cheaper/faster fallback (OpenAI is primary). */
 const GEMINI_THINKING_BUDGET = (() => {
-  const raw = Number(Deno.env.get("GEMINI_THINKING_BUDGET") ?? "256");
-  if (!Number.isFinite(raw) || raw < 0) return 256;
+  const raw = Number(Deno.env.get("GEMINI_THINKING_BUDGET") ?? "128");
+  if (!Number.isFinite(raw) || raw < 0) return 128;
   return Math.min(1024, Math.round(raw));
 })();
 
@@ -60,65 +70,47 @@ const corsHeaders = {
 };
 
 const SYSTEM_PROMPT = `You are an expert sports nutritionist who estimates PROTEIN and CALORIES from food photos.
-Be accurate and realistic — do NOT systematically undercount calories. Cooking fat and true portion size matter.
+Be precise and realistic. Prefer mid-range portions. Do NOT systematically undercount calories OR inflate protein grams.
 
 WORK IN 5 STEPS (reason internally, output final JSON only):
-0. LABEL / TEXT DETECTION (do this FIRST — highest priority):
-   - Scan the image for ANY readable text: nutrition facts panels, supplement labels, packaging, barcodes, macro-tracking app screenshots, restaurant menus with macros.
-   - OCR-style: read every number near "Protein", "PRO", "P:", "prot", or inside a protein row on a nutrition label.
-   - Also read "Calories", "Energy", "kcal", "Cal" on labels or macro app screenshots. Set label_calories_g when visible (per serving unless container math is obvious).
-   - Distinguish "per serving" vs "per container" vs "per 100g". If the whole package/product shown matches one serving, use per-serving values. If multiple servings visible, multiply accordingly.
-   - If explicit protein grams are visible with high confidence → set protein_source="label", label_protein_g to that value, and USE IT as total_protein_g. Do NOT replace label values with visual portion math.
-   - If explicit calories/kcal are visible with high confidence → use label_calories_g as calories total. Label wins over visual estimation.
-   - Label wins over visual estimation. A nutrition label showing "Protein 50g" means total_protein_g≈50 even if the food photo alone looks smaller.
-   - Set items to reflect the labeled product (e.g. one item "Protein powder (label)" with protein_g matching label). estimated_grams optional when source is label.
-1. IDENTIFY every visible food component (skip if step 0 found authoritative label text). Note cooking method (grilled, sautéed, fried, baked). Infer cooking fat when greens look glossy/sautéed or meat looks oil-brushed — even if oil is not a separate puddle.
-2. ESTIMATE PORTION SIZE for each item using visual anchors (only when protein_source is "visual" or "mixed"):
-   - Standard dinner plate ~26cm; fork ~19cm; palm ~10cm wide
-   - Palm-sized chicken breast (cooked) ~120-140g; large breast covering much of the plate ~200-250g
-   - Sliced/strip chicken: count strips × ~25-35g each when thick/wide; a full plate of strips is often 200-250g total edible chicken, not 130g
-   - 1 large egg ~50g (~6g protein); 2 eggs ~100g (~13g protein)
-   - Deck-of-cards meat portion ~85g; fist-sized rice/pasta ~150g cooked
-   - Greens/kale/broccolini bed: ~80-150g when filling half the plate
-   - Cooking oil/butter when sautéed or dressed greens, or oil-sheen on grilled meat: add a separate item "~1 tbsp olive oil" (~14g, ~120 kcal) unless the plate looks dry/steamed
-   - Protein bar ~60g; yogurt cup small ~125g, large ~170g
-3. CALCULATE protein_g = estimated_grams × (protein per 100g for that food) / 100
-   Densities: chicken breast 31, ground beef 26, salmon 25, egg 13, greek yogurt 10, tofu 17, kale/spinach 3, rice 2.7, cheese 25, protein bar 30, oil/butter 0
-4. CALCULATE calories_g per item = estimated_grams × (kcal per 100g for that food) / 100
-   Energy densities (cooked defaults): chicken breast 165, ground beef 250, salmon 208, egg 155, greek yogurt 97, tofu 76, kale/spinach 35, rice 130, pasta 131, cheese 350, protein bar 400, bread 265, olive oil/butter 717
-   Prefer mid-range realistic portions. Restaurant plates often use more oil (+50-100 kcal) than home cooking.
-   Include oil/butter as its own item when prep implies it. Never zero out cooking fat on sautéed/glossy plates.
-5. SUM all item protein_g → total_protein_g (must match within 0.5g). SUM all item calories_g → calories (must match within 15 kcal). Round estimated_grams to nearest 5g.
+0. LABEL / TEXT DETECTION (FIRST — highest priority):
+   - Read nutrition facts, packaging, barcodes, macro-app screenshots, menus with macros.
+   - OCR numbers near Protein/PRO/P: and Calories/Energy/kcal/Cal.
+   - Distinguish per serving vs per container vs per 100g. Match the amount shown.
+   - If explicit protein grams are clear → protein_source="label", label_protein_g=that value, total_protein_g=that value. Do NOT override with visual math.
+   - If explicit calories are clear → label_calories_g and calories use that value. Label wins.
+   - When no label: label_protein_g=null, label_calories_g=null, protein_source="visual".
+1. IDENTIFY every visible edible component (skip if step 0 is authoritative). Note cooking method. Infer cooking fat when greens look glossy/sautéed or meat looks oil-brushed.
+2. ESTIMATE PORTION (visual/mixed only) with anchors:
+   - Dinner plate ~26cm; fork ~19cm; palm ~10cm wide
+   - Typical chicken breast meal: 140–200g cooked. Use 200–250g ONLY when the plate is clearly piled with thick strips/breast covering most of the plate.
+   - Strip chicken: count strips × 25–35g (thick/wide). Thin strips ≈20–25g. Do not invent hidden chicken under greens.
+   - Egg ~50g (~6g protein); deck-of-cards meat ~85g; fist rice/pasta ~150g cooked
+   - Greens bed under protein: 80–120g typical (share plate space — do not full-plate each item)
+   - Oil: add "~1 tbsp olive oil" (~14g, ~120 kcal) only when sautéed/glossy/fried; skip if dry/steamed
+   - Protein bar ~60g; yogurt cup 125–170g
+3. protein_g = estimated_grams × (protein/100g) / 100. Densities: chicken breast 31, ground beef 26, salmon 25, egg 13, greek yogurt 10, tofu 17, kale/spinach 3, rice 2.7, cheese 25, protein bar 30, oil/butter 0
+4. calories_g = estimated_grams × (kcal/100g) / 100. Densities: chicken breast 165, ground beef 250, salmon 208, egg 155, greek yogurt 97, tofu 76, kale/spinach 35, rice 130, pasta 131, cheese 350, protein bar 400, bread 265, olive oil/butter 717
+5. SUM item protein → total_protein_g (±0.5g). SUM calories_g → calories (±15 kcal). Round grams to nearest 5g.
 
 Rules:
-- protein_source: "label" when nutrition label/packaging/on-screen text provides protein grams; "visual" when estimating from food appearance only; "mixed" when both exist (label wins for total).
-- label_protein_g: set when step 0 finds explicit protein on a label or screen; null/omit otherwise.
-- label_calories_g: set when step 0 finds explicit Calories/Energy/kcal on a label or screen; null/omit otherwise.
-- Each item must include calories_g (integer kcal for that component).
-- If NOT food: is_food=false, empty food_name, empty items, zeros, protein_source="visual", explain in notes.
-- If food: list calorie- and/or protein-bearing components (chicken, eggs, meat, fish, tofu, beans, cheese, yogurt, rice, oil/butter, substantial veg). Skip only zero-calorie garnishes (lemon wedge, herbs, pickles).
-- LAYERED PLATES: items share plate space — do NOT assign full plate area to each item. Greens under chicken are typically 80-150g.
-- portion must describe size AND method ("~220g grilled breast", "~100g sautéed greens", "~14g olive oil for cooking").
-- estimated_grams = cooked edible weight only. Typical dinner plate total food ~300-550g including oil.
-- Per-item confidence: low (ambiguous size), medium (reasonable estimate), high (clear size + familiar food).
-- Never hallucinate food not visible. Hidden ingredients only if strongly implied (curry sauce, burger patty under bun, cooking oil on sautéed greens).
-- Keep notes under 100 characters. No double quotes, backslashes, or line breaks inside strings.
+- protein_source: label | visual | mixed (label wins totals when mixed)
+- Never double-count oil already baked into fried/breaded item calories
+- Skip zero-calorie garnishes (lemon, herbs, pickles)
+- estimated_grams = cooked edible weight only. Typical plate total food 300–550g incl. oil
+- confidence: low (ambiguous), medium (reasonable), high (clear size + familiar food)
+- Never hallucinate invisible food. Notes ≤100 chars. No quotes/backslashes/newlines in strings.
 
-Few-shot calibration examples (do NOT copy blindly — adapt to the photo):
-A) Full plate grilled chicken (~230g) + sautéed kale/broccolini (~100g) + parmesan (~10g) + olive oil (~14g):
-   chicken 230g×31%≈71g, greens≈3g, cheese≈2.5g → protein ~76g
-   calories ≈230×1.65 + 100×0.35 + 10×3.5 + 14×7.17 ≈ 380+35+35+100 ≈ 550 kcal
-B) 2 scrambled eggs (~100g) + toast (~30g) + butter (~5g):
-   protein ~16g, calories ≈155+80+36 ≈ 270 kcal
-C) Chicken curry bowl: visible chicken ~120g (37g) + sauce/veg ~200g (6g) → protein ~43g; calories higher due to oil in sauce (~450-550 kcal)
-D) Empty plate or non-food → is_food=false
-E) Nutrition label photo showing "Protein 50g" per serving, whole product visible:
-   protein_source="label", label_protein_g=50, one item from label → total_protein_g=50, confidence high
-F) Supplement tub label "24g protein per scoop" with one scoop shown → label_protein_g=24, total 24g
-G) Macro app screenshot showing "Protein: 48g" for logged meal → label_protein_g=48, trust screen text
-H) Nutrition label "Calories 320" per serving → label_calories_g=320, calories=320
-I) Smaller strip plate (7 thin strips ~150g) + dry steamed greens (~80g), no oil sheen:
-   protein ~48g, calories ≈150×1.65 + 80×0.35 ≈ 275 kcal`;
+Few-shots (adapt; do not copy blindly):
+A) Full-plate grilled chicken strips ~210g + sautéed greens ~100g + parmesan ~8g + oil ~14g → protein ≈65+3+2=70g; kcal ≈350+35+28+100≈510
+B) 2 scrambled eggs + toast + butter → protein ~16g; kcal ~270
+C) Chicken curry: chicken ~120g (37g) + sauce/veg ~200g (6g) → protein ~43g; kcal ~450–550
+D) Non-food / empty plate → is_food=false
+E) Label "Protein 50g" → protein_source=label, label_protein_g=50, total=50
+F) Scoop label "24g protein" → total=24
+G) Macro screenshot "Protein: 48g" → total=48
+H) Label "Calories 320" → label_calories_g=320, calories=320
+I) Smaller strip plate (~7 thin strips ~150g) + dry steamed greens (~80g), no oil → protein ~48g; kcal ~275`;
 
 const OPENAI_SCHEMA = {
   type: "object",
@@ -215,14 +207,15 @@ Deno.serve(async (req) => {
     if (gate) return gate;
 
     const body = await req.json();
-    const { image_base64, mime_type = "image/jpeg" } = body;
+    const { image_base64, mime_type = "image/jpeg", user_note } = body;
     if (!image_base64) {
       return json({ error: "image_base64 is required" }, 400);
     }
+    const userNote = sanitizeField(user_note, 280);
 
     if (OPENAI_API_KEY && !openaiCircuitOpen()) {
       try {
-        const raw = await callOpenAI(image_base64, mime_type);
+        const raw = await callOpenAI(image_base64, mime_type, userNote);
         return json({ analysis: normalize(raw), model: OPENAI_MODEL, provider: "openai" });
       } catch (openaiErr) {
         const openaiMessage =
@@ -237,6 +230,7 @@ Deno.serve(async (req) => {
             GEMINI_API_KEY,
             image_base64,
             mime_type,
+            userNote,
           );
           return json({
             analysis: normalize(raw),
@@ -256,6 +250,7 @@ Deno.serve(async (req) => {
         GEMINI_API_KEY,
         image_base64,
         mime_type,
+        userNote,
       );
       return json({
         analysis: normalize(raw),
@@ -275,6 +270,7 @@ Deno.serve(async (req) => {
       GEMINI_API_KEY,
       image_base64,
       mime_type,
+      userNote,
     );
     return json({ analysis: normalize(raw), model, provider: "gemini" });
   } catch (err) {
@@ -305,10 +301,16 @@ function supportsThinking(model: string): boolean {
   return /gemini-2\.5-(flash|flash-lite|pro)/i.test(model);
 }
 
+function userNotePromptSuffix(userNote: string): string {
+  if (!userNote) return "";
+  return `\n\nUser-provided context (use to improve food identity, sauces, and portions when the photo is ambiguous; do not invent foods the image clearly contradicts): ${userNote}`;
+}
+
 async function callGeminiWithRetry(
   apiKey: string,
   imageBase64: string,
   mimeType: string,
+  userNote = "",
 ): Promise<{ raw: Record<string, unknown>; model: string }> {
   let lastErr: Error | null = null;
 
@@ -316,7 +318,7 @@ async function callGeminiWithRetry(
   for (const model of models) {
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        const raw = await callGemini(apiKey, imageBase64, mimeType, model, attempt);
+        const raw = await callGemini(apiKey, imageBase64, mimeType, model, attempt, userNote);
         return { raw, model };
       } catch (e) {
         lastErr = e instanceof Error ? e : new Error(String(e));
@@ -343,6 +345,7 @@ async function callGemini(
   mimeType: string,
   model: string,
   attempt = 0,
+  userNote = "",
 ): Promise<Record<string, unknown>> {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
 
@@ -359,6 +362,11 @@ async function callGemini(
     generationConfig.thinkingConfig = { thinkingBudget: GEMINI_THINKING_BUDGET };
   }
 
+  const basePrompt =
+    attempt === 0
+      ? "Analyze this image for protein and calories. Step 0: read any nutrition labels, packaging text, or on-screen macros (OCR). If label shows protein or calories, use those as primary source (protein_source=label). Otherwise Step 1-5: identify foods, estimate grams, apply protein and calorie density, sum. Return valid JSON only."
+      : "Analyze this image for protein and calories. Check labels/text first. Return ONLY compact valid JSON matching the schema. Keep notes under 80 characters. No quotes or newlines inside strings.";
+
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -368,10 +376,7 @@ async function callGemini(
         {
           parts: [
             {
-              text:
-                attempt === 0
-                  ? "Analyze this image for protein and calories. Step 0: read any nutrition labels, packaging text, or on-screen macros (OCR). If label shows protein or calories, use those as primary source (protein_source=label). Otherwise Step 1-5: identify foods, estimate grams, apply protein and calorie density, sum. Return valid JSON only."
-                  : "Analyze this image for protein and calories. Check labels/text first. Return ONLY compact valid JSON matching the schema. Keep notes under 80 characters. No quotes or newlines inside strings.",
+              text: basePrompt + userNotePromptSuffix(userNote),
             },
             { inline_data: { mime_type: mimeType, data: imageBase64 } },
           ],
@@ -447,6 +452,28 @@ function repairTruncatedJson(raw: string): string | null {
 async function callOpenAI(
   imageBase64: string,
   mimeType: string,
+  userNote = "",
+): Promise<Record<string, unknown>> {
+  let lastErr: Error | null = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      return await callOpenAIOnce(imageBase64, mimeType, userNote);
+    } catch (e) {
+      lastErr = e instanceof Error ? e : new Error(String(e));
+      const retryable = /rate.?limit|timeout|temporar|overloaded|server.?error|5\d\d/i.test(
+        lastErr.message,
+      );
+      if (!retryable || attempt === 1) break;
+      await sleep(250 * (attempt + 1));
+    }
+  }
+  throw lastErr ?? new Error("AI analysis failed. Please try again.");
+}
+
+async function callOpenAIOnce(
+  imageBase64: string,
+  mimeType: string,
+  userNote = "",
 ): Promise<Record<string, unknown>> {
   const openaiRes = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -456,7 +483,7 @@ async function callOpenAI(
     },
     body: JSON.stringify({
       model: OPENAI_MODEL,
-      max_tokens: 1200,
+      max_tokens: OPENAI_MAX_TOKENS,
       temperature: 0,
       response_format: {
         type: "json_schema",
@@ -473,13 +500,15 @@ async function callOpenAI(
           content: [
             {
               type: "text",
-              text: "Analyze this image for protein and calories. First read any nutrition labels, packaging, or on-screen text for explicit protein grams and Calories/kcal. If found, protein_source=label and use those values. Otherwise estimate from visual portion. Return JSON only.",
+              text:
+                "Analyze protein + calories. Prefer labels/OCR when present (set label_* fields). Else mid-range visual portions with density math. Return JSON only." +
+                userNotePromptSuffix(userNote),
             },
             {
               type: "image_url",
               image_url: {
                 url: `data:${mimeType};base64,${imageBase64}`,
-                detail: "high",
+                detail: OPENAI_IMAGE_DETAIL,
               },
             },
           ],
@@ -504,11 +533,17 @@ async function callOpenAI(
     } catch {
       /* default */
     }
-    throw new Error(message);
+    const err = new Error(message) as Error & { status?: number };
+    err.status = openaiRes.status;
+    throw err;
   }
 
   const completion = await openaiRes.json();
-  return JSON.parse(completion.choices[0].message.content);
+  const content = completion?.choices?.[0]?.message?.content;
+  if (!content || typeof content !== "string") {
+    throw new Error("AI returned an empty response. Please try again.");
+  }
+  return JSON.parse(content);
 }
 
 function sanitizeField(value: unknown, maxLen = 120): string {
@@ -541,14 +576,23 @@ function calibrateItem(item: NormalizedItem, skipCalibration = false): Normalize
     const fromDensity = proteinFromDensity(grams, proteinDensity);
     const llmProtein = next.protein_g;
 
-    if (llmProtein < fromDensity * 0.85) {
-      const shortfall = fromDensity > 0 ? (fromDensity - llmProtein) / fromDensity : 0;
-      const densityWeight = shortfall > 0.4 ? 0.6 : 0.4;
+    // Density math is authoritative for known foods — blend outliers toward it.
+    if (fromDensity > 0 && Math.abs(llmProtein - fromDensity) / fromDensity > 0.12) {
+      const over = llmProtein > fromDensity;
+      const gap = Math.abs(llmProtein - fromDensity) / fromDensity;
+      // Overestimates get pulled harder (common failure); underestimates still lift.
+      const densityWeight = over
+        ? Math.min(0.75, 0.45 + gap * 0.4)
+        : gap > 0.4
+        ? 0.65
+        : 0.45;
       const blended = round1(fromDensity * densityWeight + llmProtein * (1 - densityWeight));
       next = {
         ...next,
-        protein_g: Math.max(blended, llmProtein),
-        confidence: shortfall > 0.5 ? "medium" : next.confidence,
+        protein_g: over
+          ? Math.min(llmProtein, Math.max(blended, round1(fromDensity * 0.95)))
+          : Math.max(blended, llmProtein * 0.9),
+        confidence: gap > 0.35 ? "medium" : next.confidence,
       };
     }
   }

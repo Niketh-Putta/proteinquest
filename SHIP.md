@@ -17,7 +17,7 @@
 - **Dragon switching**: tap any dragon on Today or Settings — instant switch, separate progress per dragon
 - **Gamification (Locked-style)**: Whey character evolves across 5 stages, XP, streaks, celebration on goal hit
 - **Evidence-based protein goals**: g/kg from training, goal, age, sex; kg/lbs; reasoning shown in onboarding/settings
-- **Freemium scans**: 2-day unlimited habit trial, then 0 free AI scans/day (hard paywall; Pro = unlimited)
+- **Freemium scans**: 2-day unlimited habit trial, then 1 free AI scan/day (soft paywall; Pro = unlimited)
 - **Auth**: Anonymous Supabase session only — no sign-in UI. Session auto-created on first open; progress stored per device/browser.
 - **Intro**: `profiles.intro_completed` — shown once on first visit; existing onboarded users were backfilled to skip it.
 - **Payments**: Stripe Checkout edge function ready; test-mode stub active until keys are set

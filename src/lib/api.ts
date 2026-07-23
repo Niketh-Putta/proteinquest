@@ -71,6 +71,7 @@ async function postAnalyzeFood(
 export async function analyzeFoodPhoto(
   imageBase64: string,
   mimeType = 'image/jpeg',
+  userNote?: string,
 ): Promise<Analysis> {
   const cleaned = cleanBase64(imageBase64);
   if (cleaned.length > MAX_IMAGE_BASE64) {
@@ -79,10 +80,16 @@ export async function analyzeFoodPhoto(
 
   const headers = await getAuthHeaders();
   const url = `${SUPABASE_URL}/functions/v1/analyze-food`;
+  const note = typeof userNote === 'string' ? userNote.trim().slice(0, 280) : '';
+  const payload: { image_base64: string; mime_type: string; user_note?: string } = {
+    image_base64: cleaned,
+    mime_type: mimeType,
+  };
+  if (note) payload.user_note = note;
 
   let res: Response;
   try {
-    res = await postAnalyzeFood(url, headers, JSON.stringify({ image_base64: cleaned, mime_type: mimeType }));
+    res = await postAnalyzeFood(url, headers, JSON.stringify(payload));
   } catch (err) {
     if (err instanceof Error) throw err;
     throw new Error(friendlyAnalysisError('Network error'));
