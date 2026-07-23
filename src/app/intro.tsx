@@ -772,7 +772,8 @@ const styles = StyleSheet.create({
   phaseScrollContent: {
     flexGrow: 1,
     justifyContent: 'center',
-    paddingBottom: spacing.md,
+    // Extra room so the name field clears the pinned Continue CTA when scrolled.
+    paddingBottom: spacing.xl,
   },
   phaseBody: { width: '100%' },
   kicker: {

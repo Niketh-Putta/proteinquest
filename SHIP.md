@@ -17,7 +17,7 @@
 - **Dragon switching**: tap any dragon on Today or Settings — instant switch, separate progress per dragon
 - **Gamification (Locked-style)**: Whey character evolves across 5 stages, XP, streaks, celebration on goal hit
 - **Evidence-based protein goals**: g/kg from training, goal, age, sex; kg/lbs; reasoning shown in onboarding/settings
-- **Unlimited scans** for all users (no daily scan cap)
+- **Freemium scans**: 2-day unlimited habit trial, then 0 free AI scans/day (hard paywall; Pro = unlimited)
 - **Auth**: Anonymous Supabase session only — no sign-in UI. Session auto-created on first open; progress stored per device/browser.
 - **Intro**: `profiles.intro_completed` — shown once on first visit; existing onboarded users were backfilled to skip it.
 - **Payments**: Stripe Checkout edge function ready; test-mode stub active until keys are set
@@ -48,7 +48,7 @@ cd ~/proteinlens
 node demo/test-analyze.mjs   # should return real food analysis
 ```
 
-Set `OPENAI_API_KEY` in Supabase secrets (required for gpt-4o primary). Optional: `OPENAI_MODEL` (default `gpt-4o`), `GEMINI_API_KEY` for fallback.
+Set `OPENAI_API_KEY` in Supabase secrets (required for gpt-4o primary). Optional: `OPENAI_MODEL` (default `gpt-4o`), `OPENAI_IMAGE_DETAIL` (`auto` cheap/fast default; `high` for max OCR), `OPENAI_MAX_TOKENS` (default 900), `GEMINI_API_KEY` for fallback.
 
 **Blocker:** if OpenAI returns `billing_not_active`, scans seamlessly fall back to Gemini (circuit skips OpenAI for 10m per isolate). Enable billing at https://platform.openai.com/settings/organization/billing so primary gpt-4o actually runs.
 

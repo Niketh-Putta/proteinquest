@@ -4,11 +4,11 @@ import {
 } from './retention';
 import type { Profile } from './types';
 
-/** Free tier after the habit trial: AI photo scans per calendar day (0 = paywall after trial). */
-export const FREE_DAILY_SCANS = 0;
+/** Free tier after the habit trial: AI photo scans per calendar day (0 = hard paywall). */
+export const FREE_DAILY_SCANS = 1;
 
 /** No paywall and unlimited scans for the first N calendar days after signup. */
-export const HABIT_GRACE_DAYS = 3;
+export const HABIT_GRACE_DAYS = 2;
 
 export function isPro(profile: Profile | null | undefined): boolean {
   return profile?.is_premium === true;
@@ -105,7 +105,7 @@ export function scansLimitLabel(
   lifetimeMeals = 0,
 ): string {
   if (isPro(profile)) return 'Unlimited scans';
-  if (isInHabitGracePeriod(profile)) return 'Unlimited scans, 3-day free trial';
+  if (isInHabitGracePeriod(profile)) return 'Unlimited scans, 2-day free trial';
   const left = remainingFreeScans(scansUsedToday, profile, lifetimeMeals);
   if (left === 0) return 'Out of free scans. Go Pro';
   return `${left} free scan${left === 1 ? '' : 's'} left today`;

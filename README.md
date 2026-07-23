@@ -42,11 +42,11 @@ camera viewfinder (getUserMedia) plus a library upload button.
 
 ## Freemium
 
-Free tier: **3 AI scans/day**. Paywall and gating are live. Native IAP uses
-**RevenueCat** (`src/lib/revenuecat.ts`); web uses **Stripe Checkout**
-(`src/lib/payments.ts`). Without store keys configured, the paywall runs in
-test mode. See [`store/PAYMENTS.md`](store/PAYMENTS.md) for the full iOS /
-Android / web schematic.
+Free tier: **2-day unlimited trial**, then **1 AI scan/day**. Paywall and gating
+are live. Native IAP uses **RevenueCat** (`src/lib/revenuecat.ts`); web uses
+**Stripe Checkout** (`src/lib/payments.ts`). Without store keys configured, the
+paywall runs in test mode. See [`store/PAYMENTS.md`](store/PAYMENTS.md) for the
+full iOS / Android / web schematic.
 
 ## ⚠️ Activate OpenAI billing
 
@@ -81,7 +81,7 @@ src/
   app/              expo-router routes
     onboarding.tsx  protein goal calculator wizard
     snap.tsx        photo -> AI analysis -> confirm -> log (modal)
-    paywall.tsx     Pro upsell (3 free scans/day gate)
+    paywall.tsx     Pro upsell (2-day trial, then 1 scan/day)
     (tabs)/         today (ring + log), trends (7-day chart), goal (editor)
   components/       ProgressRing, Button, form controls
   lib/              supabase client, session context, API, goal math, payments
