@@ -19,6 +19,7 @@ import { GlassPanel } from '@/components/GlassPanel';
 import { trackEvent } from '@/lib/analytics';
 import { APP_STORE_URL, PLAY_STORE_URL } from '@/lib/app-update';
 import { displayDragonId, displayDragonName } from '@/lib/character';
+import { useLayout } from '@/lib/layout';
 import {
   getNativePaymentProvider,
   getPaymentProvider,
@@ -105,6 +106,9 @@ function GradientWord({ children }: { children: string }) {
 
 export default function Paywall() {
   const { session, profile, saveProfile } = useSession();
+  const layout = useLayout();
+  const contentMaxWidth = Math.min(layout.contentMaxWidth, 520);
+  const { horizontalPad } = layout;
   const [provider, setProvider] = useState<PaymentProvider>(() => getPaymentProvider());
   const [planId, setPlanId] = useState(provider.plans[1]?.id ?? 'pro_yearly');
   const [busy, setBusy] = useState(false);
@@ -283,7 +287,15 @@ export default function Paywall() {
 
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
         <ScrollView
-          contentContainerStyle={styles.scroll}
+          contentContainerStyle={[
+            styles.scroll,
+            {
+              paddingHorizontal: horizontalPad,
+              maxWidth: contentMaxWidth,
+              width: '100%',
+              alignSelf: 'center',
+            },
+          ]}
           showsVerticalScrollIndicator={false}>
           <View style={styles.topBar}>
             <Pressable
@@ -366,6 +378,7 @@ export default function Paywall() {
                 onPress={() => Linking.openURL(APP_STORE_URL)}
                 style={({ pressed }) => [
                   styles.cta,
+                  styles.ctaGrouped,
                   styles.ctaReady,
                   pressed && { opacity: 0.9 },
                   pressableWeb,
@@ -376,6 +389,7 @@ export default function Paywall() {
                 onPress={() => Linking.openURL(PLAY_STORE_URL)}
                 style={({ pressed }) => [
                   styles.cta,
+                  styles.ctaGrouped,
                   styles.ctaSecondary,
                   pressed && { opacity: 0.9 },
                   pressableWeb,
@@ -441,7 +455,6 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#080810' },
   safe: { flex: 1 },
   scroll: {
-    paddingHorizontal: 22,
     paddingBottom: 40,
   },
   topBar: {
@@ -689,7 +702,7 @@ const styles = StyleSheet.create({
     fontFamily: fonts.body,
   },
   webStoreBlock: {
-    marginTop: 18,
+    marginTop: spacing.md,
     gap: 10,
   },
   webStoreHint: {
@@ -701,6 +714,7 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   cta: {
+    marginTop: spacing.md,
     height: 52,
     borderRadius: 999,
     flexDirection: 'row',
@@ -710,6 +724,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.07)',
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(255,255,255,0.12)',
+  },
+  // Nested CTAs inside webStoreBlock already have block-level top spacing.
+  ctaGrouped: {
+    marginTop: 0,
   },
   ctaDisabled: {
     opacity: 0.85,
@@ -737,8 +755,8 @@ const styles = StyleSheet.create({
   },
   notNowWrap: {
     alignSelf: 'center',
-    marginTop: 14,
-    paddingVertical: 4,
+    marginTop: spacing.md,
+    paddingVertical: spacing.xs,
   },
   notNow: {
     fontFamily: fonts.body,
@@ -748,8 +766,8 @@ const styles = StyleSheet.create({
   },
   restoreWrap: {
     alignSelf: 'center',
-    marginTop: 10,
-    paddingVertical: 2,
+    marginTop: spacing.sm + 2,
+    paddingVertical: spacing.xs,
   },
   restore: {
     fontFamily: fonts.mono,
@@ -766,7 +784,7 @@ const styles = StyleSheet.create({
   legal: {
     fontSize: 10,
     color: '#5A5568',
-    marginTop: 18,
+    marginTop: spacing.md + 2,
     lineHeight: 15,
     fontFamily: fonts.body,
     textAlign: 'center',

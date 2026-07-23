@@ -9,6 +9,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -492,122 +493,137 @@ export default function IntroScreen() {
               <View style={styles.backBtn} />
             </View>
 
-            {phase === 'name' ? (
-              <Animated.View
-                key="name"
-                entering={FadeInDown.duration(380)}
-                exiting={FadeOut.duration(160)}
-                style={styles.phaseBody}>
-                <Text style={[styles.question, isCompact && styles.questionCompact]}>
-                  What should{'\n'}we call you?
-                </Text>
-                <TextInput
-                  style={[styles.nameInput, isCompact && styles.nameInputCompact, textInputWeb]}
-                  value={name}
-                  onChangeText={setName}
-                  placeholder="Your name"
-                  placeholderTextColor={colors.textTertiary}
-                  autoCapitalize="words"
-                  autoCorrect={false}
-                  maxLength={24}
-                  returnKeyType="done"
-                  onSubmitEditing={submitName}
-                />
-              </Animated.View>
-            ) : null}
-
-            {phase === 'dragons' ? (
-              <Animated.View
-                key={`dragons-${namingDragon.id}`}
-                entering={FadeInDown.duration(380)}
-                exiting={FadeOut.duration(160)}
-                style={styles.phaseBody}>
-                <Text style={styles.kicker}>
-                  DRAGON {dragonIndex + 1} OF {DRAGONS.length}
-                </Text>
-                <View style={styles.dragonReveal}>
-                  <DragonPortrait
-                    art={namingDragon.stages[0].art}
-                    accent={namingDragon.accent}
-                    level={1}
-                    dragonId={namingDragon.id}
-                    size={isCompact ? 140 : 180}
+            <ScrollView
+              style={styles.phaseScroll}
+              contentContainerStyle={styles.phaseScrollContent}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}>
+              {phase === 'name' ? (
+                <Animated.View
+                  key="name"
+                  entering={FadeInDown.duration(380)}
+                  exiting={FadeOut.duration(160)}
+                  style={styles.phaseBody}>
+                  <Text style={[styles.question, isCompact && styles.questionCompact]}>
+                    What should{'\n'}we call you?
+                  </Text>
+                  <TextInput
+                    style={[styles.nameInput, isCompact && styles.nameInputCompact, textInputWeb]}
+                    value={name}
+                    onChangeText={setName}
+                    placeholder="Your name"
+                    placeholderTextColor={colors.textTertiary}
+                    autoCapitalize="words"
+                    autoCorrect={false}
+                    maxLength={24}
+                    returnKeyType="done"
+                    onSubmitEditing={submitName}
                   />
-                </View>
-                <Text style={[styles.question, isCompact && styles.questionCompact]}>
-                  Name your{'\n'}
-                  {namingDragon.title.toLowerCase()}
-                </Text>
-                <Text style={styles.dragonHint}>
-                  Default: {namingDragon.name} · {namingDragon.motto}
-                </Text>
-                <TextInput
-                  style={[styles.nameInput, isCompact && styles.nameInputCompact, textInputWeb]}
-                  value={dragonNames[namingDragon.id] ?? ''}
-                  onChangeText={(text) =>
-                    setDragonNames((prev) => ({ ...prev, [namingDragon.id]: text }))
-                  }
-                  placeholder={namingDragon.name}
-                  placeholderTextColor={colors.textTertiary}
-                  autoCapitalize="words"
-                  autoCorrect={false}
-                  maxLength={24}
-                  returnKeyType="done"
-                  onSubmitEditing={submitDragonName}
-                />
-              </Animated.View>
-            ) : null}
+                </Animated.View>
+              ) : null}
 
-            {phase === 'benefits' ? (
-              <Animated.View
-                key="benefits"
-                entering={FadeInDown.duration(380)}
-                exiting={FadeOut.duration(160)}
-                style={styles.phaseBody}>
-                <Text style={[styles.question, isCompact && styles.questionCompact]}>
-                  {name.trim() ? `${name.trim()}, protein` : 'Protein'} changes everything.
-                </Text>
-                <View style={styles.benefitList}>
-                  {BENEFITS.map((b, i) => (
-                    <Animated.View
-                      key={b}
-                      entering={FadeInDown.delay(450 + i * 380).duration(420)}
-                      style={styles.benefitRow}>
-                      <Ionicons name="checkmark-circle" size={22} color={colors.accent} />
-                      <Text style={styles.benefitText}>{b}</Text>
-                    </Animated.View>
-                  ))}
-                </View>
-              </Animated.View>
-            ) : null}
+              {phase === 'dragons' ? (
+                <Animated.View
+                  key={`dragons-${namingDragon.id}`}
+                  entering={FadeInDown.duration(380)}
+                  exiting={FadeOut.duration(160)}
+                  style={styles.phaseBody}>
+                  <Text style={styles.kicker}>
+                    DRAGON {dragonIndex + 1} OF {DRAGONS.length}
+                  </Text>
+                  <View style={[styles.dragonReveal, isCompact && styles.dragonRevealCompact]}>
+                    <DragonPortrait
+                      art={namingDragon.stages[0].art}
+                      accent={namingDragon.accent}
+                      level={1}
+                      dragonId={namingDragon.id}
+                      size={isCompact ? 112 : 160}
+                    />
+                  </View>
+                  <Text style={[styles.question, isCompact && styles.questionCompact]}>
+                    Name your{'\n'}
+                    {namingDragon.title.toLowerCase()}
+                  </Text>
+                  <Text style={styles.dragonHint}>
+                    Default: {namingDragon.name} · {namingDragon.motto}
+                  </Text>
+                  <TextInput
+                    style={[
+                      styles.nameInput,
+                      isCompact && styles.nameInputCompact,
+                      styles.dragonNameInput,
+                      textInputWeb,
+                    ]}
+                    value={dragonNames[namingDragon.id] ?? ''}
+                    onChangeText={(text) =>
+                      setDragonNames((prev) => ({ ...prev, [namingDragon.id]: text }))
+                    }
+                    placeholder={namingDragon.name}
+                    placeholderTextColor={colors.textTertiary}
+                    autoCapitalize="words"
+                    autoCorrect={false}
+                    maxLength={24}
+                    returnKeyType="done"
+                    onSubmitEditing={submitDragonName}
+                  />
+                </Animated.View>
+              ) : null}
 
-            {phase === 'manifesto' ? (
-              <Animated.View
-                key="manifesto"
-                entering={FadeInDown.duration(380)}
-                exiting={FadeOut.duration(160)}
-                style={styles.phaseBody}>
-                <Animated.Text entering={FadeIn.delay(200).duration(700)} style={styles.kicker}>
-                  THE GAME
-                </Animated.Text>
-                <Animated.Text
-                  entering={FadeInDown.delay(350).duration(600)}
-                  style={[styles.question, isCompact && styles.questionCompact, { marginTop: spacing.sm }]}>
-                  Life is a game.
-                </Animated.Text>
-                <View style={styles.manifestoList}>
-                  {MANIFESTO.map((line, i) => (
-                    <Animated.Text
-                      key={line.lead}
-                      entering={FadeInDown.delay(800 + i * 500).duration(500)}
-                      style={styles.manifestoLine}>
-                      <Text style={styles.manifestoLead}>{line.lead}</Text>
-                      {line.rest}
-                    </Animated.Text>
-                  ))}
-                </View>
-              </Animated.View>
-            ) : null}
+              {phase === 'benefits' ? (
+                <Animated.View
+                  key="benefits"
+                  entering={FadeInDown.duration(380)}
+                  exiting={FadeOut.duration(160)}
+                  style={styles.phaseBody}>
+                  <Text style={[styles.question, isCompact && styles.questionCompact]}>
+                    {name.trim() ? `${name.trim()}, protein` : 'Protein'} changes everything.
+                  </Text>
+                  <View style={styles.benefitList}>
+                    {BENEFITS.map((b, i) => (
+                      <Animated.View
+                        key={b}
+                        entering={FadeInDown.delay(450 + i * 380).duration(420)}
+                        style={styles.benefitRow}>
+                        <Ionicons name="checkmark-circle" size={22} color={colors.accent} />
+                        <Text style={styles.benefitText}>{b}</Text>
+                      </Animated.View>
+                    ))}
+                  </View>
+                </Animated.View>
+              ) : null}
+
+              {phase === 'manifesto' ? (
+                <Animated.View
+                  key="manifesto"
+                  entering={FadeInDown.duration(380)}
+                  exiting={FadeOut.duration(160)}
+                  style={styles.phaseBody}>
+                  <Animated.Text entering={FadeIn.delay(200).duration(700)} style={styles.kicker}>
+                    THE GAME
+                  </Animated.Text>
+                  <Animated.Text
+                    entering={FadeInDown.delay(350).duration(600)}
+                    style={[
+                      styles.question,
+                      isCompact && styles.questionCompact,
+                      { marginTop: spacing.sm },
+                    ]}>
+                    Life is a game.
+                  </Animated.Text>
+                  <View style={styles.manifestoList}>
+                    {MANIFESTO.map((line, i) => (
+                      <Animated.Text
+                        key={line.lead}
+                        entering={FadeInDown.delay(800 + i * 500).duration(500)}
+                        style={styles.manifestoLine}>
+                        <Text style={styles.manifestoLead}>{line.lead}</Text>
+                        {line.rest}
+                      </Animated.Text>
+                    ))}
+                  </View>
+                </Animated.View>
+              ) : null}
+            </ScrollView>
 
             <View style={[styles.footer, { paddingBottom: footerGap }]}>
               {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -751,8 +767,14 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent,
   },
 
-  // Phase bodies
-  phaseBody: { flex: 1, justifyContent: 'center' },
+  // Phase bodies — scroll so the pinned footer never covers the name field.
+  phaseScroll: { flex: 1, minHeight: 0 },
+  phaseScrollContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    paddingBottom: spacing.md,
+  },
+  phaseBody: { width: '100%' },
   kicker: {
     fontFamily: fonts.mono,
     fontSize: 10,
@@ -777,7 +799,9 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.hairlineBright,
   },
   nameInputCompact: { fontSize: 26 },
+  dragonNameInput: { marginTop: spacing.md, marginBottom: spacing.sm },
   dragonReveal: { alignItems: 'center', marginTop: spacing.lg, marginBottom: spacing.md },
+  dragonRevealCompact: { marginTop: spacing.sm, marginBottom: spacing.sm },
   dragonHint: {
     fontFamily: fonts.body,
     fontSize: 13,
