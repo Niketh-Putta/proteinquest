@@ -107,7 +107,7 @@ export default function TermsScreen() {
             us.
           </Bullet>
           <Bullet>
-            Free tier includes a 2-day unlimited scan trial, then 1 free AI scan per day.
+            Free tier includes a 2-day unlimited scan trial, then AI scans require Pro.
           </Bullet>
         </Section>
 

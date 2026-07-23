@@ -5,7 +5,7 @@ import {
 import type { Profile } from './types';
 
 /** Free tier after the habit trial: AI photo scans per calendar day (0 = hard paywall). */
-export const FREE_DAILY_SCANS = 1;
+export const FREE_DAILY_SCANS = 0;
 
 /** No paywall and unlimited scans for the first N calendar days after signup. */
 export const HABIT_GRACE_DAYS = 2;

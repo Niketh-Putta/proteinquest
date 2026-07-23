@@ -59,7 +59,7 @@
   },
   "reviewNotes": {
     "licenseTesters": "Add Google account emails under Setup → License testing before sandbox purchases.",
-    "testInstructions": "Open app → complete onboarding → paywall shows Weekly £6.99 and Yearly £29.99. Use license tester account to purchase. Free tier: 2-day unlimited trial, then 1 free scan/day; Pro for unlimited.",
+    "testInstructions": "Open app → complete onboarding → paywall shows Weekly £6.99 and Yearly £29.99. Use license tester account to purchase. Free tier: 2-day unlimited trial, then 0 free scans/day (Pro required); Pro for unlimited.",
     "privacyPolicyUrl": "https://proteinquest.app/privacy",
     "termsUrl": "https://proteinquest.app/terms"
   }

@@ -174,7 +174,7 @@ supabase secrets set REVENUECAT_WEBHOOK_AUTH=$(openssl rand -hex 32)
 |------|------|
 | `src/lib/revenuecat.ts` | SDK init, offerings, purchase, restore, entitlement listener |
 | `src/lib/payments.ts` | Provider abstraction (RevenueCat native / Stripe web / dev stub) |
-| `src/lib/paywall-gate.ts` | Free tier: 2-day unlimited trial, then 1 free scan/day (Pro for unlimited) |
+| `src/lib/paywall-gate.ts` | Free tier: 2-day unlimited trial, then 0 free scans/day (Pro required) (Pro for unlimited) |
 | `src/app/paywall.tsx` | UI, purchase, restore, legal copy |
 | `src/lib/session.tsx` | RC init on auth, client ↔ profile sync |
 | `supabase/functions/revenuecat-webhook/` | Server-side premium flag from RC events |
