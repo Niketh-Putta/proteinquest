@@ -502,9 +502,10 @@ export default function ScanScreen() {
           : Promise.resolve(null),
       ]);
       const todayTotalBefore = todayLogs.reduce((s, l) => s + Number(l.protein_g), 0);
+      const foodName = analysis.food_name.trim() || 'Meal';
       await insertLog({
         userId: session.user.id,
-        foodName: analysis.food_name,
+        foodName,
         items: analysis.items,
         proteinG,
         calories,
@@ -695,23 +696,18 @@ export default function ScanScreen() {
               style={[styles.noteInput, textInputWeb]}
               value={scanNote}
               onChangeText={setScanNote}
-              placeholder="Optional: chicken bowl, no sauce..."
+              placeholder="Optional: dish + portions (e.g. sambar rice, half plate)"
               placeholderTextColor="rgba(232,228,240,0.45)"
               maxLength={280}
               returnKeyType="done"
               autoCorrect
               autoCapitalize="sentences"
               editable={!capturing}
-              accessibilityLabel="Optional meal note for AI"
+              accessibilityLabel="Optional meal note for AI identity and portions"
             />
           </View>
 
           <View style={styles.controls}>
-            {firstScanRequired ? (
-              <Text style={styles.firstScanHint}>
-                No food handy? Upload a photo, or skip and scan later.
-              </Text>
-            ) : null}
             <View style={styles.shutterRow}>
               <Pressable
                 onPress={pickFromLibrary}
@@ -764,7 +760,11 @@ export default function ScanScreen() {
             )}
           </View>
           <Text style={styles.analyzingTitle}>{ANALYZING_STEPS[analyzeStep]}</Text>
-          <Text style={styles.analyzingSub}>AI is reading your plate</Text>
+          <Text style={styles.analyzingSub}>
+            {scanNote.trim()
+              ? 'AI is reading your plate + your note'
+              : 'AI is reading your plate'}
+          </Text>
         </Animated.View>
       )}
 
@@ -787,9 +787,22 @@ export default function ScanScreen() {
           ) : null}
 
           <Animated.View entering={FadeInDown.delay(80).duration(400)}>
-            <Text style={styles.foodName}>{analysis.food_name}</Text>
+            <TextInput
+              style={[styles.foodName, styles.foodNameInput, textInputWeb]}
+              value={analysis.food_name}
+              onChangeText={(t) =>
+                setAnalysis((prev) => (prev ? { ...prev, food_name: t } : prev))
+              }
+              placeholder="Meal name"
+              placeholderTextColor={colors.textTertiary}
+              autoCapitalize="sentences"
+              autoCorrect
+              maxLength={80}
+              returnKeyType="done"
+              accessibilityLabel="Edit food name"
+            />
             <Text style={styles.metaText}>
-              {analysis.confidence?.toUpperCase()} CONFIDENCE
+              TAP NAME TO EDIT · {analysis.confidence?.toUpperCase()} CONFIDENCE
             </Text>
             {scansLeft !== null ? (
               <Pressable onPress={() => router.push('/paywall')} style={styles.scansPill}>
@@ -913,7 +926,7 @@ export default function ScanScreen() {
             goHome({
               fed: true,
               protein: Number(proteinOverride) || undefined,
-              food: analysis?.food_name,
+              food: analysis?.food_name?.trim() || undefined,
             });
           }}
         />
@@ -1049,17 +1062,6 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.lg,
     gap: spacing.sm,
   },
-  firstScanHint: {
-    fontFamily: fonts.body,
-    fontSize: 13,
-    color: colors.text,
-    textAlign: 'center',
-    paddingHorizontal: spacing.lg,
-    textShadowColor: 'rgba(0,0,0,0.65)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
-    marginBottom: spacing.xs,
-  },
   skipFirstScanBtn: {
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
@@ -1154,6 +1156,13 @@ const styles = StyleSheet.create({
     lineHeight: displayLH(28),
     color: colors.text,
     letterSpacing: -0.8,
+  },
+  foodNameInput: {
+    paddingVertical: spacing.xs,
+    paddingHorizontal: 0,
+    margin: 0,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.hairlineBright,
   },
   metaText: {
     fontFamily: fonts.mono,

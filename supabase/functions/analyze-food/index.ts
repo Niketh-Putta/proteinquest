@@ -71,8 +71,9 @@ const corsHeaders = {
 
 const SYSTEM_PROMPT = `You are an expert sports nutritionist who estimates PROTEIN and CALORIES from food photos.
 Be precise and realistic. Prefer mid-range portions. Do NOT systematically undercount calories OR inflate protein grams.
+Models often underestimate grams on crowded plates — correct for that bias.
 
-WORK IN 5 STEPS (reason internally, output final JSON only):
+WORK IN 6 STEPS (reason internally, output final JSON only):
 0. LABEL / TEXT DETECTION (FIRST — highest priority):
    - Read nutrition facts, packaging, barcodes, macro-app screenshots, menus with macros.
    - OCR numbers near Protein/PRO/P: and Calories/Energy/kcal/Cal.
@@ -80,18 +81,22 @@ WORK IN 5 STEPS (reason internally, output final JSON only):
    - If explicit protein grams are clear → protein_source="label", label_protein_g=that value, total_protein_g=that value. Do NOT override with visual math.
    - If explicit calories are clear → label_calories_g and calories use that value. Label wins.
    - When no label: label_protein_g=null, label_calories_g=null, protein_source="visual".
-1. IDENTIFY every visible edible component (skip if step 0 is authoritative). Note cooking method. Infer cooking fat when greens look glossy/sautéed or meat looks oil-brushed.
-2. ESTIMATE PORTION (visual/mixed only) with anchors:
-   - Dinner plate ~26cm; fork ~19cm; palm ~10cm wide
+1. IDENTIFY every visible edible component (skip if step 0 is authoritative). Name specific dishes when clear (sambar rice, paneer tikka, biryani). Note cooking method. Infer cooking fat when greens look glossy/sautéed or meat looks oil-brushed.
+2. SIZE THE PLATE FIRST (critical for accuracy):
+   - Infer reference objects: dinner plate ~26cm, bowl diameter, fork ~19cm, palm ~10cm, takeout box.
+   - Estimate each component's area/height, then convert to cooked edible grams BEFORE macros.
+3. ESTIMATE PORTION (visual/mixed only) with anchors:
    - Typical chicken breast meal: 140–200g cooked. Use 200–250g ONLY when the plate is clearly piled with thick strips/breast covering most of the plate.
    - Strip chicken: count strips × 25–35g (thick/wide). Thin strips ≈20–25g. Do not invent hidden chicken under greens.
-   - Egg ~50g (~6g protein); deck-of-cards meat ~85g; fist rice/pasta ~150g cooked
+   - Egg ~50g (~6g protein); deck-of-cards meat ~85g; fist rice/pasta ~150–180g cooked; half-plate rice ~120–150g
+   - Sambar/dal ladle ~150–220g; roti/chapati ~40–50g each; idli ~40g each; dosa ~80–120g
+   - Paneer cube pile: count cubes × 15–20g; typical tikka serving 100–140g
    - Greens bed under protein: 80–120g typical (share plate space — do not full-plate each item)
-   - Oil: add "~1 tbsp olive oil" (~14g, ~120 kcal) only when sautéed/glossy/fried; skip if dry/steamed
+   - Oil: add "~1 tbsp olive oil/ghee" (~14g, ~120 kcal) when sautéed/glossy/fried/curry sheen; skip if dry/steamed
    - Protein bar ~60g; yogurt cup 125–170g
-3. protein_g = estimated_grams × (protein/100g) / 100. Densities: chicken breast 31, ground beef 26, salmon 25, egg 13, greek yogurt 10, tofu 17, kale/spinach 3, rice 2.7, cheese 25, protein bar 30, oil/butter 0
-4. calories_g = estimated_grams × (kcal/100g) / 100. Densities: chicken breast 165, ground beef 250, salmon 208, egg 155, greek yogurt 97, tofu 76, kale/spinach 35, rice 130, pasta 131, cheese 350, protein bar 400, bread 265, olive oil/butter 717
-5. SUM item protein → total_protein_g (±0.5g). SUM calories_g → calories (±15 kcal). Round grams to nearest 5g.
+4. protein_g = estimated_grams × (protein/100g) / 100. Densities: chicken breast 31, paneer 18, ground beef 26, salmon 25, egg 13, greek yogurt 10, tofu 17, dal/lentils 9, sambar 3.5, kale/spinach 3, rice 2.7, roti 8, cheese 25, protein bar 30, oil/butter/ghee 0
+5. calories_g = estimated_grams × (kcal/100g) / 100. Densities: chicken breast 165, paneer 265, ground beef 250, salmon 208, egg 155, greek yogurt 97, tofu 76, dal 116, sambar 55, rice 130, roti 297, pasta 131, cheese 350, protein bar 400, bread 265, olive oil/butter/ghee 717
+6. SUM item protein → total_protein_g (±0.5g). SUM calories_g → calories (±15 kcal). Round grams to nearest 5g. Re-check totals vs item sum.
 
 Rules:
 - protein_source: label | visual | mixed (label wins totals when mixed)
@@ -110,7 +115,9 @@ E) Label "Protein 50g" → protein_source=label, label_protein_g=50, total=50
 F) Scoop label "24g protein" → total=24
 G) Macro screenshot "Protein: 48g" → total=48
 H) Label "Calories 320" → label_calories_g=320, calories=320
-I) Smaller strip plate (~7 thin strips ~150g) + dry steamed greens (~80g), no oil → protein ~48g; kcal ~275`;
+I) Smaller strip plate (~7 thin strips ~150g) + dry steamed greens (~80g), no oil → protein ~48g; kcal ~275
+J) Sambar rice: rice ~180g + sambar ~200g → protein ~13g; kcal ~340
+K) Paneer tikka ~120g + oil ~10g → protein ~22g; kcal ~340`;
 
 const OPENAI_SCHEMA = {
   type: "object",
@@ -216,7 +223,11 @@ Deno.serve(async (req) => {
     if (OPENAI_API_KEY && !openaiCircuitOpen()) {
       try {
         const raw = await callOpenAI(image_base64, mime_type, userNote);
-        return json({ analysis: normalize(raw), model: OPENAI_MODEL, provider: "openai" });
+        return json({
+          analysis: normalize(raw, userNote),
+          model: OPENAI_MODEL,
+          provider: "openai",
+        });
       } catch (openaiErr) {
         const openaiMessage =
           openaiErr instanceof Error ? openaiErr.message : String(openaiErr);
@@ -233,7 +244,7 @@ Deno.serve(async (req) => {
             userNote,
           );
           return json({
-            analysis: normalize(raw),
+            analysis: normalize(raw, userNote),
             model,
             provider: "gemini",
             fallback_from: "openai",
@@ -253,7 +264,7 @@ Deno.serve(async (req) => {
         userNote,
       );
       return json({
-        analysis: normalize(raw),
+        analysis: normalize(raw, userNote),
         model,
         provider: "gemini",
         fallback_from: "openai",
@@ -272,7 +283,7 @@ Deno.serve(async (req) => {
       mime_type,
       userNote,
     );
-    return json({ analysis: normalize(raw), model, provider: "gemini" });
+    return json({ analysis: normalize(raw, userNote), model, provider: "gemini" });
   } catch (err) {
     console.error("analyze-food error:", err);
     const message = err instanceof Error ? err.message : "Unexpected error analyzing the photo";
@@ -303,7 +314,17 @@ function supportsThinking(model: string): boolean {
 
 function userNotePromptSuffix(userNote: string): string {
   if (!userNote) return "";
-  return `\n\nUser-provided context (use to improve food identity, sauces, and portions when the photo is ambiguous; do not invent foods the image clearly contradicts): ${userNote}`;
+  return `
+
+USER NOTE (first-class evidence with the photo — fuse both; do not treat as a caption-only hint):
+"${userNote}"
+
+Fusion rules:
+1. IDENTITY: Prefer the user's dish name / ingredients when they clarify the plate (e.g. "sambar rice", "chicken tikka, no naan", "greek yogurt + honey"). Confirm those foods in the photo; reject inventing foods the image clearly does not show.
+2. PORTIONS: If the note states amounts or size ("half plate", "2 eggs", "large bowl", "small serving", "200g"), set estimated_grams and portion text to match. If the note only names foods, use visual portion anchors from the photo.
+3. food_name: Prefer a short name that matches the user's wording when it fits the plate (e.g. "Sambar rice" not a generic "Rice bowl").
+4. MACROS: Recalculate protein_g / calories_g from the fused identity + portions. Cooking fat, oil, sauce, and plate size still come from the image.
+5. CONFLICTS: Photo wins on what is present; explicit user amounts win on portion size when stated.`;
 }
 
 async function callGeminiWithRetry(
@@ -501,7 +522,7 @@ async function callOpenAIOnce(
             {
               type: "text",
               text:
-                "Analyze protein + calories. Prefer labels/OCR when present (set label_* fields). Else mid-range visual portions with density math. Return JSON only." +
+                "Analyze protein + calories. Prefer labels/OCR when present (set label_* fields). Else: size the plate first, estimate cooked grams per component, then apply density math. Fuse any user note for identity + portions. Return JSON only." +
                 userNotePromptSuffix(userNote),
             },
             {
@@ -573,28 +594,16 @@ function calibrateItem(item: NormalizedItem, skipCalibration = false): Normalize
   let next = { ...item };
 
   if (proteinDensity) {
+    // USDA/density table is the source of truth for known foods (cheapest accuracy win).
     const fromDensity = proteinFromDensity(grams, proteinDensity);
-    const llmProtein = next.protein_g;
-
-    // Density math is authoritative for known foods — blend outliers toward it.
-    if (fromDensity > 0 && Math.abs(llmProtein - fromDensity) / fromDensity > 0.12) {
-      const over = llmProtein > fromDensity;
-      const gap = Math.abs(llmProtein - fromDensity) / fromDensity;
-      // Overestimates get pulled harder (common failure); underestimates still lift.
-      const densityWeight = over
-        ? Math.min(0.75, 0.45 + gap * 0.4)
-        : gap > 0.4
-        ? 0.65
-        : 0.45;
-      const blended = round1(fromDensity * densityWeight + llmProtein * (1 - densityWeight));
-      next = {
-        ...next,
-        protein_g: over
-          ? Math.min(llmProtein, Math.max(blended, round1(fromDensity * 0.95)))
-          : Math.max(blended, llmProtein * 0.9),
-        confidence: gap > 0.35 ? "medium" : next.confidence,
-      };
-    }
+    const llmProtein = next.protein_g > 0 ? next.protein_g : fromDensity;
+    const gap = fromDensity > 0 ? Math.abs(llmProtein - fromDensity) / fromDensity : 0;
+    const blended = round1(fromDensity * 0.82 + llmProtein * 0.18);
+    next = {
+      ...next,
+      protein_g: blended,
+      confidence: gap > 0.4 ? "medium" : next.confidence,
+    };
   }
 
   return calibrateItemCalories(next, skipCalibration);
@@ -657,10 +666,70 @@ function calibrateItemCalories(item: NormalizedItem, skipCalibration = false): N
     };
   }
 
-  // Near anchor — favor the realistic prepared anchor and never pull below the model's own
-  // estimate, so calibration stops shaving calories off already-reasonable numbers.
-  const blended = Math.round(anchor * 0.6 + llmCalories * 0.4);
-  return { ...item, calories_g: Math.max(llmCalories, blended) };
+  // Near anchor — ground hard to USDA/prepared density (keeps cost low vs a second model call).
+  const blended = Math.round(anchor * 0.78 + llmCalories * 0.22);
+  return { ...item, calories_g: Math.max(Math.round(anchor * 0.9), blended) };
+}
+
+/** Apply explicit user portion cues (counts, half plate, grams) before density grounding. */
+function applyUserNotePortionHints(
+  items: NormalizedItem[],
+  userNote: string,
+): NormalizedItem[] {
+  if (!userNote.trim() || items.length === 0) return items;
+  const note = userNote.toLowerCase();
+  let next = items.map((i) => ({ ...i }));
+
+  const eggMatch = note.match(/(\d+)\s*eggs?\b/);
+  if (eggMatch) {
+    const n = Math.min(12, Math.max(1, Number(eggMatch[1])));
+    for (const item of next) {
+      if (/\begg/i.test(item.name)) item.estimated_grams = snapGrams(n * 50);
+    }
+  }
+
+  const rotiMatch = note.match(/(\d+)\s*(rotis?|chapatis?|chapathis?|naans?|parathas?)\b/);
+  if (rotiMatch) {
+    const n = Math.min(8, Math.max(1, Number(rotiMatch[1])));
+    for (const item of next) {
+      if (/roti|chapati|chapathi|naan|paratha/i.test(item.name)) {
+        item.estimated_grams = snapGrams(n * 45);
+      }
+    }
+  }
+
+  // "200g rice" / "rice 200g"
+  const gramPairs: Array<{ grams: number; food: string }> = [];
+  for (const m of note.matchAll(/(\d{2,4})\s*g(?:rams?)?\s+(?:of\s+)?([a-z][a-z\s]{1,28})/g)) {
+    gramPairs.push({ grams: Number(m[1]), food: m[2].trim() });
+  }
+  for (const m of note.matchAll(/([a-z][a-z\s]{1,28}?)\s+(\d{2,4})\s*g(?:rams?)?\b/g)) {
+    gramPairs.push({ grams: Number(m[2]), food: m[1].trim() });
+  }
+  for (const hint of gramPairs) {
+    if (!hint.grams || hint.grams < 20 || hint.grams > 900) continue;
+    const key = hint.food.split(/\s+/).slice(0, 3).join(" ");
+    for (const item of next) {
+      if (item.name.toLowerCase().includes(key) || key.includes(item.name.toLowerCase().split(/\s+/)[0])) {
+        item.estimated_grams = snapGrams(hint.grams);
+      }
+    }
+  }
+
+  let scale = 1;
+  if (/\b(half|1\/2)\s*(plate|portion|serving|bowl)\b/.test(note)) scale = 0.55;
+  else if (/\b(small|light)\s*(plate|portion|serving|bowl)?\b/.test(note)) scale = 0.75;
+  else if (/\b(large|big|huge|full)\s*(plate|portion|serving|bowl)\b/.test(note)) scale = 1.25;
+  else if (/\bdouble\b/.test(note)) scale = 1.5;
+
+  if (scale !== 1) {
+    next = next.map((item) => {
+      if (!item.estimated_grams || isPureFatItem(item.name)) return item;
+      return { ...item, estimated_grams: snapGrams(item.estimated_grams * scale) };
+    });
+  }
+
+  return next;
 }
 
 const OILY_PREP_PATTERN =
@@ -736,7 +805,7 @@ function deriveOverallConfidence(items: NormalizedItem[]): string {
   return "high";
 }
 
-function normalize(raw: Record<string, unknown>) {
+function normalize(raw: Record<string, unknown>, userNote = "") {
   if (!raw.is_food) {
     return {
       is_food: false,
@@ -754,26 +823,28 @@ function normalize(raw: Record<string, unknown>) {
   const fromLabel = isLabelSource(raw) && (labelProtein !== null || labelCalories !== null);
   const skipCalibration = fromLabel;
 
-  const items = ensureCookingFatCalories(
-    ((raw.items as Record<string, unknown>[]) ?? [])
-      .map((item) => {
-        const rawGrams = Math.round(Number(item.estimated_grams) || 0);
-        const grams = rawGrams > 0 ? snapGrams(rawGrams) : undefined;
-        const calorieDensity = grams ? lookupCalorieDensity(String(item.name ?? '')) : null;
-        const llmCalories = Math.round(Number(item.calories_g) || 0);
-        const fallbackCalories =
-          grams && calorieDensity ? caloriesFromDensity(grams, calorieDensity) : llmCalories;
+  const baseItems = ((raw.items as Record<string, unknown>[]) ?? []).map((item) => {
+    const rawGrams = Math.round(Number(item.estimated_grams) || 0);
+    const grams = rawGrams > 0 ? snapGrams(rawGrams) : undefined;
+    const calorieDensity = grams ? lookupCalorieDensity(String(item.name ?? "")) : null;
+    const llmCalories = Math.round(Number(item.calories_g) || 0);
+    const fallbackCalories =
+      grams && calorieDensity ? caloriesFromDensity(grams, calorieDensity) : llmCalories;
 
-        const base: NormalizedItem = {
-          name: sanitizeField(item.name, 60) || 'Unknown',
-          portion: sanitizeField(item.portion, 80),
-          estimated_grams: grams,
-          protein_g: round1(Number(item.protein_g) || 0),
-          calories_g: llmCalories > 0 ? llmCalories : fallbackCalories,
-          confidence: String(item.confidence ?? 'medium'),
-        };
-        return calibrateItem(base, skipCalibration);
-      })
+    return {
+      name: sanitizeField(item.name, 60) || "Unknown",
+      portion: sanitizeField(item.portion, 80),
+      estimated_grams: grams,
+      protein_g: round1(Number(item.protein_g) || 0),
+      calories_g: llmCalories > 0 ? llmCalories : fallbackCalories,
+      confidence: String(item.confidence ?? "medium"),
+    } satisfies NormalizedItem;
+  });
+
+  const hinted = applyUserNotePortionHints(baseItems, userNote);
+  const items = ensureCookingFatCalories(
+    hinted
+      .map((item) => calibrateItem(item, skipCalibration))
       // Keep calorie-dense items (oil/butter) even with ~0 protein.
       .filter((item) => item.protein_g >= 0.5 || item.calories_g >= 40),
   );

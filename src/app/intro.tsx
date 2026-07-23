@@ -3,7 +3,7 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { VideoView, useVideoPlayer } from 'expo-video';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
@@ -31,7 +31,7 @@ import Animated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/Button';
 import { DragonPortrait } from '@/components/DragonPortrait';
@@ -274,11 +274,17 @@ function PhaseProgress({ index, total }: { index: number; total: number }) {
   );
 }
 
+/** Pinned CTA (~52) + gap so ScrollView content never sits under the button. */
+const FOOTER_CLEARANCE = 96;
+
 export default function IntroScreen() {
   const { saveProfile, loading: sessionLoading, session } = useSession();
   const { horizontalPad, contentMaxWidth, height, width, isDesktop } = useLayout();
+  const insets = useSafeAreaInsets();
   const isCompact = height < 700 || width < 390;
+  const isTiny = height < 640 || width < 360;
   const footerGap = usePinnedFooterGap(isCompact);
+  const phaseScrollRef = useRef<ScrollView>(null);
 
   const [phase, setPhase] = useState<Phase>('hero');
   const [wordIndex, setWordIndex] = useState(0);
@@ -291,6 +297,20 @@ export default function IntroScreen() {
 
   const phaseIndex = PHASES.indexOf(phase);
   const namingDragon = DRAGONS[dragonIndex];
+  const dragonPortraitSize = isTiny ? 88 : isCompact ? 112 : 160;
+
+  function scrollNameFieldIntoView() {
+    // Keep the name input above the pinned Continue / Next dragon CTA.
+    requestAnimationFrame(() => {
+      phaseScrollRef.current?.scrollToEnd({ animated: true });
+    });
+  }
+
+  useEffect(() => {
+    if (phase !== 'dragons' && phase !== 'name') return;
+    const t = setTimeout(scrollNameFieldIntoView, 80);
+    return () => clearTimeout(t);
+  }, [phase, dragonIndex]);
 
   // Opening title sequence: FUEL. FEED. EVOLVE. → settle on the brand statement.
   useEffect(() => {
@@ -474,7 +494,8 @@ export default function IntroScreen() {
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
         <KeyboardAvoidingView
           style={styles.flex}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? Math.max(insets.top, 8) : 0}>
           <View
             style={[
               styles.inner,
@@ -494,9 +515,15 @@ export default function IntroScreen() {
             </View>
 
             <ScrollView
+              ref={phaseScrollRef}
               style={styles.phaseScroll}
-              contentContainerStyle={styles.phaseScrollContent}
+              contentContainerStyle={[
+                styles.phaseScrollContent,
+                (phase === 'dragons' || phase === 'name') && styles.phaseScrollContentNamed,
+                { paddingBottom: FOOTER_CLEARANCE },
+              ]}
               keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
               showsVerticalScrollIndicator={false}>
               {phase === 'name' ? (
                 <Animated.View
@@ -517,6 +544,7 @@ export default function IntroScreen() {
                     autoCorrect={false}
                     maxLength={24}
                     returnKeyType="done"
+                    onFocus={scrollNameFieldIntoView}
                     onSubmitEditing={submitName}
                   />
                 </Animated.View>
@@ -531,20 +559,31 @@ export default function IntroScreen() {
                   <Text style={styles.kicker}>
                     DRAGON {dragonIndex + 1} OF {DRAGONS.length}
                   </Text>
-                  <View style={[styles.dragonReveal, isCompact && styles.dragonRevealCompact]}>
+                  <View
+                    style={[
+                      styles.dragonReveal,
+                      isCompact && styles.dragonRevealCompact,
+                      isTiny && styles.dragonRevealTiny,
+                    ]}>
                     <DragonPortrait
                       art={namingDragon.stages[0].art}
                       accent={namingDragon.accent}
                       level={1}
                       dragonId={namingDragon.id}
-                      size={isCompact ? 112 : 160}
+                      size={dragonPortraitSize}
                     />
                   </View>
                   <Text style={[styles.question, isCompact && styles.questionCompact]}>
-                    Name your{'\n'}
-                    {namingDragon.title.toLowerCase()}
+                    {isTiny ? (
+                      <>Name your {namingDragon.title.toLowerCase()}</>
+                    ) : (
+                      <>
+                        Name your{'\n'}
+                        {namingDragon.title.toLowerCase()}
+                      </>
+                    )}
                   </Text>
-                  <Text style={styles.dragonHint}>
+                  <Text style={styles.dragonHint} numberOfLines={isTiny ? 1 : 2}>
                     Default: {namingDragon.name} · {namingDragon.motto}
                   </Text>
                   <TextInput
@@ -564,6 +603,7 @@ export default function IntroScreen() {
                     autoCorrect={false}
                     maxLength={24}
                     returnKeyType="done"
+                    onFocus={scrollNameFieldIntoView}
                     onSubmitEditing={submitDragonName}
                   />
                 </Animated.View>
@@ -772,8 +812,11 @@ const styles = StyleSheet.create({
   phaseScrollContent: {
     flexGrow: 1,
     justifyContent: 'center',
-    // Extra room so the name field clears the pinned Continue CTA when scrolled.
-    paddingBottom: spacing.xl,
+  },
+  // Naming steps: top-align so short screens don't bury the TextInput under the CTA.
+  phaseScrollContentNamed: {
+    justifyContent: 'flex-start',
+    paddingTop: spacing.md,
   },
   phaseBody: { width: '100%' },
   kicker: {
@@ -800,9 +843,10 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.hairlineBright,
   },
   nameInputCompact: { fontSize: 26 },
-  dragonNameInput: { marginTop: spacing.md, marginBottom: spacing.sm },
+  dragonNameInput: { marginTop: spacing.md, marginBottom: spacing.md },
   dragonReveal: { alignItems: 'center', marginTop: spacing.lg, marginBottom: spacing.md },
   dragonRevealCompact: { marginTop: spacing.sm, marginBottom: spacing.sm },
+  dragonRevealTiny: { marginTop: spacing.xs, marginBottom: spacing.xs },
   dragonHint: {
     fontFamily: fonts.body,
     fontSize: 13,
