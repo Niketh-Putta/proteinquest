@@ -9,7 +9,7 @@ import { xpSnapshot } from '@/lib/xp';
 import { colors, displayLH, fonts, noTextCaret, pressableWeb, shadowCard, spacing } from '@/theme';
 
 export type TrainerRankVariant = 'rich' | 'compact';
-const TRAINER_AVATAR = require('../../assets/character/trainer-rank-dragon.png');
+const TRAINER_AVATAR = require('../../assets/character/dragons/fire-5.png');
 const AVATAR_RED = '#E23B2F';
 
 interface Props {
