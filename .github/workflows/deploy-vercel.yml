@@ -57,7 +57,9 @@ jobs:
         run: |
           set -euo pipefail
           cd dist
-          APP_DEPLOY_URL="$(npx vercel deploy --prod --yes --token "${{ secrets.VERCEL_TOKEN }}" 2>&1 | grep -oE 'https://[a-z0-9-]+\.vercel\.app' | tail -n 1)"
+          # No --prod here: production domains include proteinquest.app, and --prod
+          # would steal the marketing apex onto the Expo build before marketing deploys.
+          APP_DEPLOY_URL="$(npx vercel deploy --yes --token "${{ secrets.VERCEL_TOKEN }}" 2>&1 | grep -oE 'https://[a-z0-9-]+\.vercel\.app' | tail -n 1)"
           if [ -z "$APP_DEPLOY_URL" ]; then
             echo "::error::Could not parse web app deploy URL"
             exit 1
