@@ -25,7 +25,12 @@ function productName(product: OffProduct, code: string): string {
       .map((s) => (typeof s === 'string' ? s.trim() : ''))
       .find(Boolean) || '';
   const brand = typeof product.brands === 'string' ? product.brands.split(',')[0]?.trim() : '';
-  const joined = [name, brand].filter(Boolean).join(' · ').trim();
+  // Avoid "Nutella · Nutella" when brand is already in the product name.
+  const brandUseful =
+    brand &&
+    !name.toLowerCase().includes(brand.toLowerCase()) &&
+    !brand.toLowerCase().includes(name.toLowerCase());
+  const joined = [name, brandUseful ? brand : null].filter(Boolean).join(' · ').trim();
   return (joined || `Product ${code}`).slice(0, 80);
 }
 
