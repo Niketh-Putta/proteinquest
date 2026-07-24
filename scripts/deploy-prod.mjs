@@ -1,19 +1,21 @@
 #!/usr/bin/env node
 /**
- * Production ship:
- *  - Expo web app → proteinquest.vercel.app + proteinlens.vercel.app
- *  - Marketing landing → proteinquest.app + www.proteinquest.app
+ * Production ship: Expo web app only.
+ * Aliases: proteinquest.app, www.proteinquest.app, proteinquest.vercel.app, proteinlens.vercel.app
  *
- * Both ship through the linked `proteinquest` Vercel project; aliases keep
- * app and marketing on separate deployments.
+ * Marketing landing is suppressed on production domains (use `npm run preview:marketing` locally).
  */
 import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-const APP_DOMAINS = ['proteinquest.vercel.app', 'proteinlens.vercel.app'];
-const MARKETING_DOMAINS = ['proteinquest.app', 'www.proteinquest.app'];
+const APP_DOMAINS = [
+  'proteinquest.app',
+  'www.proteinquest.app',
+  'proteinquest.vercel.app',
+  'proteinlens.vercel.app',
+];
 const VERCEL_SCOPE = process.env.VERCEL_SCOPE?.trim() || '';
 const REPO_ROOT = process.cwd();
 
@@ -115,35 +117,26 @@ function aliasDomains(deploymentUrl, domains) {
 
 ensureVercelAuth();
 
-const appOnly = process.argv.includes('--app-only');
-const marketingOnly = process.argv.includes('--marketing-only');
-
-if (!marketingOnly) {
-  run('npx expo export --platform web', { inherit: true });
-  run('node scripts/prepare-web-export.mjs', { inherit: true });
-  // Force dist/ to use the proteinquest project (never the accidental `dist` project).
-  const rootProject = JSON.parse(readFileSync(join(REPO_ROOT, '.vercel/project.json'), 'utf8'));
-  rmSync(join(REPO_ROOT, 'dist/.vercel'), { recursive: true, force: true });
-  mkdirSync(join(REPO_ROOT, 'dist/.vercel'), { recursive: true });
-  writeFileSync(
-    join(REPO_ROOT, 'dist/.vercel/project.json'),
-    `${JSON.stringify({
-      projectId: rootProject.projectId,
-      orgId: rootProject.orgId,
-      projectName: rootProject.projectName,
-    })}\n`,
+if (process.argv.includes('--marketing-only')) {
+  console.error(
+    'Marketing production deploy is suppressed. Use `npm run preview:marketing` locally.',
   );
-  const appUrl = vercelDeployCommand(['deploy', 'dist', '--prod', '--yes', '--json']);
-  aliasDomains(appUrl, APP_DOMAINS);
+  process.exit(1);
 }
 
-if (!appOnly) {
-  run('node scripts/prepare-vercel-output.mjs', { inherit: true });
-  const marketingUrl = vercelDeployCommand(['deploy', '--prod', '--yes', '--prebuilt', '--json']);
-  aliasDomains(marketingUrl, MARKETING_DOMAINS);
-  try {
-    run('node scripts/refresh-og-cache.mjs', { inherit: true });
-  } catch {
-    console.log('OG refresh checks reported an issue; deployment is still live.');
-  }
-}
+run('npx expo export --platform web', { inherit: true });
+run('node scripts/prepare-web-export.mjs', { inherit: true });
+// Force dist/ to use the proteinquest project (never the accidental `dist` project).
+const rootProject = JSON.parse(readFileSync(join(REPO_ROOT, '.vercel/project.json'), 'utf8'));
+rmSync(join(REPO_ROOT, 'dist/.vercel'), { recursive: true, force: true });
+mkdirSync(join(REPO_ROOT, 'dist/.vercel'), { recursive: true });
+writeFileSync(
+  join(REPO_ROOT, 'dist/.vercel/project.json'),
+  `${JSON.stringify({
+    projectId: rootProject.projectId,
+    orgId: rootProject.orgId,
+    projectName: rootProject.projectName,
+  })}\n`,
+);
+const appUrl = vercelDeployCommand(['deploy', 'dist', '--prod', '--yes', '--json']);
+aliasDomains(appUrl, APP_DOMAINS);

@@ -123,7 +123,9 @@ function main() {
   };
 
   fs.writeFileSync(path.join(outputDir, 'config.json'), `${JSON.stringify(config, null, 2)}\n`);
-  console.log('Prepared .vercel/output — marketing landing + stats dashboard + API');
+  console.log(
+    'Prepared .vercel/output — marketing preview + stats dashboard + API (not aliased to proteinquest.app)',
+  );
 }
 
 main();

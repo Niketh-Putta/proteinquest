@@ -1,4 +1,5 @@
-// Build static marketing landing into dist/ for Vercel git deploys (proteinquest.app).
+// Build static marketing landing into dist/ for local preview only.
+// Production domains (proteinquest.app) ship the Expo app — marketing is suppressed.
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -25,4 +26,6 @@ execFileSync('node', [path.join(root, 'scripts/prepare-vercel-output.mjs')], {
 
 fs.rmSync(distDir, { recursive: true, force: true });
 copyRecursive(staticDir, distDir);
-console.log('Prepared dist/ — marketing download page for proteinquest.app');
+console.log(
+  'Prepared dist/ — marketing preview only (production uses Expo app on proteinquest.app)',
+);

@@ -42,9 +42,6 @@ jobs:
             fi
           done
 
-      - name: Build marketing site
-        run: node scripts/prepare-vercel-output.mjs
-
       - name: Build web app (Expo export)
         run: |
           test -n "$EXPO_PUBLIC_SUPABASE_URL" || (echo "::error::Missing EXPO_PUBLIC_SUPABASE_URL" && exit 1)
@@ -52,33 +49,18 @@ jobs:
           npx expo export --platform web
           node scripts/prepare-web-export.mjs
 
-      - name: Deploy web app to app.proteinquest.app
-        id: app_deploy
+      - name: Deploy Expo app to proteinquest.app (marketing suppressed)
         run: |
           set -euo pipefail
           cd dist
-          APP_DEPLOY_URL="$(npx vercel deploy --yes --token "${{ secrets.VERCEL_TOKEN }}" 2>&1 | grep -oE 'https://[a-z0-9-]+\.vercel\.app' | tail -n 1)"
+          APP_DEPLOY_URL="$(npx vercel deploy --prod --yes --token "${{ secrets.VERCEL_TOKEN }}" 2>&1 | grep -oE 'https://[a-z0-9-]+\.vercel\.app' | tail -n 1)"
           if [ -z "$APP_DEPLOY_URL" ]; then
             echo "::error::Could not parse web app deploy URL"
             exit 1
           fi
-          for domain in app.proteinquest.app app.proteinquest.vercel.app; do
+          for domain in proteinquest.app www.proteinquest.app proteinquest.vercel.app proteinlens.vercel.app; do
             npx vercel alias set "$APP_DEPLOY_URL" "$domain" --token "${{ secrets.VERCEL_TOKEN }}" 2>/dev/null || \
             npx vercel alias set "$APP_DEPLOY_URL" "$domain" --token "${{ secrets.VERCEL_TOKEN }}" || true
           done
-          echo "app_url=$APP_DEPLOY_URL" >> "$GITHUB_OUTPUT"
-          echo "Web app: https://app.proteinquest.app ($APP_DEPLOY_URL)"
-
-      - name: Deploy marketing site to proteinquest.app (must be last)
-        run: |
-          set -euo pipefail
-          DEPLOY_URL="$(npx vercel deploy --prod --yes --prebuilt --token "${{ secrets.VERCEL_TOKEN }}" 2>&1 | grep -oE 'https://[a-z0-9-]+\.vercel\.app' | tail -n 1)"
-          if [ -z "$DEPLOY_URL" ]; then
-            echo "::error::Could not parse marketing deploy URL"
-            exit 1
-          fi
-          for domain in proteinquest.app www.proteinquest.app proteinquest.vercel.app proteinlens.vercel.app; do
-            npx vercel alias set "$DEPLOY_URL" "$domain" --token "${{ secrets.VERCEL_TOKEN }}" 2>/dev/null || \
-            npx vercel alias set "$DEPLOY_URL" "$domain" --token "${{ secrets.VERCEL_TOKEN }}" || true
-          done
-          echo "Marketing: https://proteinquest.app ($DEPLOY_URL)"
+          echo "Web app: https://proteinquest.app ($APP_DEPLOY_URL)"
+          echo "Marketing landing is suppressed on production domains."
