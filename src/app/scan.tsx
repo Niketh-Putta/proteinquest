@@ -45,7 +45,10 @@ import {
   updateLogImagePath,
   uploadFoodPhoto,
 } from '@/lib/api';
-import { lookupBarcodeProduct } from '@/lib/barcode';
+import {
+  analysisForUnknownBarcode,
+  lookupBarcodeProductDetailed,
+} from '@/lib/barcode';
 import { detectBarcodeFromVideo, findCameraVideo } from '@/lib/web-barcode';
 import { trackEvent } from '@/lib/analytics';
 import { rememberLocalMealPhoto } from '@/lib/local-meal-photo';
@@ -125,7 +128,17 @@ const SCAN_MODE_OPTIONS: {
 const DEMO_AUTO_SCAN_KEY = 'pq_demo_auto_scan';
 /** Stable settings so CameraView web scanner does not thrash on every render. */
 const BARCODE_SCANNER_SETTINGS = {
-  barcodeTypes: ['ean13', 'ean8', 'upc_a', 'upc_e', 'code128', 'code39', 'qr'] as const,
+  barcodeTypes: [
+    'ean13',
+    'ean8',
+    'upc_a',
+    'upc_e',
+    'code128',
+    'code39',
+    'codabar',
+    'itf14',
+    'qr',
+  ] as const,
 };
 /** App icon mark (coral dragon + bowl). Pair with ProteinQuest wordmark text. */
 const BRAND_MARK = require('@/assets/images/icon.png');
@@ -653,6 +666,13 @@ export default function ScanScreen() {
   /** True when confirm/log was opened from "add in text" (manual empty meal). */
   const [manualEntry, setManualEntry] = useState(false);
   const [scannedAt, setScannedAt] = useState<Date | null>(null);
+  /** Live status while a barcode is detected / looked up. */
+  const [barcodeStatus, setBarcodeStatus] = useState<string | null>(null);
+  /** Manual UPC entry when camera decode is flaky (esp. web). */
+  const [manualBarcodeOpen, setManualBarcodeOpen] = useState(false);
+  const [manualBarcodeInput, setManualBarcodeInput] = useState('');
+  /** Last code that missed OFF catalog — offer "Continue with code". */
+  const [pendingMissCode, setPendingMissCode] = useState<string | null>(null);
   const barcodeLockRef = useRef(false);
   const lastBarcodeRef = useRef<{ code: string; at: number }>({ code: '', at: 0 });
   const scanModeRef = useRef<ScanMode>(scanMode);
@@ -987,6 +1007,58 @@ export default function ScanScreen() {
     }
   }
 
+  async function openConfirmForBarcode(code: string, analysis: Analysis, usedNow?: number | null) {
+    setPendingMissCode(null);
+    setBarcodeStatus(null);
+    setManualBarcodeOpen(false);
+    await finishAnalysis(analysis, { usedNow: usedNow ?? null });
+    setManualEntry(true);
+  }
+
+  async function continueWithMissedBarcode() {
+    const code = pendingMissCode;
+    if (!code || busyRef.current) return;
+    busyRef.current = true;
+    setCapturing(true);
+    setError(null);
+    try {
+      let usedAtStart: number | null = null;
+      try {
+        usedAtStart = await ensureCanScan();
+        if (needsScanQuota && usedAtStart === null) return;
+      } catch {
+        /* allow */
+      }
+      const usedNow = needsScanQuota ? await countTodayPhotoScans() : usedAtStart;
+      if (needsScanQuota && usedNow !== null && !canScan(profile!, usedNow)) {
+        openPaywallForLimit();
+        return;
+      }
+      await openConfirmForBarcode(code, analysisForUnknownBarcode(code), usedNow ?? usedAtStart);
+    } catch (e: any) {
+      showError(e?.message ?? 'Could not continue. Try again.');
+    } finally {
+      busyRef.current = false;
+      setCapturing(false);
+      barcodeLockRef.current = false;
+    }
+  }
+
+  async function submitManualBarcode() {
+    const code = manualBarcodeInput.replace(/\D/g, '');
+    if (code.length < 6) {
+      showError('Enter a valid barcode (at least 6 digits).');
+      return;
+    }
+    setManualBarcodeOpen(false);
+    await handleBarcodeScanned({
+      data: code,
+      type: 'manual',
+      bounds: { origin: { x: 0, y: 0 }, size: { width: 0, height: 0 } },
+      cornerPoints: [],
+    });
+  }
+
   async function handleBarcodeScanned(result: BarcodeScanningResult) {
     if (scanModeRef.current !== 'barcode') return;
     if (busyRef.current || barcodeLockRef.current || phaseRef.current !== 'camera') return;
@@ -1007,6 +1079,8 @@ export default function ScanScreen() {
     busyRef.current = true;
     setCapturing(true);
     setError(null);
+    setPendingMissCode(null);
+    setBarcodeStatus(`Found ${code}… Looking up…`);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     let lookupFailed = false;
     try {
@@ -1041,22 +1115,28 @@ export default function ScanScreen() {
           return;
         }
       }
-      const product = await lookupBarcodeProduct(code);
-      if (!product) {
+      const lookup = await lookupBarcodeProductDetailed(code);
+      if (!lookup.fromCatalog) {
         lookupFailed = true;
-        showError('Barcode not found in Open Food Facts. Try photo mode on the label.');
+        setPendingMissCode(lookup.code);
+        setBarcodeStatus(null);
+        showError(
+          `No product for ${lookup.code} in Open Food Facts. Retry, type the code, or continue to enter macros.`,
+        );
         return;
       }
+      setBarcodeStatus(null);
       // Consumes via finishAnalysis → recordPhotoScan (same counter as photo).
-      await finishAnalysis(product, { usedNow: usedNow ?? usedAtStart });
+      await finishAnalysis(lookup.analysis, { usedNow: usedNow ?? usedAtStart });
     } catch (e: any) {
       lookupFailed = true;
+      setBarcodeStatus(null);
       showError(e.message ?? 'Could not look up that barcode. Try again.');
     } finally {
       busyRef.current = false;
       setCapturing(false);
-      // On failure, clear debounce so the same code can retry after unlock.
       if (lookupFailed) {
+        setBarcodeStatus(null);
         lastBarcodeRef.current = { code: '', at: 0 };
       }
       // Cool-down so one hold doesn't re-fire after a failed / cancelled lookup.
@@ -1102,15 +1182,24 @@ export default function ScanScreen() {
       } catch {
         /* keep polling */
       }
-      if (!cancelled) timer = setTimeout(tick, 320);
+      if (!cancelled) timer = setTimeout(tick, 180);
     };
 
-    timer = setTimeout(tick, 450);
+    timer = setTimeout(tick, 250);
     return () => {
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
   }, [scanMode, phase, permission?.granted]);
+
+  // Reset barcode UI chrome when leaving barcode mode.
+  useEffect(() => {
+    if (scanMode !== 'barcode') {
+      setManualBarcodeOpen(false);
+      setBarcodeStatus(null);
+      setPendingMissCode(null);
+    }
+  }, [scanMode]);
 
   async function analyze(uri: string, cameraCrop?: CameraCrop) {
     setError(null);
@@ -1510,8 +1599,25 @@ export default function ScanScreen() {
               : { marginTop: spacing.sm },
           ]}>
           <Ionicons name="alert-circle" size={15} color={colors.danger} />
-          <Text style={styles.errorText}>{error}</Text>
-          <Pressable onPress={() => setError(null)} hitSlop={8}>
+          <View style={{ flex: 1, gap: 6 }}>
+            <Text style={styles.errorText}>{error}</Text>
+            {pendingMissCode && phase === 'camera' ? (
+              <Pressable
+                onPress={() => void continueWithMissedBarcode()}
+                hitSlop={6}
+                style={styles.barcodeMissCta}
+                accessibilityRole="button"
+                accessibilityLabel="Continue with barcode and enter macros manually">
+                <Text style={styles.barcodeMissCtaText}>Continue with {pendingMissCode}</Text>
+              </Pressable>
+            ) : null}
+          </View>
+          <Pressable
+            onPress={() => {
+              setError(null);
+              setPendingMissCode(null);
+            }}
+            hitSlop={8}>
             <Ionicons name="close" size={14} color={colors.textTertiary} />
           </Pressable>
         </Animated.View>
@@ -1766,29 +1872,90 @@ export default function ScanScreen() {
                 },
               ]}>
               {scanMode === 'barcode' ? (
-                <View
-                  style={[styles.barcodeAutoChip, capturing && { opacity: 0.85 }]}
-                  accessibilityRole="text"
-                  accessibilityLabel={
-                    capturing ? 'Looking up barcode product' : 'Barcode scans automatically'
-                  }>
-                  <Ionicons
-                    name={capturing ? 'sync-outline' : 'barcode-outline'}
-                    size={Math.max(16, Math.round(18 * uiScale))}
-                    color={colors.accent}
-                  />
-                  <Text
-                    style={[
-                      styles.barcodeAutoChipText,
-                      (tinyH || veryNarrow) && { fontSize: 12 },
-                    ]}
-                    numberOfLines={2}>
-                    {capturing
-                      ? 'Looking up product…'
-                      : tinyH || veryNarrow
-                        ? 'Auto-scans in view'
-                        : 'Auto-scans when code is in view'}
-                  </Text>
+                <View style={styles.barcodeControlsCol}>
+                  <View
+                    style={[styles.barcodeAutoChip, capturing && { opacity: 0.85 }]}
+                    accessibilityRole="text"
+                    accessibilityLabel={
+                      barcodeStatus ||
+                      (capturing ? 'Looking up barcode product' : 'Barcode scans automatically')
+                    }>
+                    <Ionicons
+                      name={
+                        capturing || barcodeStatus ? 'sync-outline' : 'barcode-outline'
+                      }
+                      size={Math.max(16, Math.round(18 * uiScale))}
+                      color={colors.accent}
+                    />
+                    <Text
+                      style={[
+                        styles.barcodeAutoChipText,
+                        (tinyH || veryNarrow) && { fontSize: 12 },
+                      ]}
+                      numberOfLines={2}>
+                      {barcodeStatus
+                        ? barcodeStatus
+                        : capturing
+                          ? 'Looking up product…'
+                          : tinyH || veryNarrow
+                            ? 'Auto-scans in view'
+                            : 'Auto-scans when code is in view'}
+                    </Text>
+                  </View>
+                  {manualBarcodeOpen ? (
+                    <View style={styles.manualBarcodeRow}>
+                      <TextInput
+                        style={[styles.manualBarcodeInput, textInputWeb]}
+                        value={manualBarcodeInput}
+                        onChangeText={(t) => setManualBarcodeInput(t.replace(/[^\d]/g, ''))}
+                        placeholder="Type UPC / EAN"
+                        placeholderTextColor={colors.textTertiary}
+                        keyboardType="number-pad"
+                        inputMode="numeric"
+                        maxLength={18}
+                        autoFocus
+                        returnKeyType="done"
+                        onSubmitEditing={() => void submitManualBarcode()}
+                        accessibilityLabel="Manual barcode entry"
+                      />
+                      <Pressable
+                        onPress={() => void submitManualBarcode()}
+                        disabled={capturing || manualBarcodeInput.replace(/\D/g, '').length < 6}
+                        style={[
+                          styles.manualBarcodeGo,
+                          (capturing || manualBarcodeInput.replace(/\D/g, '').length < 6) && {
+                            opacity: 0.4,
+                          },
+                        ]}
+                        accessibilityRole="button"
+                        accessibilityLabel="Look up typed barcode">
+                        <Text style={styles.manualBarcodeGoText}>Go</Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={() => {
+                          setManualBarcodeOpen(false);
+                          setManualBarcodeInput('');
+                        }}
+                        hitSlop={8}
+                        accessibilityLabel="Cancel manual barcode">
+                        <Ionicons name="close" size={18} color={colors.textTertiary} />
+                      </Pressable>
+                    </View>
+                  ) : (
+                    <Pressable
+                      onPress={() => {
+                        setError(null);
+                        setManualBarcodeOpen(true);
+                      }}
+                      disabled={capturing}
+                      hitSlop={8}
+                      style={styles.manualBarcodeLink}
+                      accessibilityRole="button"
+                      accessibilityLabel="Enter barcode manually">
+                      <Ionicons name="keypad-outline" size={14} color={colors.textSecondary} />
+                      <Text style={styles.manualBarcodeLinkText}>Type barcode instead</Text>
+                    </Pressable>
+                  )}
                 </View>
               ) : (
                 <>
@@ -2320,7 +2487,17 @@ export default function ScanScreen() {
                 Are you sure you do not want to save this? It will be lost.
               </Text>
               <View style={styles.discardActions}>
-                <Button title="Keep editing" onPress={cancelDiscard} />
+                <Pressable
+                  onPress={cancelDiscard}
+                  hitSlop={10}
+                  accessibilityRole="button"
+                  accessibilityLabel="Keep editing"
+                  style={({ pressed }) => [
+                    styles.discardPrimary,
+                    pressed && styles.discardPrimaryPressed,
+                  ]}>
+                  <Text style={styles.discardPrimaryLabel}>Keep editing</Text>
+                </Pressable>
                 <Pressable
                   onPress={confirmDiscard}
                   hitSlop={10}
@@ -2660,6 +2837,11 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textAlign: 'center',
   },
+  barcodeControlsCol: {
+    flex: 1,
+    gap: 8,
+    alignItems: 'stretch',
+  },
   barcodeAutoChip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2679,6 +2861,56 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.text,
     flexShrink: 1,
+  },
+  manualBarcodeLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 4,
+  },
+  manualBarcodeLinkText: {
+    fontFamily: fonts.body,
+    fontSize: 12,
+    color: colors.textSecondary,
+  },
+  manualBarcodeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  manualBarcodeInput: {
+    flex: 1,
+    minHeight: 40,
+    paddingHorizontal: 12,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.22)',
+    backgroundColor: 'rgba(12, 11, 16, 0.72)',
+    color: colors.text,
+    fontFamily: fonts.mono,
+    fontSize: 14,
+  },
+  manualBarcodeGo: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: radius.sm,
+    backgroundColor: colors.accent,
+  },
+  manualBarcodeGoText: {
+    fontFamily: fonts.displayMedium,
+    fontSize: 13,
+    color: '#fff',
+  },
+  barcodeMissCta: {
+    alignSelf: 'flex-start',
+    paddingVertical: 2,
+  },
+  barcodeMissCtaText: {
+    fontFamily: fonts.body,
+    fontSize: 12,
+    color: colors.accent,
+    textDecorationLine: 'underline',
   },
   shutterRow: {
     flexDirection: 'row',
@@ -3228,22 +3460,44 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   discardActions: {
-    gap: spacing.xs,
+    gap: spacing.sm,
+  },
+  discardPrimary: {
+    ...pressableWeb,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 48,
+    paddingVertical: 13,
+    paddingHorizontal: spacing.lg,
+    borderRadius: 13,
+    backgroundColor: colors.accent,
+    boxShadow: '0 4px 14px rgba(255, 122, 89, 0.28), 0 1px 3px rgba(0,0,0,0.22)',
+    elevation: 3,
+  },
+  discardPrimaryPressed: {
+    backgroundColor: colors.accentPressed,
+    opacity: 0.96,
+  },
+  discardPrimaryLabel: {
+    fontFamily: fonts.displayMedium,
+    fontSize: 15,
+    letterSpacing: 0.2,
+    color: colors.onAccent,
   },
   discardSecondary: {
     ...pressableWeb,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: spacing.md,
-    borderRadius: radius.button,
+    paddingVertical: spacing.sm + 2,
+    borderRadius: 12,
   },
   discardSecondaryPressed: {
-    opacity: 0.65,
+    opacity: 0.7,
   },
   discardSecondaryLabel: {
     fontFamily: fonts.displayMedium,
-    fontSize: 15,
-    letterSpacing: 0.2,
-    color: colors.textTertiary,
+    fontSize: 14,
+    letterSpacing: 0.15,
+    color: colors.textSecondary,
   },
 });

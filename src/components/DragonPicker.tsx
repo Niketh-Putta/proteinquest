@@ -53,9 +53,12 @@ export function DragonPicker({
       <View style={[styles.list, compact && { marginTop: 0 }, tight && styles.listTight]}>
         {DRAGONS.map((dragon) => {
           const active = value === dragon.id;
+          const level = profile
+            ? effectiveLevel(getDragonProgress(profile, dragon.id))
+            : 1;
           // Show the dragon at its current evolution stage, not always the baby.
           const stage = profile
-            ? stageForXpLevel(effectiveLevel(getDragonProgress(profile, dragon.id)), dragon.id)
+            ? stageForXpLevel(level, dragon.id)
             : null;
           const art = stage ? getDragonArt(dragon.id, stage.index) : dragon.previewArt;
           return (
@@ -63,6 +66,7 @@ export function DragonPicker({
               key={dragon.id}
               accessibilityRole="radio"
               accessibilityState={{ checked: active }}
+              accessibilityLabel={`${displayDragonName(profile, dragon.id, dragonNames)}, level ${level}`}
               onPress={() => pick(dragon.id)}
               hitSlop={6}
               style={[styles.row, pressableWeb, tight && styles.rowTight, active && styles.rowActive]}>
@@ -73,7 +77,7 @@ export function DragonPicker({
                   ]}>
                   <Image source={art} style={[styles.art, tight && styles.artTight]} />
                 </View>
-                <View style={{ flex: 1 }}>
+                <View style={styles.copy}>
                   <Text style={[styles.name, tight && styles.nameTight, active && { color: dragon.accent }]}>
                     {displayDragonName(profile, dragon.id, dragonNames)}
                   </Text>
@@ -81,6 +85,31 @@ export function DragonPicker({
                     {stage ? `${stage.name.toUpperCase()} · ${dragon.title}` : dragon.title}
                   </Text>
                   <Text style={[styles.motto, tight && styles.mottoTight]}>{dragon.motto}</Text>
+                </View>
+                <View
+                  style={[
+                    styles.levelTag,
+                    tight && styles.levelTagTight,
+                    active && {
+                      borderColor: `${dragon.accent}66`,
+                      backgroundColor: `${dragon.accent}18`,
+                    },
+                  ]}>
+                  <Text
+                    style={[
+                      styles.levelTagLabel,
+                      active && { color: dragon.accent },
+                    ]}>
+                    LV
+                  </Text>
+                  <Text
+                    style={[
+                      styles.levelTagValue,
+                      tight && styles.levelTagValueTight,
+                      active && { color: dragon.accent },
+                    ]}>
+                    {level}
+                  </Text>
                 </View>
                 <View style={[styles.radio, active && { borderColor: dragon.accent }]}>
                   {active ? (
@@ -155,6 +184,7 @@ const styles = StyleSheet.create({
   },
   art: { width: 64, height: 64, borderRadius: radius.sm },
   artTight: { width: 48, height: 48 },
+  copy: { flex: 1, minWidth: 0, paddingRight: 4 },
   name: { fontFamily: fonts.display, fontSize: 17, color: colors.text },
   nameTight: { fontSize: 15 },
   titleSmall: {
@@ -167,6 +197,38 @@ const styles = StyleSheet.create({
   titleSmallTight: { fontSize: 8, letterSpacing: 1 },
   motto: { fontFamily: fonts.body, fontSize: 12, color: colors.textSecondary, marginTop: 4 },
   mottoTight: { fontSize: 11, marginTop: 2 },
+  levelTag: {
+    minWidth: 44,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.14)',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 1,
+  },
+  levelTagTight: {
+    minWidth: 40,
+    paddingHorizontal: 6,
+    paddingVertical: 5,
+    borderRadius: 9,
+  },
+  levelTagLabel: {
+    fontFamily: fonts.mono,
+    fontSize: 8,
+    letterSpacing: 1.2,
+    color: colors.textTertiary,
+  },
+  levelTagValue: {
+    fontFamily: fonts.displayHeavy,
+    fontSize: 15,
+    lineHeight: 18,
+    color: colors.text,
+    fontVariant: ['tabular-nums'],
+  },
+  levelTagValueTight: { fontSize: 14, lineHeight: 16 },
   radio: {
     width: 20,
     height: 20,

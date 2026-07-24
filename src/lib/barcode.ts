@@ -10,6 +10,12 @@ type OffProduct = {
   nutriments?: Record<string, number | string | undefined>;
 };
 
+export type BarcodeLookupResult = {
+  analysis: Analysis;
+  code: string;
+  fromCatalog: boolean;
+};
+
 function num(v: unknown): number | null {
   const n = typeof v === 'string' ? Number(v.replace(',', '.')) : Number(v);
   return Number.isFinite(n) ? n : null;
@@ -17,6 +23,26 @@ function num(v: unknown): number | null {
 
 function cleanBarcode(raw: string): string {
   return String(raw || '').replace(/\D/g, '');
+}
+
+/** Common UPC/EAN padding variants scanners and catalogs disagree on. */
+export function barcodeVariants(raw: string): string[] {
+  const code = cleanBarcode(raw);
+  if (!code) return [];
+  const out: string[] = [];
+  const push = (c: string) => {
+    if (c && !out.includes(c)) out.push(c);
+  };
+  push(code);
+  // UPC-A (12) ↔ EAN-13 (leading 0)
+  if (code.length === 12) push(`0${code}`);
+  if (code.length === 13 && code.startsWith('0')) push(code.slice(1));
+  // Drop / add leading zeros up to EAN-13
+  if (code.length < 13) push(code.padStart(13, '0'));
+  if (code.length < 12) push(code.padStart(12, '0'));
+  if (code.length > 12 && code.startsWith('0')) push(code.replace(/^0+/, '') || code);
+  // UPC-E expansion is rare in OFF; keep compact form as-is.
+  return out.filter((c) => c.length >= 6 && c.length <= 18);
 }
 
 function productName(product: OffProduct, code: string): string {
@@ -34,7 +60,29 @@ function productName(product: OffProduct, code: string): string {
   return (joined || `Product ${code}`).slice(0, 80);
 }
 
-function analysisFromOff(product: OffProduct, code: string): Analysis | null {
+function stubAnalysis(code: string, name?: string, notes?: string): Analysis {
+  const food = (name?.trim() || `Product ${code}`).slice(0, 80);
+  return {
+    is_food: true,
+    food_name: food,
+    items: [
+      {
+        name: food.slice(0, 60),
+        portion: '1 serving',
+        estimated_grams: 100,
+        protein_g: 0,
+        calories_g: 0,
+        confidence: 'low',
+      },
+    ],
+    total_protein_g: 0,
+    calories: 0,
+    confidence: 'low',
+    notes: notes || `Barcode ${code} · enter name & macros`,
+  };
+}
+
+function analysisFromOff(product: OffProduct, code: string): Analysis {
   const n = product.nutriments ?? {};
   const protein100 = num(n.proteins_100g) ?? num(n.proteins) ?? 0;
   const kcal100 =
@@ -71,9 +119,15 @@ function analysisFromOff(product: OffProduct, code: string): Analysis | null {
     calories = Math.max(0, Math.round(kcal100 * scale));
   }
 
-  if (proteinG <= 0 && calories <= 0) return null;
-
   const name = productName(product, code);
+  if (proteinG <= 0 && calories <= 0) {
+    return stubAnalysis(
+      code,
+      name,
+      `Barcode ${code} · Open Food Facts (macros missing — edit below)`,
+    );
+  }
+
   const portion =
     product.serving_size?.trim() ||
     (grams === 100 ? '100g' : `${grams}g serving`);
@@ -127,12 +181,40 @@ async function fetchOffProduct(code: string): Promise<OffProduct | null> {
   return null;
 }
 
+/** Look up a packaged product by barcode via Open Food Facts (variants + stub on miss). */
+export async function lookupBarcodeProductDetailed(barcode: string): Promise<BarcodeLookupResult> {
+  const variants = barcodeVariants(barcode);
+  const primary = variants[0] || cleanBarcode(barcode);
+
+  for (const code of variants) {
+    const product = await fetchOffProduct(code);
+    if (!product) continue;
+    return {
+      analysis: analysisFromOff(product, code),
+      code,
+      fromCatalog: true,
+    };
+  }
+
+  return {
+    analysis: stubAnalysis(
+      primary,
+      undefined,
+      `Barcode ${primary} · not in Open Food Facts — enter name & macros`,
+    ),
+    code: primary,
+    fromCatalog: false,
+  };
+}
+
 /** Look up a packaged product by barcode via Open Food Facts. */
 export async function lookupBarcodeProduct(barcode: string): Promise<Analysis | null> {
-  const code = cleanBarcode(barcode);
-  if (code.length < 6 || code.length > 18) return null;
+  const result = await lookupBarcodeProductDetailed(barcode);
+  return result.fromCatalog ? result.analysis : null;
+}
 
-  const product = await fetchOffProduct(code);
-  if (!product) return null;
-  return analysisFromOff(product, code);
+/** Build a confirm/log analysis when the camera decoded a code but catalog missed. */
+export function analysisForUnknownBarcode(barcode: string, name?: string): Analysis {
+  const code = cleanBarcode(barcode) || String(barcode || '').trim();
+  return stubAnalysis(code, name);
 }

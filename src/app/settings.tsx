@@ -6,7 +6,6 @@ import { router } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -21,6 +20,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { uploadAvatar } from '@/lib/api';
 import { BillingSheet } from '@/components/BillingSheet';
+import { FeedToast } from '@/components/FeedToast';
 import { SubscriptionBillingInfo } from '@/components/SubscriptionBillingInfo';
 import { DragonEvolutionGallery } from '@/components/DragonEvolutionGallery';
 import { GoalEditor } from '@/components/GoalEditor';
@@ -72,6 +72,7 @@ export default function SettingsScreen({ embedded = false }: { embedded?: boolea
   const [remindersBusy, setRemindersBusy] = useState(false);
   const [dragonNameDrafts, setDragonNameDrafts] = useState<Partial<Record<DragonId, string>>>({});
   const [dragonNamesSaved, setDragonNamesSaved] = useState(false);
+  const [nameToast, setNameToast] = useState<string | null>(null);
   const nameInputRef = useRef<TextInput>(null);
   const nameHydrated = useRef(false);
   const dragonNamesHydrated = useRef(false);
@@ -162,8 +163,8 @@ export default function SettingsScreen({ embedded = false }: { embedded?: boolea
       try {
         const available = await isDisplayNameAvailable(next);
         if (!available) {
-          setError(DISPLAY_NAME_TAKEN);
-          Alert.alert('Username already exists', DISPLAY_NAME_TAKEN);
+          setError(null);
+          setNameToast(DISPLAY_NAME_TAKEN);
           setLeagueName(profile?.display_name ?? '');
           return;
         }
@@ -173,8 +174,8 @@ export default function SettingsScreen({ embedded = false }: { embedded?: boolea
         setTimeout(() => setNameSaved(false), 1600);
       } catch (e) {
         if (isDisplayNameTakenError(e)) {
-          setError(DISPLAY_NAME_TAKEN);
-          Alert.alert('Username already exists', DISPLAY_NAME_TAKEN);
+          setError(null);
+          setNameToast(DISPLAY_NAME_TAKEN);
         } else {
           setError(e instanceof Error ? e.message : 'Could not save name.');
         }
@@ -241,6 +242,11 @@ export default function SettingsScreen({ embedded = false }: { embedded?: boolea
 
   return (
     <SafeAreaView style={styles.safe} edges={embedded ? ['top'] : ['top', 'bottom']}>
+      <FeedToast
+        visible={!!nameToast}
+        message={nameToast ?? ''}
+        onHide={() => setNameToast(null)}
+      />
       <View
         style={[
           styles.topBar,

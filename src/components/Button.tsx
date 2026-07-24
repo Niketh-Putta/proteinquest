@@ -18,6 +18,8 @@ export function Button({ title, onPress, variant = 'primary', disabled, loading,
   const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
   const isPrimary = variant === 'primary';
   const isDisabled = disabled || loading;
+  // Primary uses a muted fill instead of opacity so labels stay readable.
+  const fadeDisabled = isDisabled && !isPrimary;
 
   // IMPORTANT: the touch target is a plain <Pressable>, and the press-scale
   // animation lives on an inner <Animated.View>. Wrapping the Pressable itself
@@ -35,17 +37,19 @@ export function Button({ title, onPress, variant = 'primary', disabled, loading,
         borderless: false,
       }}
       onPressIn={() => {
+        if (isDisabled) return;
         scale.value = withSpring(0.98, { damping: 18, stiffness: 400 });
       }}
       onPressOut={() => {
         scale.value = withSpring(1, { damping: 14, stiffness: 300 });
       }}
-      style={[styles.pressable, isDisabled && styles.disabled, style]}>
+      style={[styles.pressable, fadeDisabled && styles.disabled, style]}>
       <Animated.View
         pointerEvents="none"
         style={[
           styles.base,
           isPrimary && styles.primary,
+          isPrimary && isDisabled && styles.primaryDisabled,
           variant === 'secondary' && styles.secondary,
           variant === 'ghost' && styles.ghost,
           animatedStyle,
@@ -59,7 +63,9 @@ export function Button({ title, onPress, variant = 'primary', disabled, loading,
               styles.label,
               {
                 color: isPrimary
-                  ? colors.onAccent
+                  ? isDisabled
+                    ? 'rgba(255, 249, 247, 0.72)'
+                    : colors.onAccent
                   : variant === 'ghost'
                     ? colors.textSecondary
                     : colors.text,
@@ -89,6 +95,9 @@ const styles = StyleSheet.create({
     borderRadius: radius.button,
   },
   primary: { backgroundColor: colors.accent },
+  primaryDisabled: {
+    backgroundColor: colors.accentDeep,
+  },
   secondary: {
     backgroundColor: 'transparent',
     borderWidth: StyleSheet.hairlineWidth,

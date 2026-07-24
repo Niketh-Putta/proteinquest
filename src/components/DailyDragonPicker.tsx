@@ -1,14 +1,24 @@
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import React, { useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
-import { Button } from '@/components/Button';
+
 import { DragonPicker } from '@/components/DragonPicker';
 import { lockDailyDragon } from '@/lib/character';
 import { useLayout, usePinnedFooterGap } from '@/lib/layout';
 import { todayISODate } from '@/lib/protein';
 import { useSession } from '@/lib/session';
 import type { DragonId } from '@/lib/types';
-import { colors, displayLH, fonts, spacing } from '@/theme';
+import { colors, displayLH, fonts, pressableWeb, spacing } from '@/theme';
 
 export function DailyDragonPicker() {
   const { isNarrow, height, width } = useLayout();
@@ -18,6 +28,8 @@ export function DailyDragonPicker() {
   const [dragonId, setDragonId] = useState<DragonId | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const ready = !!dragonId && !saving;
 
   async function confirm() {
     if (!profile || !dragonId) {
@@ -68,15 +80,49 @@ export function DailyDragonPicker() {
         </Animated.View>
       </ScrollView>
 
-      <View style={[styles.footer, { paddingBottom: footerGap }]}>
+      <View style={[styles.footer, { paddingBottom: footerGap + 50 }]}>
         {error ? <Text style={styles.error}>{error}</Text> : null}
-        <Button
-          title="Lock in for today"
+        <Pressable
           onPress={confirm}
-          loading={saving}
-          disabled={!dragonId}
-          style={isCompact ? styles.btnCompact : undefined}
-        />
+          disabled={!dragonId || saving}
+          accessibilityRole="button"
+          accessibilityLabel="Lock in for today"
+          style={({ pressed }) => [
+            styles.lockOuter,
+            ready && styles.lockOuterReady,
+            pressed && ready && styles.lockOuterPressed,
+            pressableWeb,
+          ]}>
+          <LinearGradient
+            colors={
+              ready
+                ? ['#FF9B7A', '#FF7A59', '#E85F42']
+                : ['rgba(255,122,89,0.28)', 'rgba(196,78,53,0.22)']
+            }
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={[styles.lockInner, isCompact && styles.lockInnerCompact]}>
+            {ready ? <View pointerEvents="none" style={styles.lockSheen} /> : null}
+            {saving ? (
+              <ActivityIndicator color={colors.onAccent} />
+            ) : (
+              <View style={styles.lockLabelRow}>
+                {dragonId ? (
+                  <Ionicons
+                    name="lock-closed"
+                    size={15}
+                    color={ready ? colors.onAccent : 'rgba(255,249,247,0.45)'}
+                  />
+                ) : null}
+                <Text
+                  style={[styles.lockLabel, !ready && styles.lockLabelDisabled]}
+                  numberOfLines={1}>
+                  Lock in for today
+                </Text>
+              </View>
+            )}
+          </LinearGradient>
+        </Pressable>
       </View>
     </View>
   );
@@ -114,11 +160,73 @@ const styles = StyleSheet.create({
   },
   subCompact: { fontSize: 13, lineHeight: 19, marginTop: spacing.xs, marginBottom: spacing.sm },
   footer: {
-    paddingTop: spacing.sm,
+    paddingTop: spacing.md,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.hairline,
     backgroundColor: colors.bg,
   },
-  btnCompact: { height: 44 },
+  lockOuter: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  lockOuterReady: {
+    borderColor: 'rgba(255,176,144,0.45)',
+    ...(Platform.OS === 'web'
+      ? ({
+          boxShadow:
+            '0 12px 32px rgba(255,122,89,0.32), 0 2px 8px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.22)',
+        } as object)
+      : {
+          shadowColor: '#FF7A59',
+          shadowOpacity: 0.35,
+          shadowRadius: 18,
+          shadowOffset: { width: 0, height: 8 },
+          elevation: 10,
+        }),
+  },
+  lockOuterPressed: {
+    opacity: 0.94,
+    transform: [{ scale: 0.985 }],
+  },
+  lockInner: {
+    height: 54,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.lg,
+    position: 'relative',
+  },
+  lockInnerCompact: {
+    height: 50,
+  },
+  lockSheen: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: '48%',
+    backgroundColor: 'rgba(255,255,255,0.12)',
+  },
+  lockLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  lockLabel: {
+    fontFamily: fonts.displayHeavy,
+    fontSize: 16,
+    lineHeight: 20,
+    letterSpacing: 0.2,
+    color: colors.onAccent,
+    textAlign: 'center',
+    textAlignVertical: 'center',
+    includeFontPadding: false,
+    ...(Platform.OS === 'android' ? { textAlignVertical: 'center' as const } : null),
+  },
+  lockLabelDisabled: {
+    color: 'rgba(255,249,247,0.45)',
+  },
   error: { fontFamily: fonts.body, fontSize: 13, color: colors.danger, marginBottom: spacing.sm },
 });
