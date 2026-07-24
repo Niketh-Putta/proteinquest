@@ -42,6 +42,24 @@ const QUANTIFIABLE_MEASURES = new Set([
   'stick',
   'handful',
   'floret',
+  'bar',
+  'bottle',
+  'can',
+  'carton',
+  'pot',
+  'tub',
+  'jar',
+  'pack',
+  'pouch',
+  'sachet',
+  'muffin',
+  'cookie',
+  'brownie',
+  'wrap',
+  'sandwich',
+  'burrito',
+  'taco',
+  'piece',
 ]);
 
 const AMORPHOUS_KEYWORDS = [
@@ -155,7 +173,7 @@ const COUNTABLE_KEYWORDS = [
 ] as const;
 
 const COUNTABLE_UNIT_RE =
-  /\b(slices?|pieces?|units?|wholes?|eggs?|dosas?|idlis?|pcs?|scoops?)\b/i;
+  /\b(slices?|pieces?|units?|wholes?|eggs?|dosas?|idlis?|pcs?|scoops?|bars?|bottles?|cans?|cartons?|pots?|tubs?|jars?|packs?|pouches?|sachets?|muffins?|cookies?|brownies?|wraps?|sandwiches?|burritos?|tacos?)\b/i;
 const WEIGHT_OR_VOLUME_RE =
   /^~?\d+(?:\.\d+)?\s*(g|grams?|kg|oz|ml|millilit(?:er|re)s?|l|lit(?:er|re)s?|cups?|tbsp|tsp|tablespoons?|teaspoons?)\b/i;
 const LEADING_WEIGHT_RE = /^~?\d+(?:\.\d+)?\s*g\b/i;
@@ -197,12 +215,22 @@ const SPOONFUL_FOOD_KEYWORDS = [
 const SCOOP_FOOD_KEYWORDS = [
   'protein powder',
   'whey',
+  'whey isolate',
+  'whey concentrate',
+  'clear whey',
   'casein',
+  'isolate',
   'creatine',
+  'pre-workout',
+  'preworkout',
+  'mass gainer',
+  'collagen',
   'ice cream',
   'gelato',
   'sorbet',
   'frozen yogurt',
+  'impact whey',
+  'gold standard',
 ] as const;
 
 /** Oils, sauces, nut butters → tablespoons. */
@@ -225,7 +253,7 @@ const TABLESPOON_FOOD_KEYWORDS = [
   'tahini',
 ] as const;
 
-/** Drinks → cups/glasses. */
+/** Drinks → cups/glasses (bottled RTDs use portion "1 bottle" instead). */
 const DRINK_KEYWORDS = [
   'milk',
   'juice',
@@ -238,6 +266,8 @@ const DRINK_KEYWORDS = [
   'lassi',
   'buttermilk',
   'coconut milk',
+  'protein shake',
+  'protein drink',
 ] as const;
 
 /** Stews / dals / rice / oatmeal → bowls. */
@@ -409,6 +439,14 @@ const WHOLE_ITEM_KEYWORDS = [
   'chocolate bars',
   'bar',
   'bars',
+  'cookie',
+  'cookies',
+  'muffin',
+  'muffins',
+  'brownie',
+  'brownies',
+  'flapjack',
+  'flapjacks',
 ] as const;
 
 /** Other countable foods → "how many dosas/burgers" (no "whole" prefix). */
@@ -441,7 +479,7 @@ const WHOLE_COUNT_KEYWORDS = [
 ] as const;
 
 const EMBEDDED_COUNT_UNIT_RE =
-  /(\d+(?:\.\d+)?)\s*(cups?|glass(?:es)?|servings?|bowls?|plates?|scoops?|slices?|pieces?|stacks?|spears?|sticks?|handfuls?|florets?|spoonfuls?|spoons?|tbsp|tsp|tablespoons?|teaspoons?)\b/i;
+  /(\d+(?:\.\d+)?)\s*(cups?|glass(?:es)?|servings?|bowls?|plates?|scoops?|slices?|pieces?|stacks?|spears?|sticks?|handfuls?|florets?|spoonfuls?|spoons?|tbsp|tsp|tablespoons?|teaspoons?|bars?|bottles?|cans?|cartons?|pots?|tubs?|jars?|packs?|pouches?|sachets?|muffins?|cookies?|brownies?|wraps?|sandwiches?|burritos?|tacos?)\b/i;
 
 /** Measuring units shown on the count wheel (not the food name itself). */
 const MEASURE_UNITS = new Set([
@@ -462,6 +500,23 @@ const MEASURE_UNITS = new Set([
   'stick',
   'handful',
   'floret',
+  'bar',
+  'bottle',
+  'can',
+  'carton',
+  'pot',
+  'tub',
+  'jar',
+  'pack',
+  'pouch',
+  'sachet',
+  'muffin',
+  'cookie',
+  'brownie',
+  'wrap',
+  'sandwich',
+  'burrito',
+  'taco',
 ]);
 
 let pending: ScanIngredientEdit | null = null;
@@ -677,6 +732,9 @@ export function resolveNaturalMeasureUnit(
  */
 export function resolveAdjustCountUnit(name: string, portion: string): string {
   const haystack = `${name} ${portion}`.trim().toLowerCase();
+  // Explicit "N serving(s)" wins over food heuristics (e.g. chicken → piece).
+  if (/^~?\d+(?:\.\d+)?\s*servings?\s*$/i.test(portion.trim())) return 'serving';
+
   const countUnit = detectCountUnit(haystack);
   if (countUnit) return countUnit;
 
@@ -724,6 +782,24 @@ export function formatCountUnitLabel(unit: string, qty: number): string {
   if (/^sticks?$/i.test(base)) return singular ? 'stick' : 'sticks';
   if (/^handfuls?$/i.test(base)) return singular ? 'handful' : 'handfuls';
   if (/^florets?$/i.test(base)) return singular ? 'floret' : 'florets';
+  if (/^scoops?$/i.test(base)) return singular ? 'scoop' : 'scoops';
+  if (/^bars?$/i.test(base)) return singular ? 'bar' : 'bars';
+  if (/^bottles?$/i.test(base)) return singular ? 'bottle' : 'bottles';
+  if (/^cans?$/i.test(base)) return singular ? 'can' : 'cans';
+  if (/^cartons?$/i.test(base)) return singular ? 'carton' : 'cartons';
+  if (/^pots?$/i.test(base)) return singular ? 'pot' : 'pots';
+  if (/^tubs?$/i.test(base)) return singular ? 'tub' : 'tubs';
+  if (/^jars?$/i.test(base)) return singular ? 'jar' : 'jars';
+  if (/^packs?$/i.test(base)) return singular ? 'pack' : 'packs';
+  if (/^pouches?$/i.test(base)) return singular ? 'pouch' : 'pouches';
+  if (/^sachets?$/i.test(base)) return singular ? 'sachet' : 'sachets';
+  if (/^muffins?$/i.test(base)) return singular ? 'muffin' : 'muffins';
+  if (/^cookies?$/i.test(base)) return singular ? 'cookie' : 'cookies';
+  if (/^brownies?$/i.test(base)) return singular ? 'brownie' : 'brownies';
+  if (/^wraps?$/i.test(base)) return singular ? 'wrap' : 'wraps';
+  if (/^sandwiches?$/i.test(base)) return singular ? 'sandwich' : 'sandwiches';
+  if (/^burritos?$/i.test(base)) return singular ? 'burrito' : 'burritos';
+  if (/^tacos?$/i.test(base)) return singular ? 'taco' : 'tacos';
   if (singular) {
     if (/s$/i.test(base) && !/ss$/i.test(base)) return base.replace(/s$/i, '');
     return base;
@@ -844,13 +920,13 @@ const SAUCE_ADD_KEYWORDS = [
 ] as const;
 
 const VESSEL_MATCH_RE =
-  /\b(bowls?|plates?|cups?|glass(?:es)?|scoops?|servings?|ladles?|spoonfuls?|spoons?|tbsp|tsp|tablespoons?|teaspoons?|drizzle)\b/i;
+  /\b(bowls?|plates?|cups?|glass(?:es)?|scoops?|servings?|ladles?|spoonfuls?|spoons?|tbsp|tsp|tablespoons?|teaspoons?|drizzle|bars?|bottles?|cans?|cartons?|pots?|tubs?|jars?|packs?|pouches?|sachets?|muffins?|cookies?|brownies?|wraps?|sandwiches?|burritos?|tacos?)\b/i;
 
 const COUNT_UNIT_MATCH_RE =
-  /\b(slices?|pieces?|scoops?|stacks?|spears?|sticks?|handfuls?|florets?)\b/i;
+  /\b(slices?|pieces?|scoops?|stacks?|spears?|sticks?|handfuls?|florets?|bars?|bottles?|cans?|cartons?|pots?|tubs?|jars?|packs?|pouches?|sachets?|muffins?|cookies?|brownies?|wraps?|sandwiches?|burritos?|tacos?)\b/i;
 
 const PORTION_UNIT_CLUE_RE =
-  /\b(cups?|glass(?:es)?|bowls?|plates?|ladles?|scoops?|slices?|pieces?|stacks?|spears?|sticks?|handfuls?|florets?|spoonfuls?|spoons?|tbsp|tablespoons?|tsp|teaspoons?|drizzle|servings?)\b/i;
+  /\b(cups?|glass(?:es)?|bowls?|plates?|ladles?|scoops?|slices?|pieces?|stacks?|spears?|sticks?|handfuls?|florets?|spoonfuls?|spoons?|tbsp|tablespoons?|tsp|teaspoons?|drizzle|servings?|bars?|bottles?|cans?|cartons?|pots?|tubs?|jars?|packs?|pouches?|sachets?|muffins?|cookies?|brownies?|wraps?|sandwiches?|burritos?|tacos?)\b/i;
 
 function normalizeMeasureUnit(raw: string): string {
   const lower = raw.toLowerCase();
@@ -872,6 +948,23 @@ function normalizeMeasureUnit(raw: string): string {
   if (/^(tbsp|tablespoons?)$/.test(lower)) return 'tablespoon';
   if (/^(tsp|teaspoons?)$/.test(lower)) return 'teaspoon';
   if (/^drizzle$/.test(lower)) return 'drizzle';
+  if (/^bars?$/.test(lower)) return 'bar';
+  if (/^bottles?$/.test(lower)) return 'bottle';
+  if (/^cans?$/.test(lower)) return 'can';
+  if (/^cartons?$/.test(lower)) return 'carton';
+  if (/^pots?$/.test(lower)) return 'pot';
+  if (/^tubs?$/.test(lower)) return 'tub';
+  if (/^jars?$/.test(lower)) return 'jar';
+  if (/^packs?$/.test(lower)) return 'pack';
+  if (/^pouches?$/.test(lower)) return 'pouch';
+  if (/^sachets?$/.test(lower)) return 'sachet';
+  if (/^muffins?$/.test(lower)) return 'muffin';
+  if (/^cookies?$/.test(lower)) return 'cookie';
+  if (/^brownies?$/.test(lower)) return 'brownie';
+  if (/^wraps?$/.test(lower)) return 'wrap';
+  if (/^sandwiches?$/.test(lower)) return 'sandwich';
+  if (/^burritos?$/.test(lower)) return 'burrito';
+  if (/^tacos?$/.test(lower)) return 'taco';
   return lower.replace(/s$/, '');
 }
 
@@ -892,21 +985,10 @@ function detectPortionUnitClue(text: string): string | null {
   return normalizeMeasureUnit(m[1]);
 }
 
-function detectCountUnit(
-  haystack: string,
-): 'slice' | 'piece' | 'scoop' | 'stack' | 'spear' | 'stick' | 'handful' | 'floret' | null {
+function detectCountUnit(haystack: string): string | null {
   const m = haystack.match(COUNT_UNIT_MATCH_RE);
   if (!m?.[1]) return null;
-  const raw = m[1].toLowerCase();
-  if (/^slices?$/.test(raw)) return 'slice';
-  if (/^pieces?$/.test(raw)) return 'piece';
-  if (/^scoops?$/.test(raw)) return 'scoop';
-  if (/^stacks?$/.test(raw)) return 'stack';
-  if (/^spears?$/.test(raw)) return 'spear';
-  if (/^sticks?$/.test(raw)) return 'stick';
-  if (/^handfuls?$/.test(raw)) return 'handful';
-  if (/^florets?$/.test(raw)) return 'floret';
-  return null;
+  return normalizeMeasureUnit(m[1]);
 }
 
 function foodLower(name: string): string {
@@ -918,7 +1000,7 @@ function foodLower(name: string): string {
 function foodWithoutCountUnit(name: string): string {
   const cleaned = foodDisplayName(name)
     .replace(
-      /\b(slices?|pieces?|stacks?|scoops?|spears?|sticks?|handfuls?|florets?|cups?|bowls?|plates?|glass(?:es)?|spoonfuls?|spoons?|tablespoons?|teaspoons?|tbsp|tsp|servings?)\b/gi,
+      /\b(slices?|pieces?|stacks?|scoops?|spears?|sticks?|handfuls?|florets?|cups?|bowls?|plates?|glass(?:es)?|spoonfuls?|spoons?|tablespoons?|teaspoons?|tbsp|tsp|servings?|bars?|bottles?|cans?|cartons?|pots?|tubs?|jars?|packs?|pouches?|sachets?|muffins?|cookies?|brownies?|wraps?|sandwiches?|burritos?|tacos?)\b/gi,
       '',
     )
     .replace(/\s+/g, ' ')

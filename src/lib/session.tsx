@@ -279,6 +279,16 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   }, [loading, refreshProfileSafely, session]);
 
   useEffect(() => {
+    if (loading) return;
+    void import('@/lib/food-catalog')
+      .then((m) => m.refreshRemoteFoodCatalog())
+      .catch(() => {});
+    void import('@/lib/paywall-config')
+      .then((m) => m.refreshPaywallConfig())
+      .catch(() => {});
+  }, [loading]);
+
+  useEffect(() => {
     if (loading || !session?.user.id || profile) return;
 
     const userId = session.user.id;

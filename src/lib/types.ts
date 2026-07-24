@@ -20,6 +20,8 @@ export interface RetentionState {
   egg_shards?: number;
   streak_freeze_week?: string | null;
   care_days?: string[];
+  /** User calorie aim (kcal/day). Prefer this over derived estimate. */
+  calorie_goal_kcal?: number;
 }
 
 export interface Profile {

@@ -1,7 +1,8 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import React from 'react';
-import { Image, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { formatXp } from '@/lib/leaderboard';
 import type { Profile } from '@/lib/types';
@@ -9,13 +10,50 @@ import { xpSnapshot } from '@/lib/xp';
 import { colors, displayLH, fonts, noTextCaret, pressableWeb, shadowCard, spacing } from '@/theme';
 
 export type TrainerRankVariant = 'rich' | 'compact';
-const TRAINER_AVATAR = require('../../assets/character/dragons/fire-5.png');
 const AVATAR_RED = '#E23B2F';
 
 interface Props {
   profile: Profile;
   onPress?: () => void;
   variant?: TrainerRankVariant;
+}
+
+function trainerInitials(profile: Profile): string {
+  const name = profile.display_name?.trim();
+  if (!name) return 'PQ';
+  const parts = name.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) {
+    return `${parts[0]![0] ?? ''}${parts[1]![0] ?? ''}`.toUpperCase();
+  }
+  return name.slice(0, 2).toUpperCase();
+}
+
+function TrainerAvatar({ profile, compact }: { profile: Profile; compact?: boolean }) {
+  const uri = profile.avatar_url?.trim() || null;
+  const ringStyle = compact ? styles.avatarRingCompact : styles.avatarRing;
+  const wellStyle = compact ? styles.avatarWellCompact : styles.avatarWell;
+
+  return (
+    <View style={ringStyle}>
+      <View style={wellStyle}>
+        {uri ? (
+          <Image
+            source={{ uri }}
+            style={styles.avatarArt}
+            contentFit="cover"
+            cachePolicy="memory-disk"
+            transition={0}
+          />
+        ) : (
+          <View style={styles.avatarFallback}>
+            <Text selectable={false} style={styles.avatarInitials}>
+              {trainerInitials(profile)}
+            </Text>
+          </View>
+        )}
+      </View>
+    </View>
+  );
 }
 
 function RankEyebrow({ compact }: { compact?: boolean }) {
@@ -62,11 +100,7 @@ export function TrainerRankCard({ profile, onPress, variant = 'rich' }: Props) {
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={styles.compactInner}>
-        <View style={styles.avatarRingCompact}>
-          <View style={styles.avatarWellCompact}>
-            <Image source={TRAINER_AVATAR} style={styles.avatarArt} resizeMode="cover" />
-          </View>
-        </View>
+        <TrainerAvatar profile={profile} compact />
         <View style={styles.compactBody}>
           <RankEyebrow compact />
           <Text selectable={false} style={styles.rankTitleCompact}>
@@ -85,11 +119,7 @@ export function TrainerRankCard({ profile, onPress, variant = 'rich' }: Props) {
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={styles.richInner}>
-        <View style={styles.avatarRing}>
-          <View style={styles.avatarWell}>
-            <Image source={TRAINER_AVATAR} style={styles.avatarArt} resizeMode="cover" />
-          </View>
-        </View>
+        <TrainerAvatar profile={profile} />
         <View style={styles.richBody}>
           <RankEyebrow />
           <Text selectable={false} style={styles.rankTitle}>
@@ -183,6 +213,19 @@ const styles = StyleSheet.create({
   avatarArt: {
     width: '100%',
     height: '100%',
+  },
+  avatarFallback: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#1A1214',
+  },
+  avatarInitials: {
+    ...noTextCaret,
+    fontFamily: fonts.displayHeavy,
+    fontSize: 18,
+    color: '#FF8B73',
+    letterSpacing: 0.5,
   },
   richBody: {
     flex: 1,

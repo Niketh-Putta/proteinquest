@@ -1,0 +1,12 @@
+---
+description: Always deploy web to production after app/UI changes
+alwaysApply: true
+---
+
+# Always deploy
+
+After finishing product or UI changes the user can try in the browser, run `npm run deploy:prod` without waiting to be asked.
+
+Prefer sharing **https://proteinquest.vercel.app** (or the unique `*.vercel.app` deployment URL), not only proteinquest.app, unless they ask for the custom domain.
+
+Do not block on commit/push unless they also asked for that. Store builds stay opt-in.

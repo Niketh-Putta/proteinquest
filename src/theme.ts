@@ -24,6 +24,8 @@ export const colors = {
   danger: '#FF6B7A',
   warning: '#FFB454',
   flame: '#FF9F5A',
+  /** Goal-hit / success (soft emerald on dark, not lime). */
+  success: '#3DCF8E',
   ringTrack: '#22202C',
 } as const;
 
@@ -46,6 +48,31 @@ export const radius = {
   lg: 26,
   xl: 34,
   full: 999,
+} as const;
+
+/**
+ * Shared chrome sizes so screens stay cohesive.
+ * Prefer these over one-off 44/52/10 magic numbers.
+ */
+export const layout = {
+  /** Primary CTA / Button height. */
+  controlHeight: 52,
+  controlHeightCompact: 48,
+  /** Minimum touch target (icon close/back). */
+  iconBtn: 44,
+  /** Standard card / field inner padding. */
+  cardPad: spacing.md,
+  /** Vertical gap between page sections. */
+  sectionGap: spacing.lg,
+  /** Input / list-row radius (slightly tighter than primary buttons). */
+  fieldRadius: radius.sm,
+  /** Bottom sheets / billing modal max width. */
+  sheetMaxWidth: 480,
+  /** Scroll padding under sticky CTA (~52) so fields never sit under the button. */
+  stickyFooterClearance: 112,
+  stickyFooterClearanceCompact: 96,
+  /** Default scroll end padding on non-tab screens. */
+  scrollBottomPad: spacing.xxl,
 } as const;
 
 export const fonts = {

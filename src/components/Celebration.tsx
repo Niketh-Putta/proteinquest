@@ -1,5 +1,6 @@
+import { LinearGradient } from 'expo-linear-gradient';
 import React, { useEffect, useMemo, useState } from 'react';
-import { Dimensions, Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Modal, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import Animated, {
   Easing,
@@ -12,6 +13,7 @@ import Animated, {
   withSequence,
   withTiming,
 } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CARD_UNLOCK_MS, DragonCardUnlock } from '@/components/DragonCardUnlock';
 import { DragonPortrait } from '@/components/DragonPortrait';
@@ -23,13 +25,13 @@ import {
   displayProgress,
   dragonById,
   effectiveLevel,
+  effectiveStreak,
   stageForXpLevel,
 } from '@/lib/character';
 import { todayISODate } from '@/lib/protein';
+import { canUseStreakFreeze } from '@/lib/retention';
 import type { Profile } from '@/lib/types';
-import { colors, displayLH, fonts, radius, spacing } from '@/theme';
-
-const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
+import { colors, displayLH, fonts, layout, radius, spacing } from '@/theme';
 
 function triggerHaptic(type: 'impact' | 'success' | 'heavy') {
   if (Platform.OS === 'web') return;
@@ -93,6 +95,8 @@ interface Props {
   profile: Profile;
   evolved: boolean;
   leveledUp?: boolean;
+  goalJustHit?: boolean;
+  xpGained?: number;
   perkUnlocked?: string | null;
   levelBefore?: number;
   levelAfter?: number;
@@ -105,13 +109,19 @@ export function Celebration({
   profile,
   evolved,
   leveledUp = false,
+  goalJustHit = false,
+  xpGained,
   perkUnlocked,
   levelBefore,
   levelAfter,
   previousStageIndex,
   onDone,
 }: Props) {
+  const { width: screenW, height: screenH } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const isCompact = screenH < 700 || screenW < 390;
   const todayISO = todayISODate();
+  const yesterdayISO = todayISODate(-1);
   const dragonId = displayDragonId(profile, todayISO);
   const dragon = dragonById(dragonId);
   const dragonName = displayDragonName(profile, dragonId);
@@ -124,6 +134,10 @@ export function Celebration({
   const showEvolution = evolved && previousStage != null && previousStage.index !== stage.index;
   const isQuickLevelUp = leveledUp && !showEvolution;
   const prevLevel = levelBefore ?? Math.max(1, level - 1);
+  const streakShown = effectiveStreak(progress, todayISO, yesterdayISO, {
+    freezeKeepsAlive: canUseStreakFreeze(profile),
+  });
+  const xpShown = Math.max(0, Math.round(xpGained ?? (goalJustHit ? XP_GOAL_BONUS : 0)));
 
   const [ceremonyDone, setCeremonyDone] = useState(!showEvolution);
   const breath = useSharedValue(1);
@@ -151,16 +165,27 @@ export function Celebration({
 
   return (
     <Modal transparent animationType="fade" visible={visible} onRequestClose={onDone}>
-      <Pressable style={styles.backdrop} onPress={ceremonyDone ? onDone : undefined}>
+      <Pressable
+        style={[
+          styles.backdrop,
+          {
+            paddingTop: insets.top + spacing.md,
+            paddingBottom: Math.max(insets.bottom, spacing.md) + spacing.md,
+            paddingHorizontal: spacing.md,
+          },
+        ]}
+        onPress={ceremonyDone ? onDone : undefined}>
         {(ceremonyDone || !showEvolution) && (
-          <View style={styles.particles}>
+          <View style={[styles.particles, { top: screenH / 2 - 60, left: screenW / 2 }]}>
             {Array.from({ length: 24 }).map((_, i) => (
               <Particle key={i} index={i} color={dragon.accent} delayBase={particleDelay} />
             ))}
           </View>
         )}
 
-        <Animated.View entering={FadeIn.duration(400)} style={styles.arena}>
+        <Animated.View
+          entering={FadeIn.duration(400)}
+          style={[styles.arena, isCompact && styles.arenaCompact]}>
           <Text style={styles.kicker}>
             {showEvolution && !ceremonyDone
               ? 'EVOLVING…'
@@ -203,35 +228,86 @@ export function Celebration({
               {showEvolution ? (
                 <Animated.Text
                   entering={FadeInUp.delay(40).springify().damping(14)}
-                  style={[styles.evolvedBanner, { color: dragon.accent }]}>
+                  style={[
+                    styles.evolvedBanner,
+                    isCompact && styles.evolvedBannerCompact,
+                    { color: dragon.accent },
+                  ]}>
                   EVOLVED!
                 </Animated.Text>
               ) : null}
 
-              <Animated.Text
-                entering={FadeInUp.delay(showEvolution ? 120 : 80).springify()}
-                style={styles.title}>
-                {showEvolution
-                  ? `${dragonName} evolved`
-                  : isQuickLevelUp
-                    ? `+Level ${level}`
-                    : leveledUp
-                      ? 'Level up'
-                      : 'You showed up'}
-              </Animated.Text>
-              <Animated.Text
-                entering={FadeInUp.delay(showEvolution ? 200 : 160).springify()}
-                style={[styles.stageName, { color: dragon.accent }]}>
-                {showEvolution
-                  ? stage.name.toUpperCase()
-                  : isQuickLevelUp
+              {showEvolution ? (
+                <Animated.Text
+                  entering={FadeInUp.delay(120).springify()}
+                  style={[styles.title, isCompact && styles.titleCompact]}>
+                  {`${dragonName} evolved`}
+                </Animated.Text>
+              ) : isQuickLevelUp || leveledUp ? (
+                <Animated.View
+                  entering={FadeInUp.delay(80).springify()}
+                  style={styles.levelTransitionRow}
+                  accessibilityLabel={`Level ${prevLevel} to level ${level}`}>
+                  <Text style={[styles.levelTransitionPrev, isCompact && styles.levelTransitionCompact]}>
+                    Lvl {prevLevel}
+                  </Text>
+                  <Text style={[styles.levelTransitionArrow, { color: dragon.accent }]}>→</Text>
+                  <Text
+                    style={[
+                      styles.levelTransitionNext,
+                      isCompact && styles.levelTransitionCompact,
+                      { color: dragon.accent },
+                    ]}>
+                    Lvl {level}
+                  </Text>
+                </Animated.View>
+              ) : (
+                <Animated.Text
+                  entering={FadeInUp.delay(80).springify()}
+                  style={[styles.title, isCompact && styles.titleCompact]}>
+                  You showed up
+                </Animated.Text>
+              )}
+              {showEvolution ? (
+                <Animated.View
+                  entering={FadeInUp.delay(200).springify()}
+                  style={styles.stageMetaRow}>
+                  <Text style={[styles.stageName, styles.stageNameInline, { color: dragon.accent }]}>
+                    {stage.name.toUpperCase()}
+                  </Text>
+                  <View
+                    style={[
+                      styles.levelTagShell,
+                      {
+                        borderColor: `${dragon.accent}99`,
+                        shadowColor: dragon.accent,
+                      },
+                    ]}>
+                    <LinearGradient
+                      colors={[`${dragon.accent}33`, '#141214', '#0C0B0D']}
+                      locations={[0, 0.45, 1]}
+                      start={{ x: 0.15, y: 0 }}
+                      end={{ x: 0.9, y: 1 }}
+                      style={styles.levelTag}>
+                      <View style={styles.levelTagSheen} />
+                      <Text style={[styles.levelTagLabel, { color: dragon.accent }]}>LV</Text>
+                      <Text style={[styles.levelTagValue, { color: dragon.accent }]}>{level}</Text>
+                    </LinearGradient>
+                  </View>
+                </Animated.View>
+              ) : (
+                <Animated.Text
+                  entering={FadeInUp.delay(160).springify()}
+                  style={[styles.stageName, { color: dragon.accent }]}>
+                  {isQuickLevelUp
                     ? perkUnlocked
                       ? 'PERK UNLOCKED'
                       : `LEVEL ${level}`
                     : leveledUp
                       ? `LEVEL ${level}`
                       : 'PROTEIN GOAL HIT'}
-              </Animated.Text>
+                </Animated.Text>
+              )}
               <Animated.Text
                 entering={FadeInUp.delay(showEvolution ? 280 : 240).springify()}
                 style={styles.subline}>
@@ -249,12 +325,16 @@ export function Celebration({
               </Animated.Text>
 
               <Animated.View entering={FadeIn.delay(showEvolution ? 360 : 320)} style={styles.rewardRow}>
+                {xpShown > 0 ? (
+                  <View style={styles.rewardChip}>
+                    <Text style={[styles.rewardValue, { color: dragon.accent }]}>+{xpShown}</Text>
+                    <Text style={styles.rewardLabel}>
+                      {goalJustHit ? 'xp · goal' : 'xp'}
+                    </Text>
+                  </View>
+                ) : null}
                 <View style={styles.rewardChip}>
-                  <Text style={[styles.rewardValue, { color: dragon.accent }]}>+{XP_GOAL_BONUS}</Text>
-                  <Text style={styles.rewardLabel}>xp</Text>
-                </View>
-                <View style={styles.rewardChip}>
-                  <Text style={styles.rewardValue}>{progress.streak}</Text>
+                  <Text style={styles.rewardValue}>{streakShown}</Text>
                   <Text style={styles.rewardLabel}>day streak</Text>
                 </View>
               </Animated.View>
@@ -281,8 +361,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  particles: { position: 'absolute', top: SCREEN_H / 2 - 60, left: SCREEN_W / 2 },
+  particles: { position: 'absolute' },
   arena: { alignItems: 'center', padding: spacing.xl, maxWidth: 380, width: '100%' },
+  arenaCompact: { padding: spacing.lg, maxWidth: 340 },
   kicker: {
     fontFamily: fonts.mono,
     fontSize: 9,
@@ -304,6 +385,11 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: spacing.sm,
   },
+  evolvedBannerCompact: {
+    fontSize: 32,
+    lineHeight: displayLH(32),
+    letterSpacing: 1.5,
+  },
   title: {
     fontFamily: fonts.displayHeavy,
     fontSize: 32,
@@ -313,11 +399,102 @@ const styles = StyleSheet.create({
     letterSpacing: -1,
     marginTop: spacing.md,
   },
+  titleCompact: {
+    fontSize: 26,
+    lineHeight: displayLH(26),
+  },
+  levelTransitionRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'center',
+    gap: 10,
+    marginTop: spacing.md,
+  },
+  levelTransitionPrev: {
+    fontFamily: fonts.displayHeavy,
+    fontSize: 28,
+    lineHeight: displayLH(28),
+    color: 'rgba(255,255,255,0.38)',
+    letterSpacing: -0.8,
+  },
+  levelTransitionArrow: {
+    fontFamily: fonts.displayHeavy,
+    fontSize: 22,
+    lineHeight: displayLH(28),
+    letterSpacing: 0,
+  },
+  levelTransitionNext: {
+    fontFamily: fonts.displayHeavy,
+    fontSize: 32,
+    lineHeight: displayLH(32),
+    letterSpacing: -1,
+  },
+  levelTransitionCompact: {
+    fontSize: 24,
+    lineHeight: displayLH(24),
+  },
+  stageMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    marginTop: spacing.sm,
+  },
   stageName: {
     fontFamily: fonts.monoBold,
     fontSize: 11,
     letterSpacing: 2,
-    marginTop: 8,
+    marginTop: spacing.sm,
+  },
+  stageNameInline: {
+    marginTop: 0,
+  },
+  levelTagShell: {
+    minWidth: 44,
+    borderRadius: 11,
+    borderWidth: 1,
+    overflow: 'hidden',
+    backgroundColor: '#0E0D10',
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 5,
+  },
+  levelTag: {
+    alignSelf: 'stretch',
+    paddingHorizontal: 10,
+    paddingTop: 6,
+    paddingBottom: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  levelTagSheen: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: StyleSheet.hairlineWidth * 2,
+    backgroundColor: 'rgba(255,255,255,0.22)',
+  },
+  levelTagLabel: {
+    fontFamily: fonts.mono,
+    fontSize: 8,
+    letterSpacing: 2,
+    color: 'rgba(255,255,255,0.48)',
+    fontWeight: '600',
+  },
+  levelTagValue: {
+    fontFamily: fonts.displayHeavy,
+    fontSize: 16,
+    lineHeight: 18,
+    color: colors.text,
+    letterSpacing: -0.4,
+    marginTop: 1,
+    fontVariant: ['tabular-nums'],
+    textShadowColor: 'rgba(0,0,0,0.55)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
   subline: {
     fontFamily: fonts.body,

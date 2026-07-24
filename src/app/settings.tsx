@@ -1,4 +1,5 @@
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Image } from 'expo-image';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
@@ -37,7 +38,8 @@ import {
   isDisplayNameAvailable,
   isDisplayNameTakenError,
 } from '@/lib/display-name';
-import { useLayout, useTabBarScrollInset } from '@/lib/layout';
+import { PageCanvas } from '@/components/PageCanvas';
+import { useContentColumn, useLayout, useTabBarScrollInset } from '@/lib/layout';
 import {
   formatReminderTime,
   getNotificationPermissionStatus,
@@ -49,7 +51,23 @@ import { todayISODate } from '@/lib/protein';
 import { useSession } from '@/lib/session';
 import type { DragonId, Profile } from '@/lib/types';
 import { setPreferredName } from '@/lib/xp';
-import { colors, displayLH, fonts, spacing, textInputWeb } from '@/theme';
+import {
+  colors,
+  displayLH,
+  fonts,
+  layout,
+  pressableWeb,
+  radius,
+  shadowAccent,
+  spacing,
+  textInputWeb,
+} from '@/theme';
+
+const DRAGON_SPECIES_ICON: Record<DragonId, keyof typeof Ionicons.glyphMap> = {
+  fire: 'flame',
+  ice: 'snow',
+  forest: 'leaf',
+};
 
 function goHome() {
   if (router.canGoBack()) router.back();
@@ -58,8 +76,9 @@ function goHome() {
 
 export default function SettingsScreen({ embedded = false }: { embedded?: boolean }) {
   const { profile, session, saveProfile } = useSession();
-  const { formMaxWidth, horizontalPad, isNarrow } = useLayout();
-  const tabBarInset = useTabBarScrollInset();
+  const { isNarrow } = useLayout();
+  const column = useContentColumn('form');
+  const tabBarInset = useTabBarScrollInset(isNarrow);
   const [saving, setSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -240,23 +259,14 @@ export default function SettingsScreen({ embedded = false }: { embedded?: boolea
     }
   }
 
-  return (
+  const root = (
     <SafeAreaView style={styles.safe} edges={embedded ? ['top'] : ['top', 'bottom']}>
       <FeedToast
         visible={!!nameToast}
         message={nameToast ?? ''}
         onHide={() => setNameToast(null)}
       />
-      <View
-        style={[
-          styles.topBar,
-          {
-            paddingHorizontal: horizontalPad,
-            maxWidth: formMaxWidth,
-            width: '100%',
-            alignSelf: 'center',
-          },
-        ]}>
+      <View style={[styles.topBar, column]}>
         {embedded ? (
           <View style={styles.iconBtn} />
         ) : (
@@ -265,7 +275,7 @@ export default function SettingsScreen({ embedded = false }: { embedded?: boolea
           </Pressable>
         )}
         <Text style={styles.topTitle}>{embedded ? 'PROFILE' : 'SETTINGS'}</Text>
-        <View style={{ width: 44 }} />
+        <View style={{ width: layout.iconBtn }} />
       </View>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
@@ -273,12 +283,7 @@ export default function SettingsScreen({ embedded = false }: { embedded?: boolea
         <ScrollView
           contentContainerStyle={[
             styles.scroll,
-            {
-              paddingHorizontal: horizontalPad,
-              maxWidth: formMaxWidth,
-              width: '100%',
-              alignSelf: 'center',
-            },
+            column,
             embedded && { paddingBottom: tabBarInset },
           ]}
           keyboardShouldPersistTaps="handled"
@@ -426,23 +431,37 @@ export default function SettingsScreen({ embedded = false }: { embedded?: boolea
               <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
             </Pressable>
             {!profile?.is_premium ? (
-              <Pressable
-                onPress={() => router.push('/paywall')}
-                android_ripple={{ color: colors.hairlineBright }}
-                style={({ pressed }) => [
-                  styles.billingBtn,
-                  styles.upgradeBtn,
-                  pressed && styles.billingBtnPressed,
-                ]}>
-                <View style={styles.billingIcon}>
-                  <Ionicons name="star" size={18} color={colors.accent} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.billingTitle}>Upgrade to Pro</Text>
-                  <Text style={styles.billingHint}>Unlimited scans and full access</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
-              </Pressable>
+              <View style={styles.upgradeGlow}>
+                <Pressable
+                  onPress={() => router.push('/paywall')}
+                  android_ripple={{ color: 'rgba(255, 249, 247, 0.18)' }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Upgrade to Pro"
+                  style={({ pressed }) => [
+                    styles.upgradePressable,
+                    pressableWeb,
+                    pressed && styles.upgradePressed,
+                  ]}>
+                  <LinearGradient
+                    colors={[colors.accentLight, colors.accent, colors.accentDeep]}
+                    locations={[0, 0.48, 1]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.upgradeGradient}>
+                    <View style={styles.upgradeIcon}>
+                      <Ionicons name="star" size={18} color={colors.onAccent} />
+                    </View>
+                    <View style={styles.upgradeCopy}>
+                      <Text style={styles.upgradeTitle}>Upgrade to Pro</Text>
+                      <Text style={styles.upgradeHint}>Unlimited scans and full access</Text>
+                    </View>
+                    <View style={styles.upgradeBadge} accessibilityLabel="Only 3 discount spots left">
+                      <Text style={styles.upgradeBadgeText}>only 3{'\n'}discount{'\n'}spots left</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={18} color={colors.onAccent} />
+                  </LinearGradient>
+                </Pressable>
+              </View>
             ) : null}
             {Platform.OS !== 'web' ? (
               <SubscriptionBillingInfo
@@ -463,31 +482,58 @@ export default function SettingsScreen({ embedded = false }: { embedded?: boolea
             </View>
           ) : null}
 
-          <View style={styles.section}>
-            <Text style={styles.sectionLabel}>DRAGON NAMES</Text>
-            <Text style={styles.photoHint}>
-              Rename {DRAGONS.map((d) => displayDragonName(profile, d.id)).join(', ')} anytime.
-              Used in reminders and on Today.
-            </Text>
+          <View style={styles.dragonNamesSection}>
+            <View style={styles.dragonNamesHeader}>
+              <MaterialCommunityIcons
+                name="fire"
+                size={18}
+                color={colors.accentSecondary}
+                style={styles.dragonNamesHeaderIcon}
+              />
+              <View style={styles.dragonNamesHeaderText}>
+                <Text style={styles.dragonNamesTitle}>DRAGON NAMES</Text>
+                <Text style={styles.dragonNamesSubtitle}>
+                  Rename {DRAGONS.map((d) => displayDragonName(profile, d.id)).join(', ')} anytime.
+                  Used in reminders and on Today.
+                </Text>
+              </View>
+            </View>
+
             {DRAGONS.map((dragon) => (
               <View key={dragon.id} style={styles.dragonNameRow}>
-                <Text style={[styles.dragonSpecies, { color: dragon.accent }]}>
-                  {dragon.title}
-                </Text>
-                <TextInput
-                  value={dragonNameDrafts[dragon.id] ?? ''}
-                  onChangeText={(text) =>
-                    setDragonNameDrafts((prev) => ({ ...prev, [dragon.id]: text }))
-                  }
-                  placeholder={dragon.name}
-                  placeholderTextColor={colors.textTertiary}
-                  maxLength={24}
-                  autoCapitalize="words"
-                  autoCorrect={false}
-                  returnKeyType="done"
-                  onSubmitEditing={commitDragonNames}
-                  style={[styles.dragonNameInput, textInputWeb]}
-                />
+                <View style={styles.dragonSpeciesRow}>
+                  <Ionicons
+                    name={DRAGON_SPECIES_ICON[dragon.id]}
+                    size={12}
+                    color={dragon.accent}
+                  />
+                  <Text style={[styles.dragonSpecies, { color: dragon.accent }]}>
+                    {dragon.title}
+                  </Text>
+                </View>
+                <View style={styles.dragonNameField}>
+                  <TextInput
+                    value={dragonNameDrafts[dragon.id] ?? ''}
+                    onChangeText={(text) =>
+                      setDragonNameDrafts((prev) => ({ ...prev, [dragon.id]: text }))
+                    }
+                    placeholder={dragon.name}
+                    placeholderTextColor={colors.textTertiary}
+                    maxLength={24}
+                    autoCapitalize="words"
+                    autoCorrect={false}
+                    returnKeyType="done"
+                    onSubmitEditing={commitDragonNames}
+                    style={[
+                      styles.dragonNameInput,
+                      { borderColor: dragon.accent },
+                      textInputWeb,
+                    ]}
+                  />
+                  <View pointerEvents="none" style={styles.dragonNameChevron}>
+                    <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+                  </View>
+                </View>
               </View>
             ))}
             {dragonNamesDirty ? (
@@ -523,6 +569,8 @@ export default function SettingsScreen({ embedded = false }: { embedded?: boolea
       />
     </SafeAreaView>
   );
+
+  return <PageCanvas>{root}</PageCanvas>;
 }
 
 const styles = StyleSheet.create({
@@ -534,8 +582,8 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   iconBtn: {
-    width: 44,
-    height: 44,
+    width: layout.iconBtn,
+    height: layout.iconBtn,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -545,14 +593,14 @@ const styles = StyleSheet.create({
     letterSpacing: 2.5,
     color: colors.textSecondary,
   },
-  scroll: { paddingTop: spacing.md, paddingBottom: spacing.xxl },
+  scroll: { paddingTop: spacing.md, paddingBottom: layout.scrollBottomPad },
   title: {
     fontFamily: fonts.displayHeavy,
     fontSize: 32,
     lineHeight: displayLH(32),
     color: colors.text,
     letterSpacing: -0.8,
-    marginBottom: 6,
+    marginBottom: spacing.xs + 2,
   },
   titleNarrow: { fontSize: 26, lineHeight: displayLH(26), letterSpacing: -0.5 },
   subtitle: {
@@ -560,7 +608,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
     color: colors.textSecondary,
-    marginBottom: spacing.lg,
+    marginBottom: layout.sectionGap,
   },
   error: { fontFamily: fonts.body, fontSize: 13, color: colors.danger, marginTop: spacing.sm },
   lockedDragon: {
@@ -586,35 +634,80 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textSecondary,
   },
-  dragonNameRow: {
+  dragonNamesSection: {
+    marginBottom: spacing.lg,
+    gap: spacing.md,
+  },
+  dragonNamesHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  dragonNamesHeaderIcon: {
+    marginTop: 1,
+  },
+  dragonNamesHeaderText: {
+    flex: 1,
     gap: 4,
-    marginTop: spacing.sm,
+  },
+  dragonNamesTitle: {
+    fontFamily: fonts.mono,
+    fontSize: 11,
+    letterSpacing: 2,
+    color: colors.accentSecondary,
+  },
+  dragonNamesSubtitle: {
+    fontFamily: fonts.body,
+    fontSize: 12,
+    lineHeight: 17,
+    color: colors.textSecondary,
+  },
+  dragonNameRow: {
+    gap: 6,
+  },
+  dragonSpeciesRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingLeft: 2,
   },
   dragonSpecies: {
-    fontFamily: fonts.mono,
-    fontSize: 9,
-    letterSpacing: 1.5,
+    fontFamily: fonts.monoBold,
+    fontSize: 10,
+    letterSpacing: 1.4,
     textTransform: 'uppercase',
+  },
+  dragonNameField: {
+    position: 'relative',
+    justifyContent: 'center',
   },
   dragonNameInput: {
     fontFamily: fonts.displayMedium,
     fontSize: 16,
     color: colors.text,
-    backgroundColor: colors.surface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.hairlineBright,
-    borderRadius: 10,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 12,
+    backgroundColor: colors.bgRaised,
+    borderWidth: 1,
+    borderRadius: layout.fieldRadius,
+    paddingHorizontal: layout.cardPad,
+    paddingRight: 40,
+    paddingVertical: 14,
+    minHeight: layout.controlHeight,
+  },
+  dragonNameChevron: {
+    position: 'absolute',
+    right: 14,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
   },
   savedHint: {
     fontFamily: fonts.body,
     fontSize: 12,
-    color: colors.accent,
+    color: colors.accentSecondary,
     marginTop: spacing.xs,
   },
   section: {
-    marginBottom: spacing.lg,
+    marginBottom: layout.sectionGap,
     gap: spacing.sm,
   },
   sectionLabel: {
@@ -694,9 +787,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.hairlineBright,
-    borderRadius: 10,
-    paddingHorizontal: spacing.md,
+    borderRadius: layout.fieldRadius,
+    paddingHorizontal: layout.cardPad,
     paddingVertical: 12,
+    minHeight: layout.controlHeight,
   },
   nameFieldFocused: {
     borderColor: colors.accent,
@@ -709,7 +803,7 @@ const styles = StyleSheet.create({
   },
   nameSave: {
     backgroundColor: colors.accent,
-    borderRadius: 8,
+    borderRadius: radius.chip,
     paddingHorizontal: 14,
     paddingVertical: 6,
   },
@@ -794,14 +888,91 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.hairlineBright,
-    borderRadius: 10,
-    paddingHorizontal: spacing.md,
+    borderRadius: layout.fieldRadius,
+    paddingHorizontal: layout.cardPad,
     paddingVertical: 12,
-    minHeight: 44,
+    minHeight: layout.iconBtn,
     overflow: 'hidden',
   },
   billingBtnPressed: { opacity: 0.85 },
-  upgradeBtn: { marginTop: spacing.sm },
+  upgradeGlow: {
+    marginTop: spacing.sm,
+    borderRadius: layout.fieldRadius + 2,
+    ...shadowAccent,
+    ...(Platform.OS === 'ios'
+      ? {
+          shadowColor: colors.accent,
+          shadowOpacity: 0.38,
+          shadowRadius: 14,
+          shadowOffset: { width: 0, height: 6 },
+        }
+      : null),
+  },
+  upgradePressable: {
+    borderRadius: layout.fieldRadius + 2,
+    overflow: 'hidden',
+  },
+  upgradePressed: {
+    opacity: 0.92,
+    transform: [{ scale: 0.985 }],
+  },
+  upgradeGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingHorizontal: layout.cardPad,
+    paddingVertical: 14,
+    minHeight: layout.controlHeight,
+    borderRadius: layout.fieldRadius + 2,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255, 249, 247, 0.24)',
+  },
+  upgradeIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(255, 249, 247, 0.16)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  upgradeCopy: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  upgradeTitle: {
+    fontFamily: fonts.displayHeavy,
+    fontSize: 16,
+    letterSpacing: 0.15,
+    color: colors.onAccent,
+  },
+  upgradeBadge: {
+    flexShrink: 0,
+    maxWidth: 96,
+    backgroundColor: 'rgba(12, 11, 16, 0.32)',
+    borderRadius: radius.md,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255, 249, 247, 0.28)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  upgradeBadgeText: {
+    fontFamily: fonts.monoBold,
+    fontSize: 10,
+    letterSpacing: 0.4,
+    lineHeight: 13,
+    color: colors.onAccent,
+    textAlign: 'center',
+    textTransform: 'uppercase',
+  },
+  upgradeHint: {
+    fontFamily: fonts.body,
+    fontSize: 12,
+    lineHeight: 17,
+    color: 'rgba(255, 249, 247, 0.82)',
+  },
   billingIcon: {
     width: 38,
     height: 38,

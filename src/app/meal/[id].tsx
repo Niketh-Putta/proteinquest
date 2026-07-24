@@ -13,13 +13,13 @@ import {
   View,
 } from 'react-native';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { MealPhotoPreview } from '@/components/MealPhotoPreview';
 import { PageCanvas } from '@/components/PageCanvas';
 import { fetchLogById, getFoodPhotoUrl, updateLog } from '@/lib/api';
 import { getLocalMealPhoto } from '@/lib/local-meal-photo';
-import { useLayout } from '@/lib/layout';
+import { useContentColumn, useLayout } from '@/lib/layout';
 import {
   CALORIE_OVERRIDE_BUFFER,
   PROTEIN_OVERRIDE_BUFFER_G,
@@ -28,6 +28,10 @@ import {
   maxAllowedOverride,
 } from '@/lib/log-limits';
 import { todayISODate } from '@/lib/protein';
+import {
+  parseNutritionNumber,
+  sanitizeNutritionDraft,
+} from '@/lib/parse-nutrition-number';
 import {
   consumePendingIngredientEdit,
   registerIngredientEditApplier,
@@ -38,6 +42,7 @@ import {
   colors,
   displayLH,
   fonts,
+  layout,
   pressableWeb,
   radius,
   spacing,
@@ -62,14 +67,12 @@ function formatMealMeta(createdAt: string | null | undefined): string {
 
 export default function MealDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const {
-    horizontalPad,
-    formMaxWidth,
-    formWidth,
-    height,
-    isTablet,
-    isDesktop,
-  } = useLayout();
+  const { formWidth, height, horizontalPad, isTablet, isDesktop, width } = useLayout();
+  const insets = useSafeAreaInsets();
+  const column = useContentColumn('form');
+  const formSideInset = Math.max(0, (width - formWidth) / 2);
+  const headerPadLeft = Math.max(horizontalPad, insets.left - formSideInset);
+  const headerPadRight = Math.max(horizontalPad, insets.right - formSideInset);
   const tinyH = height < 700;
   const compactH = height < 780;
   const stageMaxWidth = Math.min(formWidth, isDesktop ? 560 : isTablet ? 520 : 480);
@@ -187,8 +190,8 @@ export default function MealDetailScreen() {
 
   async function handleSave() {
     if (!log || saving) return;
-    const proteinEntered = parseFloat(proteinOverride);
-    if (Number.isNaN(proteinEntered) || proteinEntered < 0) {
+    const proteinEntered = parseNutritionNumber(proteinOverride);
+    if (proteinEntered == null || proteinEntered < 0) {
       setError('Enter the protein amount in grams.');
       return;
     }
@@ -200,13 +203,13 @@ export default function MealDetailScreen() {
     const proteinG = proteinClamp.value;
 
     const calorieRaw = calorieOverride.trim();
-    const caloriesParsed = calorieRaw.length > 0 ? parseFloat(calorieRaw) : NaN;
-    if (calorieRaw.length > 0 && !Number.isFinite(caloriesParsed)) {
+    const caloriesParsed = calorieRaw.length > 0 ? parseNutritionNumber(calorieRaw) : null;
+    if (calorieRaw.length > 0 && caloriesParsed == null) {
       setError('Enter calories as a number.');
       return;
     }
     const caloriesEntered =
-      Number.isFinite(caloriesParsed) && caloriesParsed >= 0
+      caloriesParsed != null && caloriesParsed >= 0
         ? Math.round(caloriesParsed)
         : anchorCalories > 0
           ? Math.round(anchorCalories)
@@ -246,12 +249,8 @@ export default function MealDetailScreen() {
         <View
           style={[
             styles.topBar,
-            {
-              paddingHorizontal: horizontalPad,
-              maxWidth: formMaxWidth,
-              width: '100%',
-              alignSelf: 'center',
-            },
+            column,
+            { paddingLeft: headerPadLeft, paddingRight: headerPadRight },
           ]}>
           <Pressable
             onPress={close}
@@ -288,12 +287,8 @@ export default function MealDetailScreen() {
             keyboardShouldPersistTaps="always"
             contentContainerStyle={[
               styles.resultScroll,
-              {
-                paddingHorizontal: horizontalPad,
-                maxWidth: formMaxWidth,
-                width: formWidth,
-                alignSelf: 'center',
-              },
+              column,
+              { paddingLeft: headerPadLeft, paddingRight: headerPadRight },
             ]}>
             {photoUri ? (
               <Animated.View
@@ -372,9 +367,9 @@ export default function MealDetailScreen() {
                         : null,
                     ]}
                     value={proteinOverride}
-                    onChangeText={(t) => setProteinOverride(t.replace(/[^0-9.]/g, ''))}
+                    onChangeText={(t) => setProteinOverride(sanitizeNutritionDraft(t))}
                     keyboardType="numeric"
-                    maxLength={5}
+                    maxLength={16}
                   />
                   <Text style={styles.totalUnit}>g</Text>
                 </View>
@@ -396,9 +391,9 @@ export default function MealDetailScreen() {
                         : null,
                     ]}
                     value={calorieOverride}
-                    onChangeText={(t) => setCalorieOverride(t.replace(/[^0-9.]/g, ''))}
+                    onChangeText={(t) => setCalorieOverride(sanitizeNutritionDraft(t))}
                     keyboardType="numeric"
-                    maxLength={5}
+                    maxLength={16}
                   />
                   <Text style={styles.totalUnit}>cal</Text>
                 </View>
@@ -533,18 +528,18 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.sm,
   },
   iconBtn: {
-    width: 44,
-    height: 44,
+    width: layout.iconBtn,
+    height: layout.iconBtn,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 22,
+    borderRadius: layout.iconBtn / 2,
     backgroundColor: colors.surface,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.hairlineBright,
   },
   iconBtnSpacer: {
-    width: 44,
-    height: 44,
+    width: layout.iconBtn,
+    height: layout.iconBtn,
   },
   topTitle: {
     fontFamily: fonts.mono,
@@ -558,8 +553,8 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     marginHorizontal: spacing.md,
     marginBottom: spacing.sm,
-    padding: spacing.md,
-    borderRadius: 12,
+    padding: layout.cardPad,
+    borderRadius: layout.fieldRadius,
     backgroundColor: 'rgba(255, 80, 80, 0.12)',
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(255, 80, 80, 0.35)',
@@ -575,7 +570,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.textSecondary,
   },
-  resultScroll: { paddingTop: spacing.sm, paddingBottom: spacing.xxl },
+  resultScroll: { paddingTop: spacing.sm, paddingBottom: layout.scrollBottomPad },
   resultImageWrap: {
     width: '100%',
     alignSelf: 'center',

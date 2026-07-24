@@ -1,5 +1,6 @@
+import { LinearGradient } from 'expo-linear-gradient';
 import React from 'react';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import {
   DRAGONS,
@@ -10,7 +11,7 @@ import {
   stageForXpLevel,
 } from '@/lib/character';
 import type { DragonId, Profile } from '@/lib/types';
-import { colors, displayLH, fonts, pressableWeb, radius, spacing } from '@/theme';
+import { colors, displayLH, fonts, layout, pressableWeb, radius, spacing } from '@/theme';
 
 interface Props {
   value: DragonId | null;
@@ -70,6 +71,7 @@ export function DragonPicker({
               onPress={() => pick(dragon.id)}
               hitSlop={6}
               style={[styles.row, pressableWeb, tight && styles.rowTight, active && styles.rowActive]}>
+                <View pointerEvents="none" style={styles.rowSheen} />
                 <View
                   style={[
                     styles.artFrame,
@@ -88,28 +90,44 @@ export function DragonPicker({
                 </View>
                 <View
                   style={[
-                    styles.levelTag,
-                    tight && styles.levelTagTight,
+                    styles.levelTagShell,
+                    tight && styles.levelTagShellTight,
                     active && {
-                      borderColor: `${dragon.accent}66`,
-                      backgroundColor: `${dragon.accent}18`,
+                      borderColor: `${dragon.accent}99`,
+                      shadowColor: dragon.accent,
+                      shadowOpacity: 0.35,
+                      shadowRadius: 10,
+                      shadowOffset: { width: 0, height: 2 },
+                      elevation: 6,
                     },
                   ]}>
-                  <Text
-                    style={[
-                      styles.levelTagLabel,
-                      active && { color: dragon.accent },
-                    ]}>
-                    LV
-                  </Text>
-                  <Text
-                    style={[
-                      styles.levelTagValue,
-                      tight && styles.levelTagValueTight,
-                      active && { color: dragon.accent },
-                    ]}>
-                    {level}
-                  </Text>
+                  <LinearGradient
+                    colors={
+                      active
+                        ? [`${dragon.accent}33`, '#141214', '#0C0B0D']
+                        : ['#242228', '#161418', '#0E0D10']
+                    }
+                    locations={[0, 0.45, 1]}
+                    start={{ x: 0.15, y: 0 }}
+                    end={{ x: 0.9, y: 1 }}
+                    style={[styles.levelTag, tight && styles.levelTagTight]}>
+                    <View style={styles.levelTagSheen} />
+                    <Text
+                      style={[
+                        styles.levelTagLabel,
+                        active ? { color: dragon.accent } : null,
+                      ]}>
+                      LV
+                    </Text>
+                    <Text
+                      style={[
+                        styles.levelTagValue,
+                        tight && styles.levelTagValueTight,
+                        active ? { color: dragon.accent } : null,
+                      ]}>
+                      {level}
+                    </Text>
+                  </LinearGradient>
                 </View>
                 <View style={[styles.radio, active && { borderColor: dragon.accent }]}>
                   {active ? (
@@ -162,14 +180,24 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.sm,
-    minHeight: 44,
+    minHeight: layout.iconBtn,
     borderRadius: radius.md,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(255,255,255,0.04)',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'transparent',
+    borderColor: 'rgba(255,255,255,0.10)',
+  },
+  rowSheen: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: StyleSheet.hairlineWidth * 2,
+    backgroundColor: 'rgba(255,255,255,0.12)',
   },
   rowActive: {
-    backgroundColor: colors.bgRaised,
-    borderColor: colors.hairline,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderColor: 'rgba(255,255,255,0.20)',
   },
   rowTight: {
     paddingVertical: spacing.sm,
@@ -197,38 +225,70 @@ const styles = StyleSheet.create({
   titleSmallTight: { fontSize: 8, letterSpacing: 1 },
   motto: { fontFamily: fonts.body, fontSize: 12, color: colors.textSecondary, marginTop: 4 },
   mottoTight: { fontSize: 11, marginTop: 2 },
-  levelTag: {
-    minWidth: 44,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
+  levelTagShell: {
+    minWidth: layout.iconBtn,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.16)',
+    overflow: 'hidden',
+    backgroundColor: '#0E0D10',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOpacity: 0.45,
+        shadowRadius: 6,
+        shadowOffset: { width: 0, height: 3 },
+      },
+      android: { elevation: 3 },
+      default: {},
+    }),
+  },
+  levelTagShellTight: {
+    minWidth: 42,
     borderRadius: 10,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.14)',
-    backgroundColor: 'rgba(255,255,255,0.05)',
+  },
+  levelTag: {
+    alignSelf: 'stretch',
+    paddingHorizontal: 10,
+    paddingTop: 7,
+    paddingBottom: 6,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 1,
+    overflow: 'hidden',
   },
   levelTagTight: {
-    minWidth: 40,
-    paddingHorizontal: 6,
-    paddingVertical: 5,
-    borderRadius: 9,
+    paddingHorizontal: 8,
+    paddingTop: 6,
+    paddingBottom: 5,
+  },
+  levelTagSheen: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: StyleSheet.hairlineWidth * 2,
+    backgroundColor: 'rgba(255,255,255,0.22)',
   },
   levelTagLabel: {
     fontFamily: fonts.mono,
     fontSize: 8,
-    letterSpacing: 1.2,
-    color: colors.textTertiary,
+    letterSpacing: 2,
+    color: 'rgba(255,255,255,0.48)',
+    fontWeight: '600',
   },
   levelTagValue: {
     fontFamily: fonts.displayHeavy,
-    fontSize: 15,
-    lineHeight: 18,
+    fontSize: 17,
+    lineHeight: 19,
     color: colors.text,
+    letterSpacing: -0.4,
+    marginTop: 1,
     fontVariant: ['tabular-nums'],
+    textShadowColor: 'rgba(0,0,0,0.55)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
-  levelTagValueTight: { fontSize: 14, lineHeight: 16 },
+  levelTagValueTight: { fontSize: 15, lineHeight: 17 },
   radio: {
     width: 20,
     height: 20,

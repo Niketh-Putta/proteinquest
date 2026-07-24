@@ -2,50 +2,57 @@
   {
     "id": "cake",
     "label": "Birthday cake",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/04/Pound_layer_cake.jpg/320px-Pound_layer_cake.jpg",
     "expectFood": true,
     "ok": false,
-    "error": "OpenAI billing is not active. Add a payment method at platform.openai.com, then retry."
+    "error": "Edge Function returned a non-2xx status code"
   },
   {
     "id": "burger",
     "label": "Cheeseburger",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4d/Cheeseburger.jpg/320px-Cheeseburger.jpg",
     "expectFood": true,
     "ok": false,
-    "error": "OpenAI billing is not active. Add a payment method at platform.openai.com, then retry."
+    "error": "Edge Function returned a non-2xx status code"
   },
   {
     "id": "salad",
     "label": "Garden salad",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/9/9c/Garden_salad.jpg/320px-Garden_salad.jpg",
     "expectFood": true,
     "ok": false,
-    "error": "OpenAI billing is not active. Add a payment method at platform.openai.com, then retry."
+    "error": "Edge Function returned a non-2xx status code"
   },
   {
     "id": "curry",
     "label": "Chicken curry",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/5a/Indian_Chicken_Curry.jpg/320px-Indian_Chicken_Curry.jpg",
     "expectFood": true,
     "ok": false,
-    "error": "OpenAI billing is not active. Add a payment method at platform.openai.com, then retry."
+    "error": "Edge Function returned a non-2xx status code"
   },
   {
     "id": "protein-bar",
     "label": "Protein bar",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8a/Protein_bar.jpg/320px-Protein_bar.jpg",
     "expectFood": true,
     "ok": false,
-    "error": "OpenAI billing is not active. Add a payment method at platform.openai.com, then retry."
+    "error": "Edge Function returned a non-2xx status code"
   },
   {
     "id": "empty-plate",
     "label": "Empty white plate",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3f/White_plate.jpg/320px-White_plate.jpg",
     "expectFood": false,
     "ok": false,
-    "error": "OpenAI billing is not active. Add a payment method at platform.openai.com, then retry."
+    "error": "Edge Function returned a non-2xx status code"
   },
   {
     "id": "keyboard",
     "label": "Computer keyboard (non-food)",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/9/9d/Computer_keyboard.png/320px-Computer_keyboard.png",
     "expectFood": false,
     "ok": false,
-    "error": "OpenAI billing is not active. Add a payment method at platform.openai.com, then retry."
+    "error": "Edge Function returned a non-2xx status code"
   }
 ]

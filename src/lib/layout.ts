@@ -1,7 +1,7 @@
 import { Platform, useWindowDimensions, ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { spacing } from '@/theme';
+import { layout, spacing } from '@/theme';
 
 /** Fill tab scene height; overflow hidden on web so nested lists scroll. */
 export const flexFill: ViewStyle =
@@ -11,6 +11,42 @@ export const flexFill: ViewStyle =
 
 /** FlatList / ScrollView body inside a flexFill parent. */
 export const flexScroll: ViewStyle = { flex: 1, minHeight: 0 };
+
+export type ContentColumnMode = 'form' | 'wide';
+
+/** Centered content column: gutters + max width (phone-like on tablet for forms). */
+export function contentColumnStyle(opts: {
+  horizontalPad: number;
+  maxWidth: number;
+}): ViewStyle {
+  return {
+    width: '100%',
+    maxWidth: opts.maxWidth,
+    alignSelf: 'center',
+    paddingHorizontal: opts.horizontalPad,
+  };
+}
+
+/** Hook form of contentColumnStyle — prefer this over duplicating inline styles. */
+export function useContentColumn(mode: ContentColumnMode = 'form'): ViewStyle {
+  const { horizontalPad, formMaxWidth, contentMaxWidth } = useLayout();
+  return contentColumnStyle({
+    horizontalPad,
+    maxWidth: mode === 'wide' ? contentMaxWidth : formMaxWidth,
+  });
+}
+
+/**
+ * Scroll/content clearance when a sticky ~52px CTA is pinned above the home indicator.
+ * Use as ScrollView contentContainerStyle.paddingBottom.
+ */
+export function useStickyFooterClearance(isCompact?: boolean) {
+  const { height, width } = useWindowDimensions();
+  const compact = isCompact ?? (height < 700 || width < 390);
+  const footerGap = usePinnedFooterGap(compact);
+  const base = compact ? layout.stickyFooterClearanceCompact : layout.stickyFooterClearance;
+  return base + Math.max(footerGap - spacing.sm, 0);
+}
 
 export type Breakpoint = 'phone' | 'tablet' | 'desktop';
 export type HeroLayout = 'stack' | 'split' | 'sidebar';
@@ -61,7 +97,7 @@ export function useLayout() {
   const contentWidth = Math.min(width, contentMaxWidth);
   const formWidth = Math.min(width, formMaxWidth);
   const horizontalPad = isVeryNarrow ? 12 : width < 380 ? 16 : isDesktop ? 40 : isTablet ? 28 : 20;
-  const touchMin = 44;
+  const touchMin = layout.iconBtn;
 
   const ringSize = isDesktop
     ? 360

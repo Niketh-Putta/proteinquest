@@ -1,4 +1,4 @@
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Image,
@@ -148,6 +148,7 @@ function DragonStageRow({
                 />
                 <Text style={styles.stageNum}>STAGE {stage.index + 1}</Text>
                 <Text style={[styles.stageName, { color: accent }]}>{stage.name}</Text>
+                <Text style={[styles.levelUnlock, { color: accent }]}>LV {stage.levelRequired}</Text>
                 <Image source={stage.art} style={styles.art} resizeMode="contain" />
                 <Text style={styles.perk} numberOfLines={2}>
                   {stage.perk}
@@ -203,7 +204,12 @@ function DragonStageRow({
 export function DragonEvolutionGallery({ profile }: { profile?: Profile | null }) {
   return (
     <View style={styles.wrap}>
-      <Text style={styles.heading}>DRAGON PROGRESSIONS</Text>
+      <View style={styles.progressPill} accessibilityRole="header">
+        <View style={styles.progressIcon}>
+          <MaterialCommunityIcons name="fire" size={16} color={colors.accentSecondary} />
+        </View>
+        <Text style={styles.progressLabel}>DRAGON PROGRESSIONS</Text>
+      </View>
 
       {DRAGONS.map((dragon) => {
         const progress = profile ? getDragonProgress(profile, dragon.id) : null;
@@ -223,17 +229,35 @@ export function DragonEvolutionGallery({ profile }: { profile?: Profile | null }
 
 const styles = StyleSheet.create({
   wrap: {
-    paddingVertical: spacing.lg,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.hairlineBright,
     marginBottom: spacing.lg,
-    gap: spacing.lg,
+    gap: spacing.md,
   },
-  heading: {
+  progressPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.bgRaised,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    borderRadius: radius.button,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 14,
+    minHeight: 52,
+  },
+  progressIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: 'rgba(155, 140, 255, 0.14)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  progressLabel: {
+    flex: 1,
     fontFamily: fonts.mono,
-    fontSize: 10,
-    letterSpacing: 2.5,
-    color: colors.textSecondary,
+    fontSize: 11,
+    letterSpacing: 1.8,
+    color: colors.accentSecondary,
   },
   rowBlock: {
     gap: spacing.sm,
@@ -291,6 +315,12 @@ const styles = StyleSheet.create({
     fontFamily: fonts.displayHeavy,
     fontSize: 18,
     letterSpacing: -0.2,
+  },
+  levelUnlock: {
+    fontFamily: fonts.mono,
+    fontSize: 9,
+    letterSpacing: 1.4,
+    opacity: 0.85,
   },
   art: {
     width: 128,

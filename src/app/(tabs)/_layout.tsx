@@ -7,8 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { isDailyDragonLockedForToday } from '@/lib/character';
 import { useLayout } from '@/lib/layout';
 import {
-  isInHabitGracePeriod,
-  isPro,
+  hasUnlimitedScans,
   shouldOpenPaywallFromScanTap,
 } from '@/lib/paywall-gate';
 import { countLifetimeMeals, countTodayPhotoScans } from '@/lib/api';
@@ -31,7 +30,7 @@ function ScanTabBar({ state, navigation }: TabBarProps) {
       router.push('/(tabs)/today');
       return;
     }
-    if (profile && !isPro(profile) && !isInHabitGracePeriod(profile)) {
+    if (profile && !hasUnlimitedScans(profile)) {
       Promise.all([countTodayPhotoScans(), countLifetimeMeals()])
         .then(([used, life]) => {
           if (shouldOpenPaywallFromScanTap(profile, used, life)) router.push('/paywall');
@@ -48,7 +47,7 @@ function ScanTabBar({ state, navigation }: TabBarProps) {
   }
   const tabs = {
     today: { name: 'today', label: 'Today', icon: 'flash' as const },
-    trends: { name: 'trends', label: 'Trends', icon: 'stats-chart' as const },
+    trends: { name: 'trends', label: 'Progress', icon: 'stats-chart' as const },
     league: { name: 'league', label: 'League', icon: 'trophy' as const },
     profile: { name: 'profile', label: 'Profile', icon: 'person' as const },
   };
@@ -77,10 +76,10 @@ function ScanTabBar({ state, navigation }: TabBarProps) {
             pressed && { transform: [{ scale: 0.94 }] },
           ]}>
           <View style={styles.scanBtn}>
-            <Ionicons name="scan" size={24} color={colors.onAccent} />
+            <Ionicons name="add" size={28} color={colors.onAccent} />
           </View>
           <Text selectable={false} style={styles.scanLabel}>
-            Scan
+            Add
           </Text>
         </Pressable>
 

@@ -23,11 +23,13 @@ import { GlassPanel } from '@/components/GlassPanel';
 import { PageCanvas } from '@/components/PageCanvas';
 import { ProgressRing } from '@/components/ProgressRing';
 import { TrainerRankCard } from '@/components/TrainerRankCard';
+import { WeekDateStrip } from '@/components/WeekDateStrip';
 import { trackEvent } from '@/lib/analytics';
 import {
   countLifetimeMeals,
   countTodayPhotoScans,
   deleteLog,
+  fetchDailyTotals,
   fetchLatestMealAt,
   fetchLogsForDate,
   getFoodPhotoUrl,
@@ -41,18 +43,29 @@ import {
   displayDragonName,
   dragonById,
   isDailyDragonLockedForToday,
+  warmAllDragonArt,
   warmDragonArt,
 } from '@/lib/character';
 import { hungerFromLastMealAt, hungerVoice } from '@/lib/dragon-hunger';
-import { flexFill, flexScroll, useLayout, useTabBarScrollInset } from '@/lib/layout';
+import { contentColumnStyle, flexFill, flexScroll, useLayout, useTabBarScrollInset } from '@/lib/layout';
 import { needsFirstScan } from '@/lib/first-scan';
 import { scheduleStreakAtRiskNudge } from '@/lib/meal-reminders';
-import { isPro, isInHabitGracePeriod, remainingFreeScans } from '@/lib/paywall-gate';
-import { todayISODate } from '@/lib/protein';
+import { hasUnlimitedScans, isPro, remainingFreeScans } from '@/lib/paywall-gate';
+import { resolveCalorieAim, todayISODate } from '@/lib/protein';
 import { getRetention } from '@/lib/retention';
 import { useSession } from '@/lib/session';
+import {
+  invalidateTodayHomeCache,
+  peekTodayHomeLogs,
+  peekTodayHomeMeta,
+  writeTodayHomeLogs,
+  writeTodayHomeMeta,
+} from '@/lib/today-home-cache';
 import type { ProteinLog } from '@/lib/types';
-import { colors, displayLH, fonts, pressableWeb, radius, spacing, type } from '@/theme';
+import { colors, displayLH, fonts, layout, pressableWeb, radius, spacing, type } from '@/theme';
+
+/** One range query covers date-strip chips + CharacterCard streak (up to 60 days). */
+const HOME_TOTALS_DAYS = 60;
 
 function LogMealThumb({
   logId,
@@ -142,6 +155,8 @@ export default function TodayScreen() {
     food?: string;
   }>();
   const { profile, saveProfile } = useSession();
+  const [viewedISO, setViewedISO] = useState(() => todayISODate());
+  const [dayTotals, setDayTotals] = useState<Record<string, number>>({});
   const [logs, setLogs] = useState<ProteinLog[]>([]);
   const [lastMealAt, setLastMealAt] = useState<string | null>(null);
   const [lifetimeMeals, setLifetimeMeals] = useState(0);
@@ -155,46 +170,160 @@ export default function TodayScreen() {
   const [scansLeft, setScansLeft] = useState<number | null>(null);
   /** Extra air below Dynamic Island so FREE / date never sit under the camera. */
   const headerTopPad = insets.top > 0 ? spacing.md : 0;
+  const viewedISORef = useRef(viewedISO);
+  viewedISORef.current = viewedISO;
 
-  const load = useCallback(async () => {
-    try {
-      // Keep existing logs on screen while refreshing (no blank flash).
-      if (isPro(profile)) {
-        setScansLeft(null);
-        const [logsData, latest, life] = await Promise.all([
-          fetchLogsForDate(todayISODate()),
-          fetchLatestMealAt(),
-          countLifetimeMeals(),
-        ]);
-        setLogs(logsData);
-        setLastMealAt(latest);
-        setLifetimeMeals(life);
-        void prefetchFoodPhotoUrls(logsData.map((l) => l.image_path));
-        setNowMs(Date.now());
-        return logsData;
-      }
-      const [logsData, used, latest, life] = await Promise.all([
-        fetchLogsForDate(todayISODate()),
-        countTodayPhotoScans(),
+  // Never stay on a future day (midnight rollover / stale selection).
+  useEffect(() => {
+    const today = todayISODate();
+    if (viewedISO > today) setViewedISO(today);
+  }, [viewedISO, nowMs]);
+
+  const applyLogs = useCallback((logsData: ProteinLog[]) => {
+    // Kick signing the same tick as paint; peekFoodPhotoUrl covers remounts.
+    void prefetchFoodPhotoUrls(logsData.map((l) => l.image_path));
+    setLogs(logsData);
+    setNowMs(Date.now());
+  }, []);
+
+  /** Apply fetched meals only if the user is still viewing that calendar day. */
+  const applyLogsIfViewing = useCallback(
+    (date: string, logsData: ProteinLog[]) => {
+      if (viewedISORef.current !== date) return;
+      applyLogs(logsData);
+    },
+    [applyLogs],
+  );
+
+  const loadMeta = useCallback(async () => {
+    if (isPro(profile)) {
+      const [latest, life, totals] = await Promise.all([
         fetchLatestMealAt(),
         countLifetimeMeals(),
+        fetchDailyTotals(HOME_TOTALS_DAYS),
       ]);
-      setLogs(logsData);
-      setScansLeft(remainingFreeScans(used, profile, life));
+      setScansLeft(null);
       setLastMealAt(latest);
       setLifetimeMeals(life);
-      void prefetchFoodPhotoUrls(logsData.map((l) => l.image_path));
-      setNowMs(Date.now());
-      return logsData;
-    } catch (e) {
-      console.error('Failed to load logs:', e);
-      return [] as ProteinLog[];
+      setDayTotals(totals);
+      if (profile?.id) {
+        writeTodayHomeMeta(profile.id, {
+          lastMealAt: latest,
+          lifetimeMeals: life,
+          dayTotals: totals,
+          scansUsed: null,
+        });
+      }
+      return;
     }
-  }, [profile?.is_premium, profile?.created_at]);
+    const [used, latest, life, totals] = await Promise.all([
+      countTodayPhotoScans(),
+      fetchLatestMealAt(),
+      countLifetimeMeals(),
+      fetchDailyTotals(HOME_TOTALS_DAYS),
+    ]);
+    setScansLeft(remainingFreeScans(used, profile, life));
+    setLastMealAt(latest);
+    setLifetimeMeals(life);
+    setDayTotals(totals);
+    if (profile?.id) {
+      writeTodayHomeMeta(profile.id, {
+        lastMealAt: latest,
+        lifetimeMeals: life,
+        dayTotals: totals,
+        scansUsed: used,
+      });
+    }
+  }, [profile?.id, profile?.is_premium, profile?.created_at]);
 
+  const loadDayLogs = useCallback(
+    async (date: string) => {
+      const logsData = await fetchLogsForDate(date);
+      if (profile?.id) writeTodayHomeLogs(profile.id, date, logsData);
+      applyLogsIfViewing(date, logsData);
+      return logsData;
+    },
+    [applyLogsIfViewing, profile?.id],
+  );
+
+  /** Full home refresh (focus SWR + pull-to-refresh). */
+  const load = useCallback(
+    async (opts?: { force?: boolean }) => {
+      const date = viewedISO;
+      const userId = profile?.id;
+      try {
+        if (opts?.force && userId) invalidateTodayHomeCache(userId);
+
+        const cachedMeta = !opts?.force ? peekTodayHomeMeta(userId) : null;
+        const cachedLogs = !opts?.force ? peekTodayHomeLogs(userId, date) : null;
+
+        if (cachedMeta) {
+          setLastMealAt(cachedMeta.lastMealAt);
+          setLifetimeMeals(cachedMeta.lifetimeMeals);
+          setDayTotals(cachedMeta.dayTotals);
+          if (isPro(profile)) setScansLeft(null);
+          else {
+            setScansLeft(
+              remainingFreeScans(cachedMeta.scansUsed ?? 0, profile, cachedMeta.lifetimeMeals),
+            );
+          }
+        }
+        if (cachedLogs) applyLogsIfViewing(date, cachedLogs);
+
+        // Fresh meta: paint cache now; soft-revalidate meals + meta in background.
+        if (cachedMeta && !opts?.force) {
+          void loadMeta().catch(() => {});
+          if (!cachedLogs) return loadDayLogs(date);
+          void fetchLogsForDate(date)
+            .then((logsData) => {
+              if (userId) writeTodayHomeLogs(userId, date, logsData);
+              applyLogsIfViewing(date, logsData);
+            })
+            .catch(() => {});
+          return cachedLogs;
+        }
+
+        const [logsData] = await Promise.all([loadDayLogs(date), loadMeta()]);
+        return logsData;
+      } catch (e) {
+        console.error('Failed to load logs:', e);
+        return [] as ProteinLog[];
+      }
+    },
+    [applyLogsIfViewing, loadDayLogs, loadMeta, profile, viewedISO],
+  );
+
+  const loadRef = useRef(load);
+  loadRef.current = load;
+  const profileRef = useRef(profile);
+  profileRef.current = profile;
+
+  // Day strip: swap meals for the selected day (never keep the previous day's list).
+  useEffect(() => {
+    if (!profile?.id) return;
+    const date = viewedISO;
+    const userId = profile.id;
+    const cached = peekTodayHomeLogs(userId, date);
+    if (cached) {
+      applyLogsIfViewing(date, cached);
+      void fetchLogsForDate(date)
+        .then((logsData) => {
+          writeTodayHomeLogs(userId, date, logsData);
+          applyLogsIfViewing(date, logsData);
+        })
+        .catch(() => {});
+      return;
+    }
+    // Clear immediately so a slow fetch cannot leave yesterday's meals under today's label.
+    applyLogsIfViewing(date, []);
+    const meta = peekTodayHomeMeta(userId);
+    if (!meta) return; // Focus bootstrap will full-load.
+    void loadDayLogs(date).catch((e) => console.error('Failed to load day logs:', e));
+  }, [viewedISO, profile?.id, applyLogsIfViewing, loadDayLogs]);
   useEffect(() => {
     if (!profile) return;
     warmDragonArt(displayDragonId(profile, todayISODate()));
+    warmAllDragonArt();
   }, [profile?.id, profile?.daily_dragon_id]);
 
   useFocusEffect(
@@ -203,10 +332,10 @@ export default function TodayScreen() {
       void needsFirstScan().then((needs) => {
         if (active && needs) router.replace('/scan');
       });
-      void load().then((dayLogs) => {
-        if (!active || !profile) return;
-        const name = displayDragonName(profile, displayDragonId(profile, todayISODate()));
-        // Reuse the just-loaded logs — no second network round-trip.
+      void loadRef.current().then((dayLogs) => {
+        const p = profileRef.current;
+        if (!active || !p) return;
+        const name = displayDragonName(p, displayDragonId(p, todayISODate()));
         void scheduleStreakAtRiskNudge(name, dayLogs.length > 0).catch(() => {});
         if (dayLogs.length === 0) trackEvent('streak_at_risk_shown', { via: 'schedule' });
       });
@@ -216,11 +345,13 @@ export default function TodayScreen() {
         active = false;
         clearInterval(tick);
       };
-    }, [load, profile?.id]),
+    }, [profile?.id]),
   );
 
   useEffect(() => {
     if (fed !== '1') return;
+    if (profile?.id) invalidateTodayHomeCache(profile.id);
+    setViewedISO(todayISODate());
     setFedPulse(true);
     setLastMealAt(new Date().toISOString());
     const name = hungerDragonNameSafe();
@@ -239,6 +370,7 @@ export default function TodayScreen() {
       loot: loot === '1',
       freeze: freeze === '1',
     });
+    void loadRef.current({ force: true }).catch(() => {});
     router.setParams({
       fed: undefined,
       protein: undefined,
@@ -248,7 +380,7 @@ export default function TodayScreen() {
     });
     const t = setTimeout(() => setFedPulse(false), 2400);
     return () => clearTimeout(t);
-  }, [fed, protein, loot, freeze, food]);
+  }, [fed, protein, loot, freeze, food, profile?.id]);
 
   function hungerDragonNameSafe() {
     if (!profile) return 'Dragon';
@@ -257,9 +389,22 @@ export default function TodayScreen() {
 
   const consumed = logs.reduce((sum, l) => sum + Number(l.protein_g), 0);
   const goal = profile?.protein_goal_g ?? 0;
+  const caloriesConsumed = logs.reduce((sum, l) => {
+    if (l.calories != null && Number.isFinite(Number(l.calories))) {
+      return sum + Math.round(Number(l.calories));
+    }
+    const fromItems = (Array.isArray(l.items) ? l.items : []).reduce(
+      (s, i) => s + (Number(i.calories_g) || 0),
+      0,
+    );
+    return sum + Math.round(fromItems);
+  }, 0);
+  const calorieAim = Math.round(resolveCalorieAim(profile));
   const hitGoal = goal > 0 && consumed >= goal;
   const showDragonInHero = heroLayout !== 'sidebar';
   const todayISO = todayISODate();
+  const isViewingToday = viewedISO === todayISO;
+  const isViewingFuture = viewedISO > todayISO;
   const dragonLocked = profile ? isDailyDragonLockedForToday(profile, todayISO) : false;
   const todayDragon = profile && dragonLocked ? dragonById(profile.daily_dragon_id!) : null;
   const todayDragonName =
@@ -291,12 +436,7 @@ export default function TodayScreen() {
           <View
             style={[
               flexFill,
-              {
-                paddingHorizontal: horizontalPad,
-                maxWidth: contentMaxWidth,
-                width: '100%',
-                alignSelf: 'center',
-              },
+              contentColumnStyle({ horizontalPad, maxWidth: contentMaxWidth }),
             ]}>
             <DailyDragonPicker />
           </View>
@@ -317,6 +457,10 @@ export default function TodayScreen() {
     setPendingDelete(null);
     setLogs(remainingLogs);
     setLifetimeMeals((n) => Math.max(0, n - 1));
+    if (profile?.id) {
+      invalidateTodayHomeCache(profile.id);
+      writeTodayHomeLogs(profile.id, viewedISO, remainingLogs);
+    }
 
     try {
       await deleteLog(log.id);
@@ -325,10 +469,14 @@ export default function TodayScreen() {
           profile,
           deletedProteinG: Number(log.protein_g),
           todayTotalAfterDelete: todayTotalAfter,
-          todayISO: todayISODate(),
+          todayISO: viewedISO,
         });
         await saveProfile(updates);
       }
+      setDayTotals((prev) => ({
+        ...prev,
+        [viewedISO]: todayTotalAfter,
+      }));
       const latest = await fetchLatestMealAt();
       setLastMealAt(latest);
     } catch (e) {
@@ -344,15 +492,37 @@ export default function TodayScreen() {
     }
   }
 
-  const dateLabel = new Date()
+  const viewedDate = new Date(`${viewedISO}T12:00:00`);
+  const dateLabel = viewedDate
     .toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })
     .toUpperCase();
+  const loggedOnLabel = viewedDate.toLocaleDateString(undefined, {
+    weekday: 'long',
+    month: 'short',
+    day: 'numeric',
+  });
+  const yesterdayISO = todayISODate(-1);
+  const dayTitle = isViewingToday
+    ? 'Today'
+    : viewedISO === yesterdayISO
+      ? 'Yesterday'
+      : viewedDate.toLocaleDateString(undefined, { weekday: 'long' });
+  const proteinRingLabel = isViewingToday
+    ? 'PROTEIN TODAY'
+    : isViewingFuture
+      ? 'PROTEIN'
+      : 'PROTEIN THAT DAY';
+  const sectionTitle = isViewingToday
+    ? 'LOGGED TODAY'
+    : isViewingFuture
+      ? 'NOTHING YET'
+      : `Logged on ${loggedOnLabel}`;
 
   function renderHeader() {
     return (
       <View style={headerTopPad > 0 ? { paddingTop: headerTopPad } : undefined}>
         <View style={styles.header}>
-          <View style={{ flex: 1 }}>
+          <View style={styles.headerLead}>
             <Pressable
               onPress={() => router.push(isPro(profile) ? '/settings' : '/paywall')}
               hitSlop={8}
@@ -377,11 +547,42 @@ export default function TodayScreen() {
                 {isPro(profile) ? 'PRO' : 'FREE'}
               </Text>
             </Pressable>
-            <Text style={styles.eyebrow}>{dateLabel}</Text>
-            <Text style={[styles.title, { fontSize: titleSize, lineHeight: displayLH(titleSize) }]}>
-              Today
+            <Text style={styles.eyebrow} numberOfLines={1}>
+              {dateLabel}
+            </Text>
+            <Text
+              style={[
+                styles.title,
+                {
+                  fontSize: isNarrow ? Math.min(titleSize, 36) : titleSize,
+                  lineHeight: displayLH(isNarrow ? Math.min(titleSize, 36) : titleSize),
+                },
+              ]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.8}>
+              {dayTitle}
             </Text>
           </View>
+          <View style={styles.headerDivider} accessibilityElementsHidden importantForAccessibility="no-hide-descendants" />
+          <WeekDateStrip
+            selectedISO={viewedISO}
+            goalG={goal}
+            totals={dayTotals}
+            liveISO={viewedISO}
+            liveProteinG={consumed}
+            compact={isNarrow}
+            onSelect={(iso) => {
+              const today = todayISODate();
+              if (iso > today) return;
+              if (iso === viewedISO) return;
+              trackEvent('today_day_selected', {
+                date: iso,
+                is_today: iso === today,
+              });
+              setViewedISO(iso);
+            }}
+          />
         </View>
 
         {profile ? (
@@ -392,7 +593,7 @@ export default function TodayScreen() {
           />
         ) : null}
 
-        {!isPro(profile) && !isInHabitGracePeriod(profile) && scansLeft !== null ? (
+        {!hasUnlimitedScans(profile) && scansLeft !== null ? (
           <Pressable onPress={() => router.push('/paywall')} style={styles.scansPill}>
             <Ionicons name="sparkles" size={14} color={colors.accent} />
             <Text style={styles.scansPillText}>
@@ -430,15 +631,26 @@ export default function TodayScreen() {
               styles.proteinBlock,
               heroLayout === 'split' && { flex: 1 },
             ]}>
-            <ProgressRing consumed={consumed} goal={goal} size={ringSize} />
+            <ProgressRing
+              consumed={consumed}
+              goal={goal}
+              size={ringSize}
+              label={proteinRingLabel}
+            />
             {goal <= 0 ? (
               <Text style={styles.proteinMeta}>set your goal in settings</Text>
             ) : hitGoal ? (
-              <Text style={styles.proteinMeta}>goal complete - your dragon is fed</Text>
-            ) : hunger >= 2 ? (
+              <Text style={styles.proteinMeta}>
+                {isViewingToday
+                  ? 'goal complete - your dragon is fed'
+                  : 'goal complete for this day'}
+              </Text>
+            ) : isViewingToday && hunger >= 2 ? (
               <Text style={styles.proteinMeta}>
                 {hungerVoice(hunger, profile?.display_name)}
               </Text>
+            ) : isViewingFuture ? (
+              <Text style={styles.proteinMeta}>future day - nothing logged yet</Text>
             ) : null}
           </View>
 
@@ -452,18 +664,21 @@ export default function TodayScreen() {
                 hunger={hunger}
                 fedPulse={fedPulse}
                 onFeedPress={openFeed}
+                dailyTotals={dayTotals}
               />
             </Animated.View>
           ) : null}
         </View>
 
-        <FeedQuest
-          dragonName={hungerDragonName}
-          mealsToday={logs.length}
-          consumed={consumed}
-          goal={goal}
-        />
-        {shards > 0 ? (
+        {isViewingToday ? (
+          <FeedQuest
+            dragonName={hungerDragonName}
+            mealsToday={logs.length}
+            consumed={consumed}
+            goal={goal}
+          />
+        ) : null}
+        {shards > 0 && isViewingToday ? (
           <Text style={styles.proteinMeta}>
             {shards} egg shard{shards === 1 ? '' : 's'} collected
           </Text>
@@ -472,26 +687,56 @@ export default function TodayScreen() {
         <View style={styles.rule} />
 
         {logs.length > 0 ? (
-          <Text style={styles.sectionTitle}>LOGGED TODAY</Text>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>{sectionTitle}</Text>
+            <View
+              style={styles.sectionCalRow}
+              accessibilityLabel={`${caloriesConsumed} of ${calorieAim} kilocalories`}>
+              <Text style={styles.sectionCalTotal}>{caloriesConsumed}</Text>
+              <Text style={styles.sectionCalAim}> / {calorieAim} kcal</Text>
+            </View>
+          </View>
         ) : (
           <View style={styles.empty}>
             <Text style={styles.emptyTitle}>
-              {hunger >= 2 ? `${hungerDragonName} is starving` : 'Your dragon is waiting'}
+              {isViewingFuture
+                ? 'Nothing here yet'
+                : isViewingToday
+                  ? hunger >= 2
+                    ? `${hungerDragonName} is starving`
+                    : 'Your dragon is waiting'
+                  : 'No meals logged'}
             </Text>
             <Text style={styles.emptyText}>
-              {hunger >= 2
-                ? 'Scan a meal to feed them. They dim until you do.'
-                : 'Scan your first meal - every gram of protein brings you closer.'}
+              {isViewingFuture
+                ? 'Jump back to today to scan and feed your dragon.'
+                : isViewingToday
+                  ? hunger >= 2
+                    ? 'Scan a meal to feed them. They dim until you do.'
+                    : 'Scan your first meal - every gram of protein brings you closer.'
+                  : 'No protein logged on this day.'}
             </Text>
-            <Pressable
-              onPress={openFeed}
-              style={({ pressed }) => [
-                styles.feedEmptyCta,
-                pressableWeb,
-                pressed && { opacity: 0.85 },
-              ]}>
-              <Text style={styles.feedEmptyCtaText}>Feed {hungerDragonName} now</Text>
-            </Pressable>
+            {isViewingToday ? (
+              <Pressable
+                onPress={openFeed}
+                style={({ pressed }) => [
+                  styles.feedEmptyCta,
+                  pressableWeb,
+                  pressed && { opacity: 0.85 },
+                ]}>
+                <Text style={styles.feedEmptyCtaText}>Feed {hungerDragonName} now</Text>
+              </Pressable>
+            ) : (
+              <Pressable
+                onPress={() => setViewedISO(todayISODate())}
+                style={({ pressed }) => [
+                  styles.feedEmptyCta,
+                  pressableWeb,
+                  pressed && { opacity: 0.85 },
+                ]}>
+                <Text style={styles.feedEmptyCtaText}>Back to today</Text>
+              </Pressable>
+            )}
           </View>
         )}
       </View>
@@ -508,7 +753,7 @@ export default function TodayScreen() {
         tintColor={colors.accent}
         onRefresh={async () => {
           setRefreshing(true);
-          await load();
+          await load({ force: true });
           setRefreshing(false);
         }}
       />
@@ -640,12 +885,7 @@ export default function TodayScreen() {
           <View
             style={[
               styles.desktopShell,
-              {
-                paddingHorizontal: horizontalPad,
-                maxWidth: contentMaxWidth,
-                alignSelf: 'center',
-                width: '100%',
-              },
+              contentColumnStyle({ horizontalPad, maxWidth: contentMaxWidth }),
             ]}>
             <View style={[styles.desktopRow, { gap: columnGap }]}>
               <FlatList
@@ -663,6 +903,7 @@ export default function TodayScreen() {
                     hunger={hunger}
                     fedPulse={fedPulse}
                     onFeedPress={openFeed}
+                    dailyTotals={dayTotals}
                   />
                 </View>
               ) : null}
@@ -675,13 +916,8 @@ export default function TodayScreen() {
             style={styles.listScroll}
             contentContainerStyle={[
               styles.list,
-              {
-                paddingHorizontal: horizontalPad,
-                maxWidth: contentMaxWidth,
-                width: '100%',
-                alignSelf: 'center',
-                paddingBottom: tabBarScrollInset,
-              },
+              contentColumnStyle({ horizontalPad, maxWidth: contentMaxWidth }),
+              { paddingBottom: tabBarScrollInset },
             ]}
             ListHeaderComponent={renderHeader()}
           />
@@ -710,9 +946,23 @@ const styles = StyleSheet.create({
   list: { paddingTop: spacing.lg },
   header: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'stretch',
     justifyContent: 'space-between',
+    gap: spacing.sm,
     marginBottom: spacing.lg,
+  },
+  headerLead: {
+    flexShrink: 0,
+    maxWidth: '42%',
+    paddingRight: spacing.xs,
+    justifyContent: 'flex-start',
+  },
+  headerDivider: {
+    width: StyleSheet.hairlineWidth,
+    alignSelf: 'stretch',
+    marginVertical: 6,
+    backgroundColor: colors.hairlineBright,
+    opacity: 0.9,
   },
   statusTag: {
     alignSelf: 'flex-start',
@@ -785,7 +1035,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     marginBottom: spacing.md,
     borderWidth: 1,
-    borderRadius: 10,
+    borderRadius: layout.fieldRadius,
     shadowOpacity: 0.14,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 4 },
@@ -798,7 +1048,7 @@ const styles = StyleSheet.create({
   },
   hero: {
     alignItems: 'center',
-    gap: spacing.md,
+    gap: spacing.md + 12,
     width: '100%',
     marginBottom: spacing.xs,
   },
@@ -813,7 +1063,8 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: colors.textTertiary,
     letterSpacing: 0.3,
-    marginTop: spacing.sm,
+    marginTop: spacing.md,
+    marginBottom: 8,
     textAlign: 'center',
   },
   rule: {
@@ -821,12 +1072,40 @@ const styles = StyleSheet.create({
     backgroundColor: colors.hairlineBright,
     marginVertical: spacing.lg,
   },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    marginBottom: spacing.md,
+    gap: spacing.sm,
+    width: '100%',
+  },
   sectionTitle: {
     fontFamily: fonts.mono,
     fontSize: 9,
     letterSpacing: 2,
     color: colors.textTertiary,
-    marginBottom: spacing.md,
+    flexShrink: 1,
+  },
+  sectionCalRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    flexShrink: 0,
+  },
+  sectionCalTotal: {
+    fontFamily: fonts.display,
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.text,
+    fontVariant: ['tabular-nums'],
+  },
+  sectionCalAim: {
+    fontFamily: fonts.mono,
+    fontSize: 11,
+    fontWeight: '400',
+    color: colors.textTertiary,
+    letterSpacing: 0.2,
+    fontVariant: ['tabular-nums'],
   },
   empty: {
     paddingVertical: spacing.lg,

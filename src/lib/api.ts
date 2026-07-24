@@ -8,15 +8,24 @@ const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL!;
 const SUPABASE_KEY = process.env.EXPO_PUBLIC_SUPABASE_KEY!;
 const MAX_IMAGE_BASE64 = 3_500_000;
 
+const AUTH_HEADER_TTL_MS = 60_000;
+let authHeaderCache: { headers: Record<string, string>; expiresAt: number } | null = null;
+
 async function getAuthHeaders(): Promise<Record<string, string>> {
+  const now = Date.now();
+  if (authHeaderCache && now < authHeaderCache.expiresAt) {
+    return authHeaderCache.headers;
+  }
+
   const { data: sessionData } = await supabase.auth.getSession();
   const token = sessionData.session?.access_token ?? SUPABASE_KEY;
-
-  return {
+  const headers = {
     'Content-Type': 'application/json',
     apikey: SUPABASE_KEY,
     Authorization: `Bearer ${token}`,
   };
+  authHeaderCache = { headers, expiresAt: now + AUTH_HEADER_TTL_MS };
+  return headers;
 }
 
 function cleanBase64(imageBase64: string): string {
@@ -333,6 +342,7 @@ export async function uploadAvatar(userId: string, imageBase64: string): Promise
   }
 }
 
+/** Always attaches meals to real today. Never accept a viewed/past date. */
 export async function insertLog(params: {
   userId: string;
   foodName: string;
@@ -388,10 +398,14 @@ export async function fetchTodayMealSummary(
   };
 }
 
+/** Columns needed for Today meal list (avoid selecting unused wide fields). */
+const LOG_LIST_SELECT =
+  'id, user_id, created_at, logged_date, food_name, items, protein_g, calories, confidence, image_path, source';
+
 export async function fetchLogsForDate(date: string): Promise<ProteinLog[]> {
   const { data, error } = await supabase
     .from('protein_logs')
-    .select('*')
+    .select(LOG_LIST_SELECT)
     .eq('logged_date', date)
     .in('source', ['photo', 'manual'])
     .order('created_at', { ascending: false });
@@ -446,13 +460,13 @@ export async function countTodayPhotoScans(date = todayISODate()): Promise<numbe
 }
 
 export async function fetchDailyTotals(days: number): Promise<Record<string, number>> {
-  const since = new Date();
-  since.setDate(since.getDate() - (days - 1));
-  const sinceISO = since.toISOString().slice(0, 10);
+  // Local calendar window (matches logged_date / todayISODate), not UTC.
+  const sinceISO = todayISODate(-(Math.max(1, days) - 1));
   const { data, error } = await supabase
     .from('protein_logs')
     .select('logged_date, protein_g')
-    .gte('logged_date', sinceISO);
+    .gte('logged_date', sinceISO)
+    .in('source', ['photo', 'manual']);
   if (error) throw error;
   const totals: Record<string, number> = {};
   for (const row of data ?? []) {

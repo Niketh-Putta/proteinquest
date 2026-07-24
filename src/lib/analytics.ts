@@ -9,6 +9,7 @@ export type ProductEventName =
   | 'reminder_tapped'
   | 'streak_at_risk_shown'
   | 'feed_cta_tapped'
+  | 'today_day_selected'
   | 'dragon_named'
   | 'starve_state_viewed'
   | 'fed_celebration_shown'

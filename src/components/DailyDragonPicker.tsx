@@ -13,23 +13,25 @@ import {
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
 import { DragonPicker } from '@/components/DragonPicker';
+import { StickyFooter } from '@/components/StickyFooter';
 import { lockDailyDragon } from '@/lib/character';
-import { useLayout, usePinnedFooterGap } from '@/lib/layout';
+import { useLayout } from '@/lib/layout';
 import { todayISODate } from '@/lib/protein';
 import { useSession } from '@/lib/session';
 import type { DragonId } from '@/lib/types';
-import { colors, displayLH, fonts, pressableWeb, spacing } from '@/theme';
+import { colors, displayLH, fonts, layout, pressableWeb, spacing } from '@/theme';
 
 export function DailyDragonPicker() {
   const { isNarrow, height, width } = useLayout();
   const isCompact = height < 700 || width < 390;
-  const footerGap = usePinnedFooterGap(isCompact);
   const { profile, saveProfile } = useSession();
   const [dragonId, setDragonId] = useState<DragonId | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const ready = !!dragonId && !saving;
+  const scrollFooterPad =
+    (isCompact ? layout.controlHeightCompact : layout.controlHeight) + spacing.xl;
 
   async function confirm() {
     if (!profile || !dragonId) {
@@ -52,7 +54,11 @@ export function DailyDragonPicker() {
     <View style={styles.root}>
       <ScrollView
         style={styles.flex}
-        contentContainerStyle={[styles.scroll, isCompact && styles.scrollCompact]}
+        contentContainerStyle={[
+          styles.scroll,
+          isCompact && styles.scrollCompact,
+          { paddingBottom: scrollFooterPad },
+        ]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
         bounces>
@@ -80,7 +86,7 @@ export function DailyDragonPicker() {
         </Animated.View>
       </ScrollView>
 
-      <View style={[styles.footer, { paddingBottom: footerGap + 50 }]}>
+      <StickyFooter tabScreen compact={isCompact}>
         {error ? <Text style={styles.error}>{error}</Text> : null}
         <Pressable
           onPress={confirm}
@@ -123,15 +129,15 @@ export function DailyDragonPicker() {
             )}
           </LinearGradient>
         </Pressable>
-      </View>
+      </StickyFooter>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  flex: { flex: 1 },
-  scroll: { paddingTop: spacing.lg, paddingBottom: spacing.sm },
+  flex: { flex: 1, minHeight: 0 },
+  scroll: { paddingTop: spacing.lg },
   scrollCompact: { paddingTop: spacing.md },
   kicker: {
     fontFamily: fonts.mono,
@@ -159,12 +165,6 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   subCompact: { fontSize: 13, lineHeight: 19, marginTop: spacing.xs, marginBottom: spacing.sm },
-  footer: {
-    paddingTop: spacing.md,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.hairline,
-    backgroundColor: colors.bg,
-  },
   lockOuter: {
     borderRadius: 16,
     overflow: 'hidden',
@@ -191,14 +191,14 @@ const styles = StyleSheet.create({
     transform: [{ scale: 0.985 }],
   },
   lockInner: {
-    height: 54,
+    height: layout.controlHeight,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: spacing.lg,
     position: 'relative',
   },
   lockInnerCompact: {
-    height: 50,
+    height: layout.controlHeightCompact,
   },
   lockSheen: {
     position: 'absolute',
@@ -212,7 +212,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: spacing.sm,
   },
   lockLabel: {
     fontFamily: fonts.displayHeavy,

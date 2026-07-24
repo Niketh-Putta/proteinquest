@@ -19,7 +19,7 @@ import { GlassPanel } from '@/components/GlassPanel';
 import { trackEvent } from '@/lib/analytics';
 import { APP_STORE_URL, PLAY_STORE_URL } from '@/lib/app-update';
 import { displayDragonId, displayDragonName } from '@/lib/character';
-import { useLayout } from '@/lib/layout';
+import { useContentColumn, useLayout } from '@/lib/layout';
 import {
   getNativePaymentProvider,
   getPaymentProvider,
@@ -29,7 +29,7 @@ import {
 import { todayISODate } from '@/lib/protein';
 import { SITE_URL } from '@/lib/site';
 import { useSession } from '@/lib/session';
-import { colors, fonts, pressableWeb, spacing } from '@/theme';
+import { colors, fonts, layout, pressableWeb, radius, spacing } from '@/theme';
 
 const IS_WEB = Platform.OS === 'web';
 
@@ -107,8 +107,8 @@ function GradientWord({ children, size = 40 }: { children: string; size?: number
 
 export default function Paywall() {
   const { session, profile, saveProfile } = useSession();
-  const { horizontalPad, formMaxWidth, isNarrow, isVeryNarrow, isTinyH } = useLayout();
-  const contentMaxWidth = formMaxWidth;
+  const { isNarrow, isVeryNarrow, isTinyH } = useLayout();
+  const column = useContentColumn('form');
   const titleSize = isVeryNarrow || isTinyH ? 32 : isNarrow ? 36 : 40;
   const [provider, setProvider] = useState<PaymentProvider>(() => getPaymentProvider());
   const [planId, setPlanId] = useState(provider.plans[1]?.id ?? 'pro_yearly');
@@ -288,15 +288,7 @@ export default function Paywall() {
 
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
         <ScrollView
-          contentContainerStyle={[
-            styles.scroll,
-            {
-              paddingHorizontal: horizontalPad,
-              maxWidth: contentMaxWidth,
-              width: '100%',
-              alignSelf: 'center',
-            },
-          ]}
+          contentContainerStyle={[styles.scroll, column]}
           showsVerticalScrollIndicator={false}>
           <View style={styles.topBar}>
             <Pressable
@@ -461,7 +453,7 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#080810' },
   safe: { flex: 1 },
   scroll: {
-    paddingBottom: 40,
+    paddingBottom: spacing.xxl,
   },
   topBar: {
     flexDirection: 'row',
@@ -518,14 +510,14 @@ const styles = StyleSheet.create({
     maxWidth: 360,
   },
   scarcityBanner: {
-    marginTop: 18,
-    paddingVertical: 16,
-    paddingHorizontal: 16,
-    borderRadius: 18,
+    marginTop: spacing.md + 2,
+    paddingVertical: layout.cardPad,
+    paddingHorizontal: layout.cardPad,
+    borderRadius: radius.md,
     backgroundColor: 'rgba(255,122,89,0.16)',
     borderWidth: 1.5,
     borderColor: ACCENT,
-    gap: 8,
+    gap: spacing.sm,
   },
   scarcityHeadline: {
     fontFamily: fonts.displayMedium,
@@ -723,8 +715,8 @@ const styles = StyleSheet.create({
   },
   cta: {
     marginTop: spacing.md,
-    height: 52,
-    borderRadius: 999,
+    height: layout.controlHeight,
+    borderRadius: radius.full,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',

@@ -39,7 +39,7 @@ import {
   fetchActiveDuels,
   refreshDuelTotals,
 } from '@/lib/duels';
-import { flexFill, flexScroll, useLayout, useTabBarScrollInset } from '@/lib/layout';
+import { flexFill, flexScroll, useContentColumn, useLayout, useTabBarScrollInset } from '@/lib/layout';
 import { fetchLogsForDate } from '@/lib/api';
 import {
   buildLeaderboard,
@@ -319,9 +319,10 @@ function PodiumColumn({
 
 export default function LeagueTab() {
   const { profile, session } = useSession();
-  const { horizontalPad, formMaxWidth, isNarrow } = useLayout();
+  const { isNarrow } = useLayout();
+  const column = useContentColumn('form');
   const titleSize = isNarrow ? 26 : 30;
-  const bottomInset = useTabBarScrollInset();
+  const bottomInset = useTabBarScrollInset(isNarrow);
   const [rows, setRows] = useState<LeaderboardRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [inviteStatus, setInviteStatus] = useState<string | null>(null);
@@ -513,15 +514,10 @@ export default function LeagueTab() {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={[
             styles.scroll,
-            {
-              paddingHorizontal: horizontalPad,
-              maxWidth: formMaxWidth,
-              width: '100%',
-              alignSelf: 'center',
-              paddingBottom: bottomInset,
-            },
+            column,
+            { paddingBottom: bottomInset },
           ]}>
-          <View style={styles.header}>
+          <View style={[styles.header, isNarrow && styles.headerNarrow]}>
             <View style={styles.headerCopy}>
               <Text style={styles.eyebrow}>PROTEINQUEST</Text>
               <Text
@@ -537,39 +533,40 @@ export default function LeagueTab() {
                   : `${playerCount} player${playerCount === 1 ? '' : 's'} ranked`}
               </Text>
             </View>
-            <Pressable
-              onPress={shareDragonCard}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel="Share dragon card"
-              style={({ pressed }) => [
-                styles.invite,
-                pressableWeb,
-                { marginRight: 8 },
-                pressed && { opacity: 0.7 },
-              ]}>
-              <Ionicons name="share-outline" size={18} color={colors.text} />
-            </Pressable>
-            <Pressable
-              onPress={invite}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel="Invite friends"
-              android_ripple={{ color: 'rgba(246, 244, 248, 0.08)' }}
-              style={({ pressed }) => [
-                styles.invite,
-                styles.inviteShrink,
-                pressableWeb,
-                // Opacity-only feedback — never swap fill/border to accent or system active colors.
-                pressed && styles.invitePressed,
-              ]}>
-              <Ionicons name="person-add" size={14} color={colors.text} />
-              {!isNarrow ? (
-                <Text style={[styles.inviteText, noTextCaret]} selectable={false}>
-                  Invite Friends
-                </Text>
-              ) : null}
-            </Pressable>
+            <View style={styles.headerActions}>
+              <Pressable
+                onPress={shareDragonCard}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="Share dragon card"
+                style={({ pressed }) => [
+                  styles.invite,
+                  pressableWeb,
+                  pressed && { opacity: 0.7 },
+                ]}>
+                <Ionicons name="share-outline" size={18} color={colors.text} />
+              </Pressable>
+              <Pressable
+                onPress={invite}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="Invite friends"
+                android_ripple={{ color: 'rgba(246, 244, 248, 0.08)' }}
+                style={({ pressed }) => [
+                  styles.invite,
+                  styles.inviteShrink,
+                  pressableWeb,
+                  // Opacity-only feedback — never swap fill/border to accent or system active colors.
+                  pressed && styles.invitePressed,
+                ]}>
+                <Ionicons name="person-add" size={14} color={colors.text} />
+                {!isNarrow ? (
+                  <Text style={[styles.inviteText, noTextCaret]} selectable={false}>
+                    Invite Friends
+                  </Text>
+                ) : null}
+              </Pressable>
+            </View>
           </View>
           {inviteStatus ? <Text style={styles.inviteStatus}>{inviteStatus}</Text> : null}
           {inviteLink ? (
@@ -695,6 +692,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: spacing.xxl,
     gap: spacing.sm,
+  },
+  headerNarrow: {
+    alignItems: 'flex-start',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    flexShrink: 0,
   },
   headerCopy: {
     flex: 1,

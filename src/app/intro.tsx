@@ -6,6 +6,7 @@ import { VideoView, useVideoPlayer } from 'expo-video';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -42,11 +43,11 @@ import {
 } from '@/lib/display-name';
 import { trackEvent } from '@/lib/analytics';
 import { DRAGONS, buildDragonNames, normalizeDragonName } from '@/lib/character';
-import { useLayout, usePinnedFooterGap } from '@/lib/layout';
+import { useLayout, usePinnedFooterGap, useStickyFooterClearance } from '@/lib/layout';
 import { useSession } from '@/lib/session';
 import { setPreferredName } from '@/lib/xp';
 import type { DragonId } from '@/lib/types';
-import { colors, displayLH, fonts, noTextCaret, pressableWeb, spacing, textInputWeb } from '@/theme';
+import { colors, displayLH, fonts, layout, noTextCaret, pressableWeb, spacing, textInputWeb } from '@/theme';
 
 const HERO_ART = require('@/assets/character/dragons/fire-5.png');
 const EMBERS_VIDEO = require('@/assets/video/embers.mp4');
@@ -282,7 +283,7 @@ export default function IntroScreen() {
   const isTiny = height < 640 || width < 360;
   const footerGap = usePinnedFooterGap(isCompact);
   /** Pinned CTA (~52) + footer pad so name field never sits under Continue. */
-  const footerClearance = (isTiny ? 96 : 112) + Math.max(footerGap - spacing.sm, 0);
+  const footerClearance = useStickyFooterClearance(isTiny || isCompact);
   const phaseScrollRef = useRef<ScrollView>(null);
 
   const [phase, setPhase] = useState<Phase>('hero');
@@ -493,7 +494,7 @@ export default function IntroScreen() {
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
         <KeyboardAvoidingView
           style={styles.flex}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           keyboardVerticalOffset={Platform.OS === 'ios' ? Math.max(insets.top, 8) : 0}>
           <View
             style={[
@@ -504,7 +505,10 @@ export default function IntroScreen() {
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Back"
-                onPress={back}
+                onPress={() => {
+                  Keyboard.dismiss();
+                  back();
+                }}
                 hitSlop={8}
                 style={[styles.backBtn, pressableWeb]}>
                 <Ionicons name="chevron-back" size={22} color={colors.textSecondary} />
@@ -522,7 +526,8 @@ export default function IntroScreen() {
                 { paddingBottom: footerClearance },
               ]}
               keyboardShouldPersistTaps="handled"
-              keyboardDismissMode="on-drag"
+              keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+              onScrollBeginDrag={Keyboard.dismiss}
               showsVerticalScrollIndicator={false}>
               {phase === 'name' ? (
                 <Animated.View
@@ -530,9 +535,11 @@ export default function IntroScreen() {
                   entering={FadeInDown.duration(380)}
                   exiting={FadeOut.duration(160)}
                   style={styles.phaseBody}>
-                  <Text style={[styles.question, isCompact && styles.questionCompact]}>
-                    What should{'\n'}we call you?
-                  </Text>
+                  <Pressable onPress={Keyboard.dismiss} accessibilityRole="none">
+                    <Text style={[styles.question, isCompact && styles.questionCompact]}>
+                      What should{'\n'}we call you?
+                    </Text>
+                  </Pressable>
                   <TextInput
                     style={[styles.nameInput, isCompact && styles.nameInputCompact, textInputWeb]}
                     value={name}
@@ -543,6 +550,7 @@ export default function IntroScreen() {
                     autoCorrect={false}
                     maxLength={24}
                     returnKeyType="done"
+                    blurOnSubmit
                     onFocus={scrollNameFieldIntoView}
                     onSubmitEditing={submitName}
                   />
@@ -572,19 +580,21 @@ export default function IntroScreen() {
                       size={dragonPortraitSize}
                     />
                   </View>
-                  <Text style={[styles.question, isCompact && styles.questionCompact]}>
-                    {isTiny ? (
-                      <>Name your {namingDragon.title.toLowerCase()}</>
-                    ) : (
-                      <>
-                        Name your{'\n'}
-                        {namingDragon.title.toLowerCase()}
-                      </>
-                    )}
-                  </Text>
-                  <Text style={styles.dragonHint} numberOfLines={isTiny ? 1 : 2}>
-                    Default: {namingDragon.name} · {namingDragon.motto}
-                  </Text>
+                  <Pressable onPress={Keyboard.dismiss} accessibilityRole="none">
+                    <Text style={[styles.question, isCompact && styles.questionCompact]}>
+                      {isTiny ? (
+                        <>Name your {namingDragon.title.toLowerCase()}</>
+                      ) : (
+                        <>
+                          Name your{'\n'}
+                          {namingDragon.title.toLowerCase()}
+                        </>
+                      )}
+                    </Text>
+                    <Text style={styles.dragonHint} numberOfLines={isTiny ? 1 : 2}>
+                      Default: {namingDragon.name} · {namingDragon.motto}
+                    </Text>
+                  </Pressable>
                   <TextInput
                     style={[
                       styles.nameInput,
@@ -602,6 +612,7 @@ export default function IntroScreen() {
                     autoCorrect={false}
                     maxLength={24}
                     returnKeyType="done"
+                    blurOnSubmit
                     onFocus={scrollNameFieldIntoView}
                     onSubmitEditing={submitDragonName}
                   />
@@ -789,8 +800,8 @@ const styles = StyleSheet.create({
     paddingTop: spacing.md,
   },
   backBtn: {
-    width: 36,
-    height: 36,
+    width: layout.iconBtn,
+    height: layout.iconBtn,
     alignItems: 'center',
     justifyContent: 'center',
   },

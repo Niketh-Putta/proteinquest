@@ -1,7 +1,18 @@
 import type { ImageSourcePropType } from 'react-native';
 
+import {
+  accountGoalStreakState,
+  dayBeforeISO,
+  nextGoalStreak,
+} from './goal-streak';
 import { canUseStreakFreeze, isoWeekKey } from './retention';
 import type { DragonId, DragonProgress, Profile } from './types';
+
+export {
+  accountGoalStreakState,
+  effectiveStreak,
+  goalHitStreakDays,
+} from './goal-streak';
 
 export interface DragonStage {
   index: number;
@@ -218,6 +229,13 @@ export function warmDragonArt(dragonId: DragonId): void {
   }
 }
 
+/** Warm every dragon's art (CharacterCard switcher shows all three). */
+export function warmAllDragonArt(): void {
+  for (const id of Object.keys(DRAGON_ART_LOADERS) as DragonId[]) {
+    warmDragonArt(id);
+  }
+}
+
 function buildStages(id: DragonId): DragonStage[] {
   return STAGE_NAMES.map((name, index) => {
     const stage = {
@@ -416,11 +434,16 @@ export function displayDragonId(profile: Profile, todayISO: string): DragonId {
 }
 
 export function displayProgress(profile: Profile, todayISO: string): DragonProgress {
-  return getDragonProgress(profile, displayDragonId(profile, todayISO));
+  const progress = getDragonProgress(profile, displayDragonId(profile, todayISO));
+  // Goal streak is account-level (calendar hits), not per-dragon XP progress.
+  const account = accountGoalStreakState(profile, progress);
+  return { ...progress, ...account };
 }
 
 export function activeProgress(profile: Profile): DragonProgress {
-  return getDragonProgress(profile, activeDragonId(profile));
+  const progress = getDragonProgress(profile, activeDragonId(profile));
+  const account = accountGoalStreakState(profile, progress);
+  return { ...progress, ...account };
 }
 
 export function lockDailyDragon(
@@ -501,32 +524,6 @@ export function nextStage(goalsHit: number, dragonId: DragonId): DragonStage | n
   return dragonById(dragonId).stages.find((s) => s.goalsRequired > goalsHit) ?? null;
 }
 
-function dayBeforeISO(iso: string): string {
-  const d = new Date(`${iso}T12:00:00`);
-  d.setDate(d.getDate() - 1);
-  return d.toISOString().slice(0, 10);
-}
-
-export function effectiveStreak(
-  progress: DragonProgress,
-  todayISO: string,
-  yesterdayISO: string,
-  opts?: { freezeKeepsAlive?: boolean },
-): number {
-  if (!progress.last_goal_date) return 0;
-  if (progress.last_goal_date === todayISO || progress.last_goal_date === yesterdayISO) {
-    return progress.streak ?? 0;
-  }
-  // Pro streak freeze: still show streak if last goal was the day before yesterday.
-  if (
-    opts?.freezeKeepsAlive &&
-    progress.last_goal_date === dayBeforeISO(yesterdayISO)
-  ) {
-    return progress.streak ?? 0;
-  }
-  return 0;
-}
-
 export function applyLogToCharacter(params: {
   profile: Profile;
   todayTotalBefore: number;
@@ -549,14 +546,15 @@ export function applyLogToCharacter(params: {
   const { profile, todayTotalBefore, loggedProtein, todayISO, yesterdayISO } = params;
   const dragonId = todayDragonId(profile, todayISO) ?? activeDragonId(profile);
   const progress = getDragonProgress(profile, dragonId);
+  const account = accountGoalStreakState(profile, progress);
   const goal = profile.protein_goal_g ?? 0;
   const totalAfter = todayTotalBefore + loggedProtein;
 
   let xp = progress.xp + Math.round(loggedProtein * XP_PER_GRAM);
-  let streak = progress.streak;
-  let bestStreak = progress.best_streak;
+  let streak = account.streak;
+  let bestStreak = account.best_streak;
   let goalsHit = progress.goals_hit;
-  let lastGoalDate = progress.last_goal_date;
+  let lastGoalDate = account.last_goal_date;
   let streakFreezeUsed = false;
   let retention = { ...(profile.retention ?? {}) };
 
@@ -569,15 +567,17 @@ export function applyLogToCharacter(params: {
   if (goalJustHit) {
     xp += XP_GOAL_BONUS;
     goalsHit += 1;
-    const dayBeforeYesterday = dayBeforeISO(yesterdayISO);
-    if (lastGoalDate === yesterdayISO) {
-      streak = streak + 1;
-    } else if (lastGoalDate === dayBeforeYesterday && canUseStreakFreeze(profile)) {
-      streak = streak + 1;
-      streakFreezeUsed = true;
+    const advanced = nextGoalStreak(
+      lastGoalDate,
+      streak,
+      todayISO,
+      yesterdayISO,
+      canUseStreakFreeze(profile),
+    );
+    streak = advanced.streak;
+    streakFreezeUsed = advanced.streakFreezeUsed;
+    if (streakFreezeUsed) {
       retention = { ...retention, streak_freeze_week: isoWeekKey() };
-    } else {
-      streak = 1;
     }
     bestStreak = Math.max(bestStreak, streak);
     lastGoalDate = todayISO;
@@ -625,26 +625,30 @@ export function applyDeleteLogToCharacter(params: {
   profile: Profile;
   deletedProteinG: number;
   todayTotalAfterDelete: number;
+  /** Calendar day the deleted meal belonged to (local YYYY-MM-DD). */
   todayISO: string;
 }): Partial<Profile> {
   const { profile, deletedProteinG, todayTotalAfterDelete, todayISO } = params;
   const dragonId = todayDragonId(profile, todayISO) ?? activeDragonId(profile);
   const progress = getDragonProgress(profile, dragonId);
+  const account = accountGoalStreakState(profile, progress);
   const goal = profile.protein_goal_g ?? 0;
 
-  let xp = Math.max(0, progress.xp - Math.round(deletedProteinG));
+  let xp = Math.max(0, progress.xp - Math.round(deletedProteinG * XP_PER_GRAM));
   let goalsHit = progress.goals_hit;
-  let streak = progress.streak;
-  let lastGoalDate = progress.last_goal_date;
+  let streak = account.streak;
+  let lastGoalDate = account.last_goal_date;
+  const bestStreak = account.best_streak;
 
-  const wasGoalHitToday = lastGoalDate === todayISO;
+  const wasGoalHitOnDay = lastGoalDate === todayISO;
   const stillHitsGoal = goal > 0 && todayTotalAfterDelete >= goal;
 
-  if (wasGoalHitToday && !stillHitsGoal) {
+  if (wasGoalHitOnDay && !stillHitsGoal) {
     xp = Math.max(0, xp - XP_GOAL_BONUS);
     goalsHit = Math.max(0, goalsHit - 1);
-    lastGoalDate = null;
     streak = Math.max(0, streak - 1);
+    // Keep streak readable: point last_goal at the prior day when a chain remains.
+    lastGoalDate = streak > 0 ? dayBeforeISO(todayISO) : null;
   }
 
   const updatedProgress: DragonProgress = {
@@ -653,6 +657,7 @@ export function applyDeleteLogToCharacter(params: {
     level: levelForXp(xp),
     goals_hit: goalsHit,
     streak,
+    best_streak: bestStreak,
     last_goal_date: lastGoalDate,
   };
 
@@ -668,13 +673,15 @@ export function applyDeleteLogToCharacter(params: {
 
 export function switchActiveDragon(profile: Profile, newId: DragonId): Partial<Profile> {
   const existing = getDragonProgress(profile, newId);
+  // Keep account goal-streak fields; only XP/goals_hit follow the selected dragon.
+  const account = accountGoalStreakState(profile, existing);
   return {
     active_dragon_id: newId,
     xp: existing.xp,
-    streak: existing.streak,
-    best_streak: existing.best_streak,
     goals_hit: existing.goals_hit,
-    last_goal_date: existing.last_goal_date,
+    streak: account.streak,
+    best_streak: account.best_streak,
+    last_goal_date: account.last_goal_date,
   };
 }
 

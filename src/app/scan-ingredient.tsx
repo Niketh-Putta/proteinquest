@@ -15,14 +15,16 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { GlassPanel } from '@/components/GlassPanel';
 import { PageCanvas } from '@/components/PageCanvas';
 import {
-  COMMON_FOODS,
+  allCatalogFoods,
+  commonCatalogFoods,
   type CatalogFood,
   loadRecentFoods,
   pushRecentFood,
+  refreshRemoteFoodCatalog,
   searchCatalog,
 } from '@/lib/food-catalog';
-import { useLayout } from '@/lib/layout';
-import { colors, fonts, pressableWeb, radius, spacing, textInputWeb } from '@/theme';
+import { useContentColumn } from '@/lib/layout';
+import { colors, fonts, layout, pressableWeb, radius, spacing, textInputWeb } from '@/theme';
 
 function openAdjust(food: CatalogFood) {
   void pushRecentFood(food);
@@ -79,16 +81,24 @@ function FoodRow({
   );
 }
 
+const BROWSE_PAGE = 100;
+
 export default function ScanIngredientScreen() {
-  const { horizontalPad, formMaxWidth, formWidth } = useLayout();
+  const column = useContentColumn('form');
   const [query, setQuery] = useState('');
   const [recent, setRecent] = useState<CatalogFood[]>([]);
+  const [browseLimit, setBrowseLimit] = useState(BROWSE_PAGE);
+  const [catalogTick, setCatalogTick] = useState(0);
 
   useFocusEffect(
     useCallback(() => {
       let alive = true;
       void loadRecentFoods().then((list) => {
         if (alive) setRecent(list);
+      });
+      // Pull remote catalogue (no app rebuild needed when you add rows in Supabase).
+      void refreshRemoteFoodCatalog().then(() => {
+        if (alive) setCatalogTick((n) => n + 1);
       });
       return () => {
         alive = false;
@@ -97,26 +107,37 @@ export default function ScanIngredientScreen() {
   );
 
   const searching = query.trim().length > 0;
-  const results = useMemo(() => searchCatalog(query), [query]);
+  const results = useMemo(() => searchCatalog(query), [query, catalogTick]);
+
+  const commonBase = useMemo(() => commonCatalogFoods(), [catalogTick]);
 
   const common = useMemo(() => {
     const recentNames = new Set(recent.map((r) => r.name.toLowerCase()));
-    return COMMON_FOODS.filter((f) => !recentNames.has(f.name.toLowerCase()));
-  }, [recent]);
+    return commonBase.filter((f) => !recentNames.has(f.name.toLowerCase()));
+  }, [recent, commonBase]);
+
+  /** Full catalogue browse under COMMON so users can keep scrolling. */
+  const browseMore = useMemo(() => {
+    const skip = new Set([
+      ...recent.map((r) => r.name.toLowerCase()),
+      ...commonBase.map((f) => f.name.toLowerCase()),
+    ]);
+    return allCatalogFoods()
+      .filter((f) => !skip.has(f.name.toLowerCase()))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [recent, commonBase, catalogTick]);
+
+  const browseVisible = browseMore.slice(0, browseLimit);
+  const browseRemaining = Math.max(0, browseMore.length - browseLimit);
+
+  const loadMoreBrowse = useCallback(() => {
+    setBrowseLimit((n) => Math.min(n + BROWSE_PAGE, browseMore.length));
+  }, [browseMore.length]);
 
   return (
     <PageCanvas>
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-        <View
-          style={[
-            styles.topBar,
-            {
-              paddingHorizontal: horizontalPad,
-              maxWidth: formMaxWidth,
-              width: '100%',
-              alignSelf: 'center',
-            },
-          ]}>
+        <View style={[styles.topBar, column]}>
           <Pressable
             onPress={() => {
               if (router.canGoBack()) router.back();
@@ -139,17 +160,17 @@ export default function ScanIngredientScreen() {
         </View>
 
         <ScrollView
-          showsVerticalScrollIndicator={false}
+          showsVerticalScrollIndicator
           keyboardShouldPersistTaps="handled"
-          contentContainerStyle={[
-            styles.scroll,
-            {
-              paddingHorizontal: horizontalPad,
-              maxWidth: formMaxWidth,
-              width: formWidth,
-              alignSelf: 'center',
-            },
-          ]}>
+          contentContainerStyle={[styles.scroll, column]}
+          scrollEventThrottle={160}
+          onScroll={(e) => {
+            if (searching || browseRemaining <= 0) return;
+            const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
+            if (layoutMeasurement.height + contentOffset.y >= contentSize.height - 480) {
+              loadMoreBrowse();
+            }
+          }}>
           <Animated.View entering={FadeIn.duration(240)} style={styles.searchWrap}>
             <Ionicons name="search" size={18} color={colors.textTertiary} />
             <TextInput
@@ -211,9 +232,28 @@ export default function ScanIngredientScreen() {
                       key={`c-${food.name}`}
                       food={food}
                       icon="sparkles"
-                      isLast={i === common.length - 1}
+                      isLast={i === common.length - 1 && browseVisible.length === 0}
                     />
                   ))}
+                  {browseVisible.map((food, i) => (
+                    <FoodRow
+                      key={`b-${food.name}`}
+                      food={food}
+                      icon="nutrition-outline"
+                      isLast={i === browseVisible.length - 1 && browseRemaining === 0}
+                    />
+                  ))}
+                  {browseRemaining > 0 ? (
+                    <Pressable
+                      onPress={loadMoreBrowse}
+                      style={({ pressed }) => [styles.loadMore, pressableWeb, pressed && { opacity: 0.8 }]}
+                      accessibilityRole="button"
+                      accessibilityLabel="Load more foods">
+                      <Text style={styles.loadMoreText}>
+                        Scroll for more · {browseRemaining.toLocaleString()} left
+                      </Text>
+                    </Pressable>
+                  ) : null}
                 </GlassPanel>
               </Animated.View>
             </>
@@ -234,16 +274,16 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.sm,
   },
   iconBtn: {
-    width: 44,
-    height: 44,
+    width: layout.iconBtn,
+    height: layout.iconBtn,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 22,
+    borderRadius: layout.iconBtn / 2,
     backgroundColor: 'rgba(255,255,255,0.06)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.14)',
   },
-  iconBtnSpacer: { width: 44, height: 44 },
+  iconBtnSpacer: { width: layout.iconBtn, height: layout.iconBtn },
   topTitle: {
     fontFamily: fonts.mono,
     fontSize: 12,
@@ -251,7 +291,7 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   scroll: {
-    paddingBottom: spacing.xxl,
+    paddingBottom: layout.scrollBottomPad,
     gap: spacing.md,
   },
   searchWrap: {
@@ -328,5 +368,15 @@ const styles = StyleSheet.create({
     color: colors.textTertiary,
     padding: spacing.lg,
     textAlign: 'center',
+  },
+  loadMore: {
+    paddingVertical: 16,
+    alignItems: 'center',
+  },
+  loadMoreText: {
+    fontFamily: fonts.mono,
+    fontSize: 11,
+    letterSpacing: 1.2,
+    color: colors.textTertiary,
   },
 });

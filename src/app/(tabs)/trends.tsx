@@ -5,9 +5,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { PageCanvas } from '@/components/PageCanvas';
 import { fetchDailyTotals } from '@/lib/api';
-import { displayProgress, effectiveStreak } from '@/lib/character';
-import { useLayout, useTabBarScrollInset } from '@/lib/layout';
+import { goalHitStreakDays } from '@/lib/character';
+import { flexFill, useContentColumn, useLayout, useTabBarScrollInset } from '@/lib/layout';
 import { todayISODate } from '@/lib/protein';
+import { canUseStreakFreeze } from '@/lib/retention';
 import { useSession } from '@/lib/session';
 import { colors, displayLH, fonts, spacing, type } from '@/theme';
 
@@ -15,7 +16,8 @@ const WINDOW = 7;
 
 export default function TrendsScreen() {
   const { profile } = useSession();
-  const { formMaxWidth, horizontalPad, titleSize, typeScale, isDesktop, isNarrow } = useLayout();
+  const { titleSize, typeScale, isDesktop, isNarrow } = useLayout();
+  const column = useContentColumn('form');
   const tabBarScrollInset = useTabBarScrollInset(isNarrow);
   const heroNumSize = Math.round(72 * typeScale);
   const plotHeight = isDesktop ? 200 : 168;
@@ -47,13 +49,18 @@ export default function TrendsScreen() {
   const activeDays = days.filter((d) => d.total > 0);
   const activeDayCount = activeDays.length;
   const weekTotal = days.reduce((s, d) => s + d.total, 0);
+  const weekTotalDisplay = Math.round(weekTotal);
+  const goalDisplay = Math.round(goal);
   const avg =
     activeDayCount > 0 ? Math.round(weekTotal / activeDayCount) : 0;
   const hitDays = days.filter((d) => goal > 0 && d.total >= goal).length;
   const maxValue = Math.max(goal, ...days.map((d) => d.total), 1);
-  const streak = profile
-    ? effectiveStreak(displayProgress(profile, todayISO), todayISO, todayISODate(-1))
-    : 0;
+  const streak =
+    profile && goal > 0
+      ? goalHitStreakDays(totals, goal, todayISO, todayISODate(-1), {
+          freezeKeepsAlive: canUseStreakFreeze(profile),
+        })
+      : 0;
 
   const avgLabel =
     activeDayCount === 0
@@ -64,17 +71,12 @@ export default function TrendsScreen() {
 
   return (
     <PageCanvas>
-    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+    <SafeAreaView style={styles.safe} edges={['top']}>
       <ScrollView
         contentContainerStyle={[
           styles.scroll,
-          {
-            paddingHorizontal: horizontalPad,
-            maxWidth: formMaxWidth,
-            width: '100%',
-            alignSelf: 'center',
-            paddingBottom: tabBarScrollInset,
-          },
+          column,
+          { paddingBottom: tabBarScrollInset },
         ]}
         showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
@@ -84,7 +86,7 @@ export default function TrendsScreen() {
             numberOfLines={1}
             adjustsFontSizeToFit
             minimumFontScale={0.85}>
-            Rhythm
+            Progress
           </Text>
         </View>
 
@@ -102,10 +104,10 @@ export default function TrendsScreen() {
           <Text style={styles.heroCaption}>{avgLabel}</Text>
           {goal > 0 && activeDayCount > 0 ? (
             <Text style={styles.heroMeta}>
-              {weekTotal}g total · goal {goal}g · {hitDays} hit
+              {weekTotalDisplay}g total · goal {goalDisplay}g · {hitDays} hit
             </Text>
           ) : goal > 0 ? (
-            <Text style={styles.heroMeta}>goal {goal}g per day</Text>
+            <Text style={styles.heroMeta}>goal {goalDisplay}g per day</Text>
           ) : null}
         </View>
 
@@ -115,7 +117,7 @@ export default function TrendsScreen() {
           <View style={styles.chartHeader}>
             <Text style={styles.chartTitle}>Daily intake</Text>
             {goal > 0 ? (
-              <Text style={styles.chartGoal}>{goal}g target</Text>
+              <Text style={styles.chartGoal}>{goalDisplay}g target</Text>
             ) : null}
           </View>
 
@@ -183,7 +185,7 @@ export default function TrendsScreen() {
           </View>
           <View style={styles.metricDivider} />
           <View style={styles.metric}>
-            <Text style={styles.metricValue}>{weekTotal}g</Text>
+            <Text style={styles.metricValue}>{weekTotalDisplay}g</Text>
             <Text style={styles.metricLabel}>this week</Text>
           </View>
         </View>
@@ -194,10 +196,10 @@ export default function TrendsScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bg },
+  safe: { ...flexFill, backgroundColor: colors.bg },
   scroll: { paddingTop: spacing.lg },
   header: { marginBottom: spacing.xl },
-  eyebrow: { ...type.eyebrow, marginBottom: 6 },
+  eyebrow: { ...type.eyebrow, marginBottom: spacing.xs + 2 },
   title: { ...type.pageTitle },
   heroBlock: { marginBottom: spacing.lg },
   heroRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 4 },

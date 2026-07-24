@@ -27,7 +27,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { GlassPanel } from '@/components/GlassPanel';
 import { PageCanvas } from '@/components/PageCanvas';
-import { useLayout } from '@/lib/layout';
+import { useContentColumn } from '@/lib/layout';
+import {
+  parseNutritionNumber,
+  sanitizeNutritionDraft,
+} from '@/lib/parse-nutrition-number';
 import {
   ADJUST_SIZES,
   ADJUST_SIZE_SCALE,
@@ -152,7 +156,7 @@ function formatApproxQty(qty: number): string {
 
 export default function ScanAdjustScreen() {
   const navigation = useNavigation();
-  const { horizontalPad, formMaxWidth, formWidth } = useLayout();
+  const column = useContentColumn('form');
   const { height: winH } = useWindowDimensions();
   const compact = winH < 720;
   const flushedOnLeaveRef = useRef(false);
@@ -422,9 +426,8 @@ export default function ScanAdjustScreen() {
 
   function persistLatest() {
     if (inputMode === 'grams' && gramsDraft !== '') {
-      const cleaned = gramsDraft.replace(/[^\d.]/g, '');
-      const n = cleaned === '' ? 0 : parseFloat(cleaned);
-      if (Number.isFinite(n) && n >= 0) {
+      const n = parseNutritionNumber(gramsDraft);
+      if (n != null && n >= 0) {
         persist({
           i: selectedIndexRef.current,
           mode: 'grams',
@@ -576,9 +579,15 @@ export default function ScanAdjustScreen() {
   }
 
   function commitGrams(raw: string) {
-    const cleaned = raw.replace(/[^\d.]/g, '');
-    const n = cleaned === '' ? 0 : parseFloat(cleaned);
-    if (!Number.isFinite(n) || n < 0) return;
+    const trimmed = String(raw ?? '').trim();
+    if (!trimmed) {
+      setGramsValue(0);
+      setGramsDraft('');
+      persist({ i: selectedIndexRef.current, mode: 'grams', grams: 0 });
+      return;
+    }
+    const n = parseNutritionNumber(trimmed);
+    if (n == null || n < 0) return;
     const rounded = Math.round(n);
     setGramsValue(rounded);
     setGramsDraft('');
@@ -640,16 +649,7 @@ export default function ScanAdjustScreen() {
   return (
     <PageCanvas>
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-        <View
-          style={[
-            styles.topBar,
-            {
-              paddingHorizontal: horizontalPad,
-              maxWidth: formMaxWidth,
-              width: '100%',
-              alignSelf: 'center',
-            },
-          ]}>
+        <View style={[styles.topBar, column]}>
           <View style={styles.topBarSide}>
             <Pressable
               onPress={saveAndBack}
@@ -712,13 +712,8 @@ export default function ScanAdjustScreen() {
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={[
             styles.scroll,
-            {
-              paddingHorizontal: horizontalPad,
-              maxWidth: formMaxWidth,
-              width: formWidth,
-              alignSelf: 'center',
-              paddingBottom: compact ? spacing.lg : spacing.xxl,
-            },
+            column,
+            { paddingBottom: compact ? spacing.lg : spacing.xxl },
           ]}>
           <Animated.View entering={FadeIn.duration(280)} style={styles.hero}>
             <Text style={[styles.foodName, compact && styles.foodNameCompact]} numberOfLines={2}>
@@ -913,7 +908,7 @@ export default function ScanAdjustScreen() {
                   <View pointerEvents="none" style={styles.glassSheen} />
                   <TextInput
                     value={gramsFieldValue}
-                    onChangeText={(t) => setGramsDraft(t.replace(/[^\d.]/g, ''))}
+                    onChangeText={(t) => setGramsDraft(sanitizeNutritionDraft(t))}
                     onBlur={() => commitGrams(gramsDraft !== '' ? gramsDraft : gramsFieldValue)}
                     onSubmitEditing={() =>
                       commitGrams(gramsDraft !== '' ? gramsDraft : gramsFieldValue)

@@ -17,9 +17,15 @@ interface Props {
   consumed: number;
   goal: number;
   size?: number;
+  label?: string;
 }
 
-export function ProgressRing({ consumed, goal, size = 264 }: Props) {
+export function ProgressRing({
+  consumed,
+  goal,
+  size = 264,
+  label = 'PROTEIN TODAY',
+}: Props) {
   const strokeWidth = 2;
   const r = (size - strokeWidth * 2) / 2;
   const circumference = 2 * Math.PI * r;
@@ -66,7 +72,7 @@ export function ProgressRing({ consumed, goal, size = 264 }: Props) {
         />
       </Svg>
       <Text style={[styles.label, { fontSize: 10 * scale, lineHeight: 14 * scale }]}>
-        PROTEIN TODAY
+        {label}
       </Text>
       <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 2 }}>
         <Text

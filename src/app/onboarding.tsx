@@ -1,9 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -16,7 +18,7 @@ import Animated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/Button';
 import { DragonPicker } from '@/components/DragonPicker';
@@ -26,19 +28,29 @@ import { trackEvent } from '@/lib/analytics';
 import { markNeedsFirstScan } from '@/lib/first-scan';
 import { setMealRemindersEnabled } from '@/lib/meal-reminders';
 import { todayISODate } from '@/lib/protein';
-import { useLayout, usePinnedFooterGap } from '@/lib/layout';
+import { PageCanvas } from '@/components/PageCanvas';
+import { useContentColumn, useLayout, usePinnedFooterGap } from '@/lib/layout';
 import { useSession } from '@/lib/session';
 import type { DragonId, Profile } from '@/lib/types';
 import { getPreferredName } from '@/lib/xp';
-import { colors, displayLH, fonts, spacing } from '@/theme';
+import { colors, displayLH, fonts, layout, spacing } from '@/theme';
 
 type Step = 'dragon' | 'goal' | 'forging';
+type GoalField = 'age' | 'weight' | 'protein' | 'calories';
 
 const FORGE_TASKS = [
   { at: 12, label: 'Analyzing your goal' },
   { at: 48, label: 'Calibrating your XP curve' },
   { at: 82, label: 'Waking your dragon' },
 ];
+
+/** Approximate Y offsets inside the goal ScrollView for scroll-into-view. */
+const FIELD_SCROLL_Y: Record<GoalField, number> = {
+  age: 0,
+  weight: 90,
+  protein: 520,
+  calories: 620,
+};
 
 /** Fake "building your plan" finale — pure theatre, then routes onward. */
 function ForgingScreen({ onDone }: { onDone: () => void }) {
@@ -119,13 +131,48 @@ function StepProgress({ index }: { index: number }) {
 
 export default function Onboarding() {
   const { profile, saveProfile } = useSession();
-  const { horizontalPad, formMaxWidth, isNarrow, width, height } = useLayout();
+  const { isNarrow, width, height } = useLayout();
+  const insets = useSafeAreaInsets();
+  const column = useContentColumn('form');
   const isCompact = height < 700 || width < 390;
   const footerGap = usePinnedFooterGap(isCompact);
+  const scrollRef = useRef<ScrollView>(null);
   const [step, setStep] = useState<Step>('dragon');
   const [dragonId, setDragonId] = useState<DragonId | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  useEffect(() => {
+    if (step !== 'goal') {
+      setKeyboardHeight(0);
+      return;
+    }
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, (e) => {
+      setKeyboardHeight(e.endCoordinates.height);
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0));
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, [step]);
+
+  const scrollFieldIntoView = useCallback((field: GoalField) => {
+    const bump = () => {
+      if (field === 'protein' || field === 'calories') {
+        scrollRef.current?.scrollToEnd({ animated: true });
+        return;
+      }
+      const y = Math.max(0, FIELD_SCROLL_Y[field] - 16);
+      scrollRef.current?.scrollTo({ y, animated: true });
+    };
+    requestAnimationFrame(bump);
+    // Second pass after keyboard animation settles (esp. Android).
+    setTimeout(bump, Platform.OS === 'ios' ? 280 : 120);
+  }, []);
 
   async function handleSubmit(updates: Partial<Profile>) {
     if (!dragonId) {
@@ -165,9 +212,11 @@ export default function Onboarding() {
 
   if (step === 'forging') {
     return (
-      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-        <ForgingScreen onDone={() => router.replace('/scan')} />
-      </SafeAreaView>
+      <PageCanvas>
+        <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+          <ForgingScreen onDone={() => router.replace('/scan')} />
+        </SafeAreaView>
+      </PageCanvas>
     );
   }
 
@@ -177,80 +226,103 @@ export default function Onboarding() {
     setStep('goal');
   }
 
-  // Centered content column for the scroll body.
-  const columnStyle = {
-    width: '100%' as const,
-    maxWidth: formMaxWidth,
-    alignSelf: 'center' as const,
-    paddingHorizontal: horizontalPad,
-  };
-
   // Picking a dragon advances immediately — no Continue button. That removes the
   // extra tap that was failing on small phones / Android release builds.
   if (step === 'dragon') {
     return (
-      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-        <ScrollView
-          style={styles.flex}
-          contentContainerStyle={[styles.scroll, columnStyle, { paddingBottom: footerGap }]}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}>
-          <View style={styles.content}>
-            <StepProgress index={0} />
-            <DragonPicker value={dragonId} onChange={handleDragonPick} profile={profile} />
-            {error ? <Text style={styles.error}>{error}</Text> : null}
-          </View>
-        </ScrollView>
-      </SafeAreaView>
+      <PageCanvas>
+        <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+          <ScrollView
+            style={styles.flex}
+            contentContainerStyle={[
+              styles.scroll,
+              column,
+              { paddingBottom: footerGap + layout.scrollBottomPad },
+            ]}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}>
+            <View style={styles.content}>
+              <StepProgress index={0} />
+              <DragonPicker value={dragonId} onChange={handleDragonPick} profile={profile} />
+              {error ? <Text style={styles.error}>{error}</Text> : null}
+            </View>
+          </ScrollView>
+        </SafeAreaView>
+      </PageCanvas>
     );
   }
 
+  const keyboardPad =
+    keyboardHeight > 0
+      ? Math.max(keyboardHeight - Math.max(insets.bottom, 0) + spacing.md, spacing.xl)
+      : 0;
+
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView
+    <PageCanvas>
+      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+        <KeyboardAvoidingView
           style={styles.flex}
-          contentContainerStyle={[styles.scroll, columnStyle, { paddingBottom: footerGap }]}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}>
-          <View style={styles.content}>
-            <StepProgress index={1} />
-            <Text style={[styles.kicker, isCompact && styles.kickerCompact]}>
-              REACH YOUR POTENTIAL
-            </Text>
-            <Text style={[styles.step, isCompact && styles.stepCompact]}>
-              STEP 2 · YOUR DAILY TARGET
-            </Text>
-            <Text
-              style={[
-                styles.title,
-                isNarrow && styles.titleNarrow,
-                isCompact && styles.titleCompact,
-              ]}>
-              Set your protein goal
-            </Text>
-            <Text style={[styles.subtitle, isCompact && styles.subtitleCompact]}>
-              Hit it every day to feed your dragon and unlock evolutions. Small wins compound.
-            </Text>
-            {error ? <Text style={styles.error}>{error}</Text> : null}
-            <GoalEditor
-              profile={null}
-              submitLabel="Start tracking"
-              saving={saving}
-              onSubmit={handleSubmit}
-            />
-            <Button
-              title="Back"
-              variant="ghost"
-              onPress={() => setStep('dragon')}
-              style={{ marginTop: spacing.sm }}
-            />
-          </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? Math.max(insets.top, 8) : 0}>
+          <ScrollView
+            ref={scrollRef}
+            style={styles.flex}
+            contentContainerStyle={[
+              styles.scroll,
+              column,
+              {
+                paddingBottom:
+                  footerGap + layout.scrollBottomPad + (Platform.OS === 'android' ? keyboardPad : 0),
+              },
+            ]}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+            onScrollBeginDrag={Keyboard.dismiss}
+            showsVerticalScrollIndicator={false}>
+            <View style={styles.content}>
+              <Pressable onPress={Keyboard.dismiss} accessibilityRole="none">
+                <StepProgress index={1} />
+                <Text style={[styles.kicker, isCompact && styles.kickerCompact]}>
+                  REACH YOUR POTENTIAL
+                </Text>
+                <Text style={[styles.step, isCompact && styles.stepCompact]}>
+                  STEP 2 · YOUR DAILY TARGET
+                </Text>
+                <Text
+                  style={[
+                    styles.title,
+                    isNarrow && styles.titleNarrow,
+                    isCompact && styles.titleCompact,
+                  ]}>
+                  Set your daily targets
+                </Text>
+                <Text style={[styles.subtitle, isCompact && styles.subtitleCompact]}>
+                  Protein feeds your dragon. Calories keep the plan honest. Adjust either before you
+                  start.
+                </Text>
+              </Pressable>
+              {error ? <Text style={styles.error}>{error}</Text> : null}
+              <GoalEditor
+                profile={null}
+                submitLabel="Start tracking"
+                saving={saving}
+                onSubmit={handleSubmit}
+                onFieldFocus={scrollFieldIntoView}
+              />
+              <Button
+                title="Back"
+                variant="ghost"
+                onPress={() => {
+                  Keyboard.dismiss();
+                  setStep('dragon');
+                }}
+                style={{ marginTop: spacing.sm }}
+              />
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </PageCanvas>
   );
 }
 

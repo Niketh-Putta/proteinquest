@@ -1,8 +1,18 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  type KeyboardTypeOptions,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
 
 import { useLayout } from '@/lib/layout';
-import { colors, fonts, noTextCaret, pressableWeb, spacing, textInputWeb, type } from '@/theme';
+import { colors, fonts, noTextCaret, pressableWeb, radius, spacing, textInputWeb, type } from '@/theme';
 
 export function FieldLabel({ children }: { children: React.ReactNode }) {
   const { isNarrow } = useLayout();
@@ -21,6 +31,7 @@ export function TextField({
   autoCapitalize = 'none',
   keyboardType = 'default',
   autoComplete,
+  onFocus,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -29,6 +40,7 @@ export function TextField({
   autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
   keyboardType?: 'default' | 'email-address';
   autoComplete?: 'email' | 'password' | 'password-new' | 'off';
+  onFocus?: () => void;
 }) {
   return (
     <View style={styles.textFieldWrap}>
@@ -43,6 +55,7 @@ export function TextField({
         keyboardType={keyboardType}
         autoComplete={autoComplete}
         autoCorrect={false}
+        onFocus={onFocus}
       />
     </View>
   );
@@ -54,26 +67,40 @@ export function NumberField({
   placeholder,
   suffix,
   compact,
+  keyboardType,
+  onFocus,
 }: {
   value: string;
   onChange: (v: string) => void;
   placeholder: string;
   suffix?: string;
   compact?: boolean;
+  /** Prefer number-pad for integers, decimal-pad when decimals are allowed. */
+  keyboardType?: KeyboardTypeOptions;
+  onFocus?: () => void;
 }) {
   const { isNarrow } = useLayout();
   const small = compact ?? isNarrow;
+  const resolvedKeyboard: KeyboardTypeOptions =
+    keyboardType ?? (Platform.OS === 'ios' ? 'decimal-pad' : 'numeric');
 
   return (
     <View style={[styles.inputWrap, { minWidth: 0 }]}>
       <TextInput
         style={[styles.input, small && styles.inputCompact, textInputWeb]}
         value={value}
-        onChangeText={(t) => onChange(t.replace(/[^0-9.]/g, ''))}
+        onChangeText={(t) =>
+          onChange(
+            resolvedKeyboard === 'number-pad'
+              ? t.replace(/[^0-9]/g, '')
+              : t.replace(/[^0-9.]/g, ''),
+          )
+        }
         placeholder={placeholder}
         placeholderTextColor={colors.textTertiary}
-        keyboardType="numeric"
+        keyboardType={resolvedKeyboard}
         maxLength={5}
+        onFocus={onFocus}
       />
       {suffix ? (
         <Text style={[styles.suffix, small && styles.suffixCompact]}>{suffix}</Text>
@@ -95,18 +122,25 @@ export function ChoiceRow<T extends string>({
 
   return (
     <View style={styles.choiceList}>
-      {options.map((opt, i) => {
+      {options.map((opt) => {
         const selected = value === opt.value;
         return (
           <Pressable
             key={opt.value}
             onPress={() => onChange(opt.value)}
-            style={[styles.choice, pressableWeb, i > 0 && styles.choiceBorder]}>
+            style={({ pressed }) => [
+              styles.choice,
+              pressableWeb,
+              selected && styles.choiceSelected,
+              pressed && styles.choicePressed,
+              Platform.OS === 'web' ? webGlassBlur : null,
+            ]}>
+            <View pointerEvents="none" style={styles.choiceSheen} />
             <View style={[styles.choiceAccent, selected && styles.choiceAccentOn]} />
             <View style={styles.choiceBody}>
               <Text
                 selectable={false}
-                style={[styles.choiceTitle, selected && { color: colors.accent }]}
+                style={[styles.choiceTitle, selected && { color: colors.accentLight }]}
                 numberOfLines={2}>
                 {opt.title}
               </Text>
@@ -147,14 +181,25 @@ export function SegmentedRow<T extends string>({
   const small = compact ?? isNarrow;
 
   return (
-    <View style={[styles.segmentWrap, { minWidth: 0 }]}>
+    <View
+      style={[
+        styles.segmentWrap,
+        { minWidth: 0 },
+        Platform.OS === 'web' ? webGlassBlur : null,
+      ]}>
+      <View pointerEvents="none" style={styles.segmentSheen} />
       {options.map((opt) => {
         const selected = value === opt.value;
         return (
           <Pressable
             key={opt.value}
             onPress={() => onChange(opt.value)}
-            style={[styles.segment, pressableWeb, selected && styles.segmentSelected]}>
+            style={({ pressed }) => [
+              styles.segment,
+              pressableWeb,
+              selected && styles.segmentSelected,
+              pressed && !selected && { opacity: 0.85 },
+            ]}>
             <Text
               selectable={false}
               style={[
@@ -173,6 +218,14 @@ export function SegmentedRow<T extends string>({
     </View>
   );
 }
+
+const webGlassBlur: StyleProp<ViewStyle> =
+  Platform.OS === 'web'
+    ? ({
+        backdropFilter: 'blur(16px) saturate(1.3)',
+        WebkitBackdropFilter: 'blur(16px) saturate(1.3)',
+      } as ViewStyle)
+    : null;
 
 const styles = StyleSheet.create({
   label: { ...type.label, marginBottom: spacing.sm, marginTop: spacing.lg },
@@ -224,28 +277,43 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
   },
   choiceList: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.hairline,
+    gap: spacing.sm,
     width: '100%',
     maxWidth: '100%',
   },
   choice: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 14,
+    paddingVertical: 13,
+    paddingHorizontal: spacing.md,
     gap: spacing.md,
     width: '100%',
     maxWidth: '100%',
+    borderRadius: radius.md,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(255,255,255,0.045)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.12)',
   },
-  choiceBorder: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.hairline,
+  choiceSelected: {
+    backgroundColor: 'rgba(255,122,89,0.10)',
+    borderColor: 'rgba(255,122,89,0.38)',
+  },
+  choicePressed: { opacity: 0.9 },
+  choiceSheen: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: StyleSheet.hairlineWidth * 2,
+    backgroundColor: 'rgba(255,255,255,0.12)',
   },
   choiceAccent: {
     width: 2,
     alignSelf: 'stretch',
     backgroundColor: 'transparent',
     flexShrink: 0,
+    borderRadius: 1,
   },
   choiceAccentOn: { backgroundColor: colors.accent },
   choiceBody: { flex: 1, minWidth: 0 },
@@ -269,20 +337,36 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     width: '100%',
     maxWidth: '100%',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.hairline,
+    borderRadius: radius.sm,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.12)',
+    padding: 3,
+    gap: 3,
+  },
+  segmentSheen: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: StyleSheet.hairlineWidth * 2,
+    backgroundColor: 'rgba(255,255,255,0.1)',
   },
   segment: {
     flex: 1,
     minWidth: 0,
-    height: 44,
+    height: 40,
     alignItems: 'center',
     justifyContent: 'center',
-    borderBottomWidth: 2,
-    borderBottomColor: 'transparent',
+    borderRadius: radius.chip,
     paddingHorizontal: 4,
   },
-  segmentSelected: { borderBottomColor: colors.accent },
+  segmentSelected: {
+    backgroundColor: 'rgba(255,122,89,0.18)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,122,89,0.42)',
+  },
   segmentLabel: {
     ...noTextCaret,
     fontFamily: fonts.mono,
@@ -296,5 +380,5 @@ const styles = StyleSheet.create({
     fontSize: 11,
     letterSpacing: 0.4,
   },
-  segmentLabelOn: { color: colors.accent, fontFamily: fonts.monoBold },
+  segmentLabelOn: { color: colors.accentLight, fontFamily: fonts.monoBold },
 });

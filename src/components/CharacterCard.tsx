@@ -22,6 +22,7 @@ import {
   effectiveLevel,
   effectiveStreak,
   getDragonProgress,
+  goalHitStreakDays,
   microProgress,
   nextEvolutionStage,
   stageForXpLevel,
@@ -39,7 +40,7 @@ import {
 import { formatXp } from '@/lib/leaderboard';
 import { todayISODate } from '@/lib/protein';
 import { useLayout } from '@/lib/layout';
-import { careStreakDays, getRetention } from '@/lib/retention';
+import { canUseStreakFreeze, careStreakDays, getRetention } from '@/lib/retention';
 import type { Profile } from '@/lib/types';
 import { colors, displayLH, fonts, radius, spacing } from '@/theme';
 
@@ -57,6 +58,8 @@ interface Props {
   fedPulse?: boolean;
   /** Show Feed CTA under hunger chip. */
   onFeedPress?: () => void;
+  /** Daily protein totals (calendar source). When set, streak matches Progress hits. */
+  dailyTotals?: Record<string, number>;
 }
 
 function CharacterCardInner({
@@ -68,6 +71,7 @@ function CharacterCardInner({
   hunger = 0,
   fedPulse = false,
   onFeedPress,
+  dailyTotals,
 }: Props) {
   const { characterScale: layoutScale } = useLayout();
   const scale = scaleProp ?? layoutScale;
@@ -76,6 +80,7 @@ function CharacterCardInner({
   const sceneH = Math.round(200 * scale);
 
   const todayISO = todayISODate();
+  const yesterdayISO = todayISODate(-1);
   const dragonId = displayDragonId(profile, todayISO);
   const dragon = dragonById(dragonId);
   const dragonName = displayDragonName(profile, dragonId);
@@ -83,8 +88,16 @@ function CharacterCardInner({
   const { level, xpIntoLevel, xpForNext } = dragonLevelProgress(progress);
   const stage = stageForXpLevel(level, dragonId);
   const next = nextEvolutionStage(level, dragonId);
-  const streak = effectiveStreak(progress, todayISO, todayISODate(-1));
-  const bondDays = careStreakDays(getRetention(profile), todayISO, todayISODate(-1));
+  const freezeKeepsAlive = canUseStreakFreeze(profile);
+  const goalG = profile.protein_goal_g ?? 0;
+  const streakFromTotals =
+    dailyTotals && goalG > 0
+      ? goalHitStreakDays(dailyTotals, goalG, todayISO, yesterdayISO, { freezeKeepsAlive })
+      : null;
+  const streak =
+    streakFromTotals ??
+    effectiveStreak(progress, todayISO, yesterdayISO, { freezeKeepsAlive });
+  const bondDays = careStreakDays(getRetention(profile), todayISO, yesterdayISO);
   const trainerName = profile.display_name?.trim() || null;
 
   const micro = microProgress(level, dragonId);
@@ -159,7 +172,9 @@ function CharacterCardInner({
   const levelsToEvo = next ? next.levelRequired - level : 0;
   const xpPct = xpProgressInLevel(progress.xp, level) * 100;
   const sceneCaption = fedPulse ? null : hungerSceneCaption(hunger);
-  const evoLabel = next ? `${levelsToEvo} lv → evolve` : 'max form';
+  const evoLabel = next
+    ? `${levelsToEvo} more level${levelsToEvo === 1 ? '' : 's'} to evolve`
+    : 'max form';
 
   return (
     <View
@@ -301,12 +316,12 @@ function CharacterCardInner({
             <Text style={styles.statsLine}>no streak yet</Text>
           )}
           <Text style={styles.statsDot}>·</Text>
-          <Text style={styles.statsLine}>{evoLabel}</Text>
+          <Text style={[styles.statsLine, styles.evoLine]}>{evoLabel}</Text>
         </View>
 
         <View style={styles.bars}>
           <View style={styles.barHeader}>
-            <Text style={styles.barLabel}>XP</Text>
+            <Text style={styles.barLabel}>XP · {dragonName}</Text>
             <Text style={styles.barLabel}>
               {formatXp(xpIntoLevel)} / {formatXp(xpForNext)}
             </Text>
@@ -347,6 +362,9 @@ function CharacterCardInner({
                         isActive ? styles.artActive : styles.artIdle,
                         showLock && { opacity: 0.55 },
                       ]}
+                      contentFit="cover"
+                      cachePolicy="memory-disk"
+                      transition={0}
                     />
                     {showLock ? (
                       <View style={styles.lockChip}>
@@ -394,7 +412,8 @@ const styles = StyleSheet.create({
     letterSpacing: 2.4,
     textTransform: 'uppercase',
     color: colors.textTertiary,
-    marginBottom: spacing.sm,
+    marginTop: 8,
+    marginBottom: spacing.md,
     zIndex: 1,
   },
   scene: {
@@ -540,6 +559,9 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: colors.textTertiary,
     letterSpacing: 0.2,
+  },
+  evoLine: {
+    color: colors.textSecondary,
   },
   statsDot: {
     fontFamily: fonts.mono,

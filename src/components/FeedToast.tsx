@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
 import { GlassPanel } from '@/components/GlassPanel';
-import { colors, fonts, spacing } from '@/theme';
+import { colors, fonts, layout, spacing } from '@/theme';
 
 interface Props {
   visible: boolean;
@@ -39,7 +39,14 @@ export function FeedToast({ visible, message, onHide }: Props) {
     <Animated.View
       entering={FadeInUp.duration(220)}
       exiting={FadeOutUp.duration(180)}
-      style={[styles.wrap, { top: insets.top + spacing.sm + 4 }]}>
+      style={[
+        styles.wrap,
+        {
+          top: insets.top + spacing.sm + 4,
+          paddingHorizontal: spacing.md,
+          maxWidth: layout.sheetMaxWidth,
+        },
+      ]}>
       <GlassPanel emphasized style={styles.toast}>
         <View pointerEvents="none" style={styles.sheen} />
         <View style={styles.row}>
@@ -59,7 +66,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     alignSelf: 'center',
     zIndex: 50,
-    maxWidth: '90%',
+    width: '100%',
   },
   toast: {
     borderRadius: 999,

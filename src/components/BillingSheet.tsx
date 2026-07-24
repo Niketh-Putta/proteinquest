@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
@@ -15,8 +16,11 @@ import {
 import Animated, { FadeIn, FadeInUp } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { useLayout } from '@/lib/layout';
 import { getBillingManagementUrl, getPaymentProvider } from '@/lib/payments';
-import { colors, fonts, pressableWeb, radius, spacing } from '@/theme';
+import { colors, fonts, layout, pressableWeb, radius, spacing } from '@/theme';
+
+const IS_WEB = Platform.OS === 'web';
 
 interface Props {
   visible: boolean;
@@ -65,14 +69,17 @@ function ActionRow({ icon, title, subtitle, onPress, busy, danger, external }: R
   );
 }
 
-const STORE_NAME = Platform.OS === 'ios' ? 'App Store' : 'Google Play';
+const STORE_NAME =
+  Platform.OS === 'ios' ? 'App Store' : Platform.OS === 'android' ? 'Google Play' : 'App Store';
 
 export function BillingSheet({ visible, isPro, onClose, onRestored }: Props) {
+  const { horizontalPad } = useLayout();
   const [opening, setOpening] = useState(false);
   const [restoring, setRestoring] = useState(false);
+  const canRestore = !IS_WEB && !!getPaymentProvider().restore;
 
   async function openStoreSubscriptions() {
-    if (opening) return;
+    if (opening || IS_WEB) return;
     setOpening(true);
     try {
       const url = await getBillingManagementUrl();
@@ -117,8 +124,20 @@ export function BillingSheet({ visible, isPro, onClose, onRestored }: Props) {
     ]);
   }
 
+  function openPaywallPlans() {
+    onClose();
+    router.push('/paywall');
+  }
+
   async function handleRestore() {
     if (restoring) return;
+    if (IS_WEB || !canRestore) {
+      Alert.alert(
+        'Restore on your phone',
+        'Open ProteinQuest on iOS or Android, then use Restore purchases there.',
+      );
+      return;
+    }
     const provider = getPaymentProvider();
     if (!provider.restore) {
       Alert.alert('Not available', 'Restoring purchases is only available on this device.');
@@ -149,7 +168,9 @@ export function BillingSheet({ visible, isPro, onClose, onRestored }: Props) {
         <Animated.View entering={FadeIn.duration(180)} style={styles.backdropFill} />
       </Pressable>
       <SafeAreaView style={styles.sheetWrap} edges={['bottom']} pointerEvents="box-none">
-        <Animated.View entering={FadeInUp.duration(240)} style={styles.sheet}>
+        <Animated.View
+          entering={FadeInUp.duration(240)}
+          style={[styles.sheet, { paddingHorizontal: horizontalPad }]}>
           <View style={styles.handle} />
           <View style={styles.header}>
             <View style={{ flex: 1 }}>
@@ -170,7 +191,7 @@ export function BillingSheet({ visible, isPro, onClose, onRestored }: Props) {
             style={styles.scroll}
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}>
-            {isPro ? (
+            {isPro && !IS_WEB ? (
               <>
                 <ActionRow
                   icon="open-outline"
@@ -192,10 +213,27 @@ export function BillingSheet({ visible, isPro, onClose, onRestored }: Props) {
               </>
             ) : null}
 
+            {!isPro ? (
+              <ActionRow
+                icon="star-outline"
+                title="View Pro plans"
+                subtitle={
+                  IS_WEB
+                    ? 'See founding discount spots, then get the app to subscribe'
+                    : 'Open the paywall for weekly and yearly Pro'
+                }
+                onPress={openPaywallPlans}
+              />
+            ) : null}
+
             <ActionRow
               icon="refresh-outline"
               title="Restore purchases"
-              subtitle={`Re-check this ${STORE_NAME} account for an active Pro plan`}
+              subtitle={
+                IS_WEB
+                  ? 'Restore works in the iOS or Android app'
+                  : `Re-check this ${STORE_NAME} account for an active Pro plan`
+              }
               onPress={() => {
                 void handleRestore();
               }}
@@ -203,9 +241,11 @@ export function BillingSheet({ visible, isPro, onClose, onRestored }: Props) {
             />
 
             <Text style={styles.note}>
-              {Platform.OS === 'android'
-                ? 'Google Play owns subscription billing. Cancel and payment changes only take effect in Play Store → Subscriptions. Restore only refreshes Pro status in the app.'
-                : 'Apple owns subscription billing. Cancel and payment changes only take effect in App Store → Subscriptions. Restore only refreshes Pro status in the app.'}
+              {IS_WEB
+                ? 'Subscriptions are purchased in the ProteinQuest iOS or Android app through Apple or Google. Use Restore there if you already subscribed.'
+                : Platform.OS === 'android'
+                  ? 'Google Play owns subscription billing. Cancel and payment changes only take effect in Play Store → Subscriptions. Restore only refreshes Pro status in the app.'
+                  : 'Apple owns subscription billing. Cancel and payment changes only take effect in App Store → Subscriptions. Restore only refreshes Pro status in the app.'}
             </Text>
           </ScrollView>
         </Animated.View>
@@ -224,14 +264,13 @@ const styles = StyleSheet.create({
   sheet: {
     ...pressableWeb,
     width: '100%',
-    maxWidth: 480,
+    maxWidth: layout.sheetMaxWidth,
     alignSelf: 'center',
     backgroundColor: colors.bgRaised,
     borderTopLeftRadius: radius.xl,
     borderTopRightRadius: radius.xl,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.hairlineBright,
-    paddingHorizontal: spacing.lg,
     paddingTop: spacing.sm,
     paddingBottom: spacing.lg,
     maxHeight: '85%',

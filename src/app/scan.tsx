@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { CameraView, useCameraPermissions, type BarcodeScanningResult } from 'expo-camera';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useFocusEffect } from 'expo-router';
@@ -45,14 +45,11 @@ import {
   updateLogImagePath,
   uploadFoodPhoto,
 } from '@/lib/api';
-import {
-  analysisForUnknownBarcode,
-  lookupBarcodeProductDetailed,
-} from '@/lib/barcode';
-import { detectBarcodeFromVideo, findCameraVideo } from '@/lib/web-barcode';
 import { trackEvent } from '@/lib/analytics';
 import { rememberLocalMealPhoto } from '@/lib/local-meal-photo';
 import {
+  XP_GOAL_BONUS,
+  XP_PER_GRAM,
   applyLogToCharacter,
   displayDragonId,
   displayDragonName,
@@ -70,15 +67,19 @@ import {
 import { prepareSquareMealPhoto, type CameraCrop } from '@/lib/meal-photo';
 import { pickLibraryImage } from '@/lib/pick-library-image';
 import { scheduleSecondMealNudge } from '@/lib/meal-reminders';
+import { bindUnmirroredWebCameraPreview } from '@/lib/web-camera-preview';
 import {
   canScan,
-  isInHabitGracePeriod,
-  isPro,
+  hasUnlimitedScans,
   isScanLimitMessage,
   remainingFreeScans,
 } from '@/lib/paywall-gate';
 import { todayISODate } from '@/lib/protein';
 import { getRetention, markCareDay, rollLootDrop } from '@/lib/retention';
+import {
+  parseNutritionNumber,
+  sanitizeNutritionDraft,
+} from '@/lib/parse-nutrition-number';
 import {
   consumePendingIngredientEdit,
   registerIngredientEditApplier,
@@ -90,6 +91,7 @@ import {
   colors,
   displayLH,
   fonts,
+  layout,
   noTextCaret,
   pressableWeb,
   radius,
@@ -99,7 +101,7 @@ import {
 } from '@/theme';
 
 type Phase = 'camera' | 'analyzing' | 'result';
-type ScanMode = 'photo' | 'barcode' | 'text';
+type ScanMode = 'photo' | 'text';
 
 const SCAN_MODE_OPTIONS: {
   value: ScanMode;
@@ -110,13 +112,6 @@ const SCAN_MODE_OPTIONS: {
 }[] = [
   { value: 'photo', icon: 'camera', label: 'PHOTO', labelNarrow: 'PHOTO', a11y: 'Photo' },
   {
-    value: 'barcode',
-    icon: 'barcode-outline',
-    label: 'BARCODE',
-    labelNarrow: 'BARCODE',
-    a11y: 'Barcode',
-  },
-  {
     value: 'text',
     icon: 'text-outline',
     label: 'TEXT',
@@ -126,20 +121,20 @@ const SCAN_MODE_OPTIONS: {
 ];
 
 const DEMO_AUTO_SCAN_KEY = 'pq_demo_auto_scan';
-/** Stable settings so CameraView web scanner does not thrash on every render. */
-const BARCODE_SCANNER_SETTINGS = {
-  barcodeTypes: [
-    'ean13',
-    'ean8',
-    'upc_a',
-    'upc_e',
-    'code128',
-    'code39',
-    'codabar',
-    'itf14',
-    'qr',
-  ] as const,
-};
+
+/** Photo AI failures must never surface while in text mode. */
+function isFoodAnalyzeError(message: string): boolean {
+  const m = String(message || '').toLowerCase();
+  return (
+    m.includes('does not contain food') ||
+    m.includes("doesn't look like food") ||
+    m.includes('doesnt look like food') ||
+    m.includes('point the camera at your meal') ||
+    m.includes('clearer description or photo') ||
+    m.includes('analyzing your meal') ||
+    (m.includes('food') && (m.includes('not') || m.includes("doesn't") || m.includes('doesnt')))
+  );
+}
 /** App icon mark (coral dragon + bowl). Pair with ProteinQuest wordmark text. */
 const BRAND_MARK = require('@/assets/images/icon.png');
 const BRAND_WORD = 'ProteinQuest';
@@ -265,7 +260,6 @@ function ScanModeToggle({
   value,
   onChange,
   disabled,
-  maxWidth,
   itemH,
   iconSize,
   tinyH,
@@ -274,72 +268,67 @@ function ScanModeToggle({
   value: ScanMode;
   onChange: (mode: ScanMode) => void;
   disabled?: boolean;
-  maxWidth: number;
   itemH: number;
   iconSize: number;
   tinyH: boolean;
   compactH: boolean;
 }) {
   const { width: winW } = useWindowDimensions();
-  const insets = useSafeAreaInsets();
   /** Width + height tiers from parent (tinyH/compactH/uiScale). */
   const veryNarrow = winW < 340;
   const narrow = winW < 380 || tinyH;
   const wide = winW >= 430 && !tinyH && !compactH;
-  const sideInset = Math.max(insets.left, insets.right);
-  const outerPadH = (narrow ? 8 : wide ? 16 : 12) + (sideInset > 0 ? Math.min(sideInset, 6) : 0);
   const trackPad = narrow ? 3 : wide ? 5 : 4;
-  const itemPadH = veryNarrow ? 2 : narrow ? 4 : wide ? 10 : 6;
+  const itemPadH = veryNarrow ? 2 : narrow ? 4 : wide ? 8 : 5;
   const gap = narrow ? 2 : wide ? 4 : 3;
   const labelSize = veryNarrow ? 8 : narrow ? 9 : compactH ? 10 : 11;
   const itemGap = veryNarrow ? 3 : narrow ? 4 : 5;
   const inactiveColor = 'rgba(210, 205, 215, 0.72)';
 
+  // Width comes from parent inset (= finder width). Never let labels expand past that.
   return (
-    <View style={{ width: '100%', maxWidth, paddingHorizontal: outerPadH, alignSelf: 'center' }}>
-      <GlassPanel style={[styles.modeToggle, { padding: trackPad, gap }]}>
-        {SCAN_MODE_OPTIONS.map((opt) => {
-          const selected = value === opt.value;
-          const tint = selected ? colors.accent : inactiveColor;
-          const label = veryNarrow ? opt.labelNarrow : opt.label;
-          return (
-            <Pressable
-              key={opt.value}
-              onPress={() => onChange(opt.value)}
-              disabled={disabled}
-              accessibilityRole="button"
-              accessibilityState={{ selected }}
-              accessibilityLabel={`Scan mode ${opt.a11y}`}
+    <GlassPanel style={[styles.modeToggle, { padding: trackPad, gap }]}>
+      {SCAN_MODE_OPTIONS.map((opt) => {
+        const selected = value === opt.value;
+        const tint = selected ? colors.accent : inactiveColor;
+        const label = veryNarrow ? opt.labelNarrow : opt.label;
+        return (
+          <Pressable
+            key={opt.value}
+            onPress={() => onChange(opt.value)}
+            disabled={disabled}
+            accessibilityRole="button"
+            accessibilityState={{ selected }}
+            accessibilityLabel={`Scan mode ${opt.a11y}`}
+            style={[
+              styles.modeToggleItem,
+              {
+                height: itemH,
+                paddingHorizontal: itemPadH,
+                gap: itemGap,
+              },
+              selected && styles.modeToggleItemOn,
+              pressableWeb,
+            ]}>
+            <Ionicons name={opt.icon} size={iconSize} color={tint} />
+            <Text
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.72}
               style={[
-                styles.modeToggleItem,
+                styles.modeToggleLabel,
                 {
-                  height: itemH,
-                  paddingHorizontal: itemPadH,
-                  gap: itemGap,
+                  fontSize: labelSize,
+                  letterSpacing: veryNarrow ? 0.2 : narrow ? 0.35 : 0.55,
+                  color: tint,
                 },
-                selected && styles.modeToggleItemOn,
-                pressableWeb,
               ]}>
-              <Ionicons name={opt.icon} size={iconSize} color={tint} />
-              <Text
-                numberOfLines={1}
-                adjustsFontSizeToFit
-                minimumFontScale={0.78}
-                style={[
-                  styles.modeToggleLabel,
-                  {
-                    fontSize: labelSize,
-                    letterSpacing: veryNarrow ? 0.2 : narrow ? 0.35 : 0.55,
-                    color: tint,
-                  },
-                ]}>
-                {label}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </GlassPanel>
-    </View>
+              {label}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </GlassPanel>
   );
 }
 
@@ -351,7 +340,6 @@ function ScanViewfinder({
   viewportW,
   viewportH,
   scale = 1,
-  mode = 'photo',
 }: {
   width: number;
   height: number;
@@ -360,30 +348,17 @@ function ScanViewfinder({
   viewportW: number;
   viewportH: number;
   scale?: number;
-  mode?: Exclude<ScanMode, 'text'>;
 }) {
   const shortSide = Math.min(width, height);
   /** Mild rectangle radius so brackets + dim hole stay aligned. */
   const radius = Math.max(10, Math.min(16, Math.round(shortSide * 0.045)));
   const corner = Math.max(18, Math.round(28 * scale));
   const inset = Math.max(8, Math.round(10 * scale));
-  const iconSize = Math.max(22, Math.round((mode === 'barcode' ? 30 : 36) * scale));
+  const iconSize = Math.max(22, Math.round(36 * scale));
   const titleSize = Math.max(12, Math.round(15 * scale));
   const subSize = Math.max(11, Math.round(13 * scale));
   const showGuide = width >= 160 && height >= 88;
   const maskId = 'scan-finder-hole';
-  const guide =
-    mode === 'barcode'
-      ? {
-          icon: 'barcode-outline' as const,
-          title: 'ALIGN BARCODE',
-          sub: 'Hold steady over the code',
-        }
-      : {
-          icon: 'restaurant-outline' as const,
-          title: 'CENTER YOUR MEAL',
-          sub: "Make sure it's well lit",
-        };
   return (
     <View pointerEvents="none" style={StyleSheet.absoluteFill}>
       <View style={StyleSheet.absoluteFill}>
@@ -442,16 +417,12 @@ function ScanViewfinder({
           />
         ))}
         {showGuide ? (
-          <View
-            pointerEvents="none"
-            style={[
-              styles.finderGuide,
-              { gap: Math.round(8 * scale) },
-              mode === 'barcode' && styles.finderGuideOutlined,
-            ]}>
-            <Ionicons name={guide.icon} size={iconSize} color={colors.accent} />
-            <Text style={[styles.finderGuideTitle, { fontSize: titleSize }]}>{guide.title}</Text>
-            <Text style={[styles.finderGuideSub, { fontSize: subSize }]}>{guide.sub}</Text>
+          <View pointerEvents="none" style={[styles.finderGuide, { gap: Math.round(8 * scale) }]}>
+            <Ionicons name="restaurant-outline" size={iconSize} color={colors.accent} />
+            <Text style={[styles.finderGuideTitle, { fontSize: titleSize }]}>FRAME YOUR MEAL</Text>
+            <Text style={[styles.finderGuideSub, { fontSize: subSize }]}>
+              Make sure it's well lit
+            </Text>
           </View>
         ) : null}
       </View>
@@ -506,6 +477,10 @@ export default function ScanScreen() {
   const headerTop =
     Math.max(insets.top, Platform.OS === 'web' ? 20 : 12) + (tinyH ? spacing.xs : spacing.sm);
   const edgePad = Math.max(insets.left, spacing.md);
+  /** Match result/meal column gutters; fold leftover safe-area when form is full-bleed. */
+  const formSideInset = Math.max(0, (screenW - formWidth) / 2);
+  const resultPadLeft = Math.max(horizontalPad, insets.left - formSideInset);
+  const resultPadRight = Math.max(horizontalPad, insets.right - formSideInset);
   const veryNarrow = screenW < 340;
   /** Keep brand clear of the absolute close button on both edges. */
   const brandSideClear = edgePad + 44 + (veryNarrow ? 4 : 8);
@@ -566,9 +541,19 @@ export default function ScanScreen() {
   const shutterSize = Math.round(
     (tinyH ? 56 : compactH ? 68 : isTablet || isDesktop ? 82 : 76) * Math.min(uiScale, 1.06),
   );
+  /** Side controls ~68% of shutter so the triad reads balanced, not corner-orphaned. */
   const librarySize = Math.round(
-    (tinyH ? 40 : isTablet || isDesktop ? 56 : 50) * Math.min(uiScale, 1.06),
+    Math.max(
+      tinyH ? 42 : 46,
+      Math.min(
+        isTablet || isDesktop ? 58 : 54,
+        Math.round(shutterSize * (tinyH ? 0.72 : 0.68)),
+      ),
+    ),
   );
+  const libraryIconSize = Math.max(18, Math.round(librarySize * 0.42));
+  const controlLabelH = tinyH ? 12 : 14;
+  const controlActionGap = tinyH ? 5 : 6;
   const modeToggleH = Math.round((tinyH ? 36 : compactH ? 42 : 48) * Math.min(uiScale, 1));
   const modeToggleIconSize = Math.round((tinyH ? 12 : compactH ? 14 : 16) * Math.min(uiScale, 1));
   const controlsGap = tinyH || landscape ? 4 : compactH ? 6 : 10;
@@ -584,7 +569,8 @@ export default function ScanScreen() {
   const controlsCoreH =
     modeToggleH +
     shutterSize +
-    22 +
+    controlActionGap +
+    controlLabelH +
     (firstScanRequired ? 32 : 0) +
     controlsPadBottom +
     spacing.xs;
@@ -622,34 +608,64 @@ export default function ScanScreen() {
     tinyH ? 112 : 128,
     Math.min(stageWidth - sideGutter * 2, availableForFinder, finderCap),
   );
-  /** Photo: square. Barcode: wide short rectangle for EAN/UPC alignment. */
-  const finderW = viewfinderSize;
-  const finderH =
-    scanMode === 'barcode'
-      ? Math.max(
-          tinyH ? 84 : 96,
-          Math.min(Math.round(finderW * 0.4), Math.round(availableForFinder * 0.5)),
-        )
-      : viewfinderSize;
+  /**
+   * Shared scan frame width: photo square and mode toggle
+   * all use this exact width so left/right edges always line up.
+   */
+  const scanFrameWidth = viewfinderSize;
+  const finderW = scanFrameWidth;
+  const finderH = viewfinderSize;
   /** Prefer optical center; clamp so header + shutter never collide with the finder. */
   const idealTop = (vh - finderH) / 2 - (landscape ? 0 : Math.min(8, vh * 0.008));
   const minTop = topReserve + chromeGap;
   const maxTop = Math.max(minTop, vh - botReserve - bottomGap - finderH);
   const viewfinderTop = Math.min(maxTop, Math.max(minTop, idealTop));
-  const viewfinderLeft = (vw - finderW) / 2;
-  const stageLeft = (vw - stageWidth) / 2;
+  /** Single horizontal box for finder + mode toggle (same left edge and width). */
+  const scanFrameLeft = (vw - scanFrameWidth) / 2;
+  const scanFrameColumnStyle = {
+    width: scanFrameWidth,
+    marginLeft: scanFrameLeft,
+    alignSelf: 'flex-start' as const,
+  };
   const chromeColumnStyle = {
     maxWidth: stageMaxWidth,
     width: '100%' as const,
     alignSelf: 'center' as const,
-    paddingHorizontal: Math.max(0, viewfinderLeft - stageLeft),
   };
+  /** Shutter triad: wider than finder for breathing room; still stage-centered. */
+  const shutterRowLayout = {
+    width: stageWidth,
+    maxWidth: '100%' as const,
+    alignSelf: 'center' as const,
+    paddingHorizontal: Math.max(tinyH ? 8 : 10, sideGutter - 2),
+  };
+  const renderSideSlotMirror = () => (
+    <View
+      style={[styles.sideAction, { gap: controlActionGap }]}
+      pointerEvents="none"
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants">
+      <View
+        style={[
+          styles.libraryBtn,
+          {
+            opacity: 0,
+            width: librarySize,
+            height: librarySize,
+            borderRadius: librarySize / 2,
+          },
+        ]}
+      />
+      <Text style={[styles.sideActionLabel, { height: controlLabelH, lineHeight: controlLabelH, opacity: 0 }]}>
+        GALLERY
+      </Text>
+    </View>
+  );
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
   const cameraWrapRef = useRef<View>(null);
   /** Synchronous lock so rapid taps can't launch parallel capture/library flows. */
   const busyRef = useRef(false);
-  const handleBarcodeScannedRef = useRef<(result: BarcodeScanningResult) => void>(() => {});
 
   const [phase, setPhase] = useState<Phase>('camera');
   const [cameraInitialized, setCameraInitialized] = useState(false);
@@ -666,15 +682,6 @@ export default function ScanScreen() {
   /** True when confirm/log was opened from "add in text" (manual empty meal). */
   const [manualEntry, setManualEntry] = useState(false);
   const [scannedAt, setScannedAt] = useState<Date | null>(null);
-  /** Live status while a barcode is detected / looked up. */
-  const [barcodeStatus, setBarcodeStatus] = useState<string | null>(null);
-  /** Manual UPC entry when camera decode is flaky (esp. web). */
-  const [manualBarcodeOpen, setManualBarcodeOpen] = useState(false);
-  const [manualBarcodeInput, setManualBarcodeInput] = useState('');
-  /** Last code that missed OFF catalog — offer "Continue with code". */
-  const [pendingMissCode, setPendingMissCode] = useState<string | null>(null);
-  const barcodeLockRef = useRef(false);
-  const lastBarcodeRef = useRef<{ code: string; at: number }>({ code: '', at: 0 });
   const scanModeRef = useRef<ScanMode>(scanMode);
   scanModeRef.current = scanMode;
   const foodNameRef = useRef<TextInput>(null);
@@ -695,10 +702,16 @@ export default function ScanScreen() {
   const [celebration, setCelebration] = useState<{
     evolved: boolean;
     leveledUp: boolean;
+    goalJustHit: boolean;
+    xpGained: number;
     perkUnlocked: string | null;
     levelBefore: number;
     levelAfter: number;
     previousStageIndex?: number;
+    proteinG: number;
+    foodName?: string;
+    lootDropped: boolean;
+    streakFreezeUsed: boolean;
   } | null>(null);
   const setCameraRef = useCallback((camera: CameraView | null) => {
     cameraRef.current = camera;
@@ -746,7 +759,7 @@ export default function ScanScreen() {
   }, [profile]);
 
   const needsScanQuota =
-    !!profile && !isPro(profile) && !isInHabitGracePeriod(profile);
+    !!profile && !hasUnlimitedScans(profile);
 
   const openPaywallForLimit = useCallback(() => {
     setError(null);
@@ -823,6 +836,8 @@ export default function ScanScreen() {
   }, [cameraViewport.width, cameraViewport.height, scanMode]);
 
   async function capture() {
+    // Never take / analyze photos from text mode.
+    if (scanModeRef.current !== 'photo') return;
     // Synchronous lock guards against a second tap in the same frame launching
     // a parallel capture before React re-renders `capturing`.
     if (busyRef.current || !cameraReady) return;
@@ -832,19 +847,21 @@ export default function ScanScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     triggerShutterFlash();
     try {
-      // High capture quality + native processing (no skipProcessing) for a sharp plate photo.
-      // Export still caps at EXPORT_MAX_SIDE so analyze/upload stay snappy.
+      // Full-quality capture, never mirrored. Analysis must use the unmirrored sensor frame
+      // (do not bake front-camera CSS scaleX(-1) / CameraView mirror into the photo).
       const photo = await cameraRef.current?.takePictureAsync({
-        quality: 0.92,
+        quality: 1,
         skipProcessing: false,
         shutterSound: false,
+        mirror: false,
+        isImageMirror: false,
       });
       if (!photo?.uri) throw new Error('Could not capture the photo');
       const cameraCrop: CameraCrop = {
         viewportWidth: cameraViewport.width,
         viewportHeight: cameraViewport.height,
         viewfinder: {
-          originX: viewfinderLeft,
+          originX: scanFrameLeft,
           originY: viewfinderTop,
           width: finderW,
           height: finderH,
@@ -862,6 +879,7 @@ export default function ScanScreen() {
   }
 
   async function pickFromLibrary() {
+    if (scanModeRef.current !== 'photo') return;
     if (busyRef.current) return;
     busyRef.current = true;
     setCapturing(true);
@@ -872,6 +890,7 @@ export default function ScanScreen() {
       } catch {
         /* count failed — allow picker; analyze rechecks */
       }
+      if (scanModeRef.current !== 'photo') return;
       const picked = await pickLibraryImage();
       if (!picked?.uri) return;
       await analyze(picked.uri);
@@ -909,6 +928,8 @@ export default function ScanScreen() {
     opts?: { displayUri?: string | null; imageBase64?: string | null; usedNow?: number | null },
   ) {
     if (!res.is_food) {
+      // Food-AI rejection belongs only to photo mode (never text).
+      if (scanModeRef.current !== 'photo') return;
       showError(res.notes || "This doesn't look like food. Try a clearer description or photo.");
       return;
     }
@@ -935,8 +956,8 @@ export default function ScanScreen() {
     }
 
     if (needsScanQuota && session?.user.id) {
-      await recordPhotoScan(session.user.id);
       setScansLeft(remainingFreeScans((opts?.usedNow ?? 0) + 1, profile));
+      void recordPhotoScan(session.user.id).catch(() => {});
     }
 
     setAnalyzeProgress(1);
@@ -955,7 +976,7 @@ export default function ScanScreen() {
     busyRef.current = true;
     setCapturing(true);
     try {
-      // Same freemium gate + consume as photo/barcode (1 free scan/day after trial).
+      // Same freemium gate + consume as photo (1 free scan/day after trial).
       let usedAtStart: number | null = null;
       try {
         usedAtStart = await ensureCanScan();
@@ -963,17 +984,16 @@ export default function ScanScreen() {
       } catch {
         /* count failed — recheck below */
       }
-      let usedNow = usedAtStart;
       if (needsScanQuota) {
-        usedNow = await countTodayPhotoScans();
+        const usedNow = usedAtStart ?? 0;
         setScansLeft(remainingFreeScans(usedNow, profile));
         if (!canScan(profile!, usedNow)) {
           openPaywallForLimit();
           return;
         }
         if (session?.user.id) {
-          await recordPhotoScan(session.user.id);
           setScansLeft(remainingFreeScans(usedNow + 1, profile));
+          void recordPhotoScan(session.user.id).catch(() => {});
         }
       }
 
@@ -1007,201 +1027,16 @@ export default function ScanScreen() {
     }
   }
 
-  async function openConfirmForBarcode(code: string, analysis: Analysis, usedNow?: number | null) {
-    setPendingMissCode(null);
-    setBarcodeStatus(null);
-    setManualBarcodeOpen(false);
-    await finishAnalysis(analysis, { usedNow: usedNow ?? null });
-    setManualEntry(true);
-  }
-
-  async function continueWithMissedBarcode() {
-    const code = pendingMissCode;
-    if (!code || busyRef.current) return;
-    busyRef.current = true;
-    setCapturing(true);
-    setError(null);
-    try {
-      let usedAtStart: number | null = null;
-      try {
-        usedAtStart = await ensureCanScan();
-        if (needsScanQuota && usedAtStart === null) return;
-      } catch {
-        /* allow */
-      }
-      const usedNow = needsScanQuota ? await countTodayPhotoScans() : usedAtStart;
-      if (needsScanQuota && usedNow !== null && !canScan(profile!, usedNow)) {
-        openPaywallForLimit();
-        return;
-      }
-      await openConfirmForBarcode(code, analysisForUnknownBarcode(code), usedNow ?? usedAtStart);
-    } catch (e: any) {
-      showError(e?.message ?? 'Could not continue. Try again.');
-    } finally {
-      busyRef.current = false;
-      setCapturing(false);
-      barcodeLockRef.current = false;
-    }
-  }
-
-  async function submitManualBarcode() {
-    const code = manualBarcodeInput.replace(/\D/g, '');
-    if (code.length < 6) {
-      showError('Enter a valid barcode (at least 6 digits).');
-      return;
-    }
-    setManualBarcodeOpen(false);
-    await handleBarcodeScanned({
-      data: code,
-      type: 'manual',
-      bounds: { origin: { x: 0, y: 0 }, size: { width: 0, height: 0 } },
-      cornerPoints: [],
-    });
-  }
-
-  async function handleBarcodeScanned(result: BarcodeScanningResult) {
-    if (scanModeRef.current !== 'barcode') return;
-    if (busyRef.current || barcodeLockRef.current || phaseRef.current !== 'camera') return;
-    const data = String(result?.data || '').trim();
-    if (!data) return;
-    const code = data.replace(/\D/g, '') || data;
-    if (code.length < 6) return;
-    const now = Date.now();
-    // Debounce duplicate reads of the same code (camera fires many frames).
-    if (
-      lastBarcodeRef.current.code === code &&
-      now - lastBarcodeRef.current.at < 2200
-    ) {
-      return;
-    }
-    lastBarcodeRef.current = { code, at: now };
-    barcodeLockRef.current = true;
-    busyRef.current = true;
-    setCapturing(true);
-    setError(null);
-    setPendingMissCode(null);
-    setBarcodeStatus(`Found ${code}… Looking up…`);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-    let lookupFailed = false;
-    try {
-      if (profile && !isDailyDragonLockedForToday(profile, todayISODate())) {
-        router.replace('/(tabs)/today');
-        return;
-      }
-      let usedAtStart: number | null = null;
-      try {
-        usedAtStart = await ensureCanScan();
-        if (needsScanQuota && usedAtStart === null) {
-          lookupFailed = true;
-          return;
-        }
-      } catch {
-        /* allow attempt */
-      }
-      setDisplayUri(null);
-      setPreviewSquare(false);
-      setImageBase64(null);
-      setManualEntry(false);
-      setAnalyzeStep(0);
-      setPhase('analyzing');
-      trackEvent('first_scan_started', { mode: 'barcode' });
-      const usedNow = needsScanQuota ? await countTodayPhotoScans() : usedAtStart;
-      if (needsScanQuota && usedNow !== null) {
-        setScansLeft(remainingFreeScans(usedNow, profile));
-        if (!canScan(profile!, usedNow)) {
-          lookupFailed = true;
-          setPhase('camera');
-          openPaywallForLimit();
-          return;
-        }
-      }
-      const lookup = await lookupBarcodeProductDetailed(code);
-      if (!lookup.fromCatalog) {
-        lookupFailed = true;
-        setPendingMissCode(lookup.code);
-        setBarcodeStatus(null);
-        showError(
-          `No product for ${lookup.code} in Open Food Facts. Retry, type the code, or continue to enter macros.`,
-        );
-        return;
-      }
-      setBarcodeStatus(null);
-      // Consumes via finishAnalysis → recordPhotoScan (same counter as photo).
-      await finishAnalysis(lookup.analysis, { usedNow: usedNow ?? usedAtStart });
-    } catch (e: any) {
-      lookupFailed = true;
-      setBarcodeStatus(null);
-      showError(e.message ?? 'Could not look up that barcode. Try again.');
-    } finally {
-      busyRef.current = false;
-      setCapturing(false);
-      if (lookupFailed) {
-        setBarcodeStatus(null);
-        lastBarcodeRef.current = { code: '', at: 0 };
-      }
-      // Cool-down so one hold doesn't re-fire after a failed / cancelled lookup.
-      setTimeout(() => {
-        barcodeLockRef.current = false;
-      }, lookupFailed ? 900 : 1600);
-    }
-  }
-  handleBarcodeScannedRef.current = handleBarcodeScanned;
-
-  /**
-   * Web: expo-camera's built-in scanner can miss product codes (wasm/createImageBitmap).
-   * Poll the live <video> with BarcodeDetector / zxing so barcodes auto-fire like native.
-   */
+  // Clear food-AI errors when switching to text mode.
   useEffect(() => {
-    if (Platform.OS !== 'web') return;
-    if (scanMode !== 'barcode' || phase !== 'camera' || !permission?.granted) return;
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-
-    const tick = async () => {
-      if (cancelled) return;
-      try {
-        if (
-          !busyRef.current &&
-          !barcodeLockRef.current &&
-          phaseRef.current === 'camera' &&
-          scanModeRef.current === 'barcode'
-        ) {
-          const video = findCameraVideo(cameraWrapRef.current);
-          if (video) {
-            const hit = await detectBarcodeFromVideo(video);
-            if (hit && !cancelled) {
-              handleBarcodeScannedRef.current({
-                data: hit.data,
-                type: hit.type,
-                bounds: { origin: { x: 0, y: 0 }, size: { width: 0, height: 0 } },
-                cornerPoints: [],
-              });
-            }
-          }
-        }
-      } catch {
-        /* keep polling */
-      }
-      if (!cancelled) timer = setTimeout(tick, 180);
-    };
-
-    timer = setTimeout(tick, 250);
-    return () => {
-      cancelled = true;
-      if (timer) clearTimeout(timer);
-    };
-  }, [scanMode, phase, permission?.granted]);
-
-  // Reset barcode UI chrome when leaving barcode mode.
-  useEffect(() => {
-    if (scanMode !== 'barcode') {
-      setManualBarcodeOpen(false);
-      setBarcodeStatus(null);
-      setPendingMissCode(null);
+    if (scanMode === 'text') {
+      setError((prev) => (prev && isFoodAnalyzeError(prev) ? null : prev));
     }
   }, [scanMode]);
 
   async function analyze(uri: string, cameraCrop?: CameraCrop) {
+    // Hard gate: text must never hit analyze-food image path.
+    if (scanModeRef.current !== 'photo') return;
     setError(null);
     if (profile && !isDailyDragonLockedForToday(profile, todayISODate())) {
       router.replace('/(tabs)/today');
@@ -1217,16 +1052,17 @@ export default function ScanScreen() {
       /* count failed — allow attempt; analyze path rechecks */
     }
 
+    if (scanModeRef.current !== 'photo') return;
+
     if (!cameraCrop) {
       setAnalyzeStep(0);
       setPhase('analyzing');
       trackEvent('first_scan_started', {});
     }
     try {
-      const [square, used] = await Promise.all([
-        prepareSquareMealPhoto(uri, cameraCrop),
-        needsScanQuota ? countTodayPhotoScans() : Promise.resolve(null),
-      ]);
+      const square = await prepareSquareMealPhoto(uri, cameraCrop);
+
+      if (scanModeRef.current !== 'photo') return;
 
       setDisplayUri(square.uri);
       setPreviewSquare(Boolean(cameraCrop));
@@ -1236,7 +1072,7 @@ export default function ScanScreen() {
         trackEvent('first_scan_started', {});
       }
 
-      const usedNow = used ?? usedAtStart;
+      const usedNow = usedAtStart;
       if (needsScanQuota && usedNow !== null) {
         setScansLeft(remainingFreeScans(usedNow, profile));
         if (!canScan(profile!, usedNow)) {
@@ -1247,6 +1083,7 @@ export default function ScanScreen() {
       setImageBase64(square.base64);
 
       const res = await analyzeFoodPhoto(square.base64, 'image/jpeg');
+      if (scanModeRef.current !== 'photo') return;
       if (!res.is_food) {
         showError(res.notes || "This doesn't look like food. Point the camera at your meal.");
         return;
@@ -1271,8 +1108,8 @@ export default function ScanScreen() {
       }
 
       if (needsScanQuota && session?.user.id) {
-        await recordPhotoScan(session.user.id);
         setScansLeft(remainingFreeScans((usedNow ?? 0) + 1, profile));
+        void recordPhotoScan(session.user.id).catch(() => {});
       }
 
       setAnalyzeProgress(1);
@@ -1280,6 +1117,7 @@ export default function ScanScreen() {
       await new Promise((r) => setTimeout(r, 60));
       setPhase('result');
     } catch (e: any) {
+      if (scanModeRef.current !== 'photo') return;
       showError(e.message ?? 'Analysis failed. Check your connection and try again.');
     }
   }
@@ -1290,8 +1128,8 @@ export default function ScanScreen() {
       setError('Profile still loading - wait a second and tap Log it again.');
       return;
     }
-    const proteinEntered = parseFloat(proteinOverride);
-    if (Number.isNaN(proteinEntered) || proteinEntered < 0) {
+    const proteinEntered = parseNutritionNumber(proteinOverride);
+    if (proteinEntered == null || proteinEntered < 0) {
       setError('Enter the protein amount in grams.');
       return;
     }
@@ -1309,13 +1147,13 @@ export default function ScanScreen() {
     }
 
     const calorieRaw = calorieOverride.trim();
-    const caloriesParsed = calorieRaw.length > 0 ? parseFloat(calorieRaw) : NaN;
-    if (calorieRaw.length > 0 && !Number.isFinite(caloriesParsed)) {
+    const caloriesParsed = calorieRaw.length > 0 ? parseNutritionNumber(calorieRaw) : null;
+    if (calorieRaw.length > 0 && caloriesParsed == null) {
       setError('Enter calories as a number.');
       return;
     }
     const caloriesEntered =
-      Number.isFinite(caloriesParsed) && caloriesParsed >= 0
+      caloriesParsed != null && caloriesParsed >= 0
         ? Math.round(caloriesParsed)
         : Number.isFinite(analysis.calories) && analysis.calories > 0
           ? Math.round(analysis.calories)
@@ -1413,15 +1251,24 @@ export default function ScanScreen() {
         void scheduleSecondMealNudge(dragonName).catch(() => {});
       }
 
+      const xpGained =
+        Math.round(proteinG * XP_PER_GRAM) + (goalJustHit ? XP_GOAL_BONUS : 0);
+
       if (goalJustHit || evolved || leveledUp) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
         setCelebration({
           evolved,
           leveledUp,
+          goalJustHit,
+          xpGained,
           perkUnlocked,
           levelBefore,
           levelAfter,
           previousStageIndex: stageBeforeIndex,
+          proteinG,
+          foodName: analysis.food_name,
+          lootDropped: loot.dropped,
+          streakFreezeUsed,
         });
       } else {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
@@ -1442,6 +1289,16 @@ export default function ScanScreen() {
 
   const hasCameraPermission = permission?.granted;
   const cameraReady = hasCameraPermission && cameraInitialized;
+
+  // Web: expo-camera CSS-mirrors front/desktop preview (scaleX(-1)) even when
+  // capture uses mirror/isImageMirror false. Strip it so live preview = confirm.
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    if (phase !== 'camera' || demoAutoScan || !hasCameraPermission || !cameraInitialized) {
+      return;
+    }
+    return bindUnmirroredWebCameraPreview(cameraWrapRef.current);
+  }, [phase, demoAutoScan, hasCameraPermission, cameraInitialized]);
 
   const headerTitle =
     phase === 'result' ? 'CONFIRM & LOG' : phase === 'analyzing' ? 'ANALYZING' : 'ProteinQuest';
@@ -1568,7 +1425,14 @@ export default function ScanScreen() {
       style={[
         styles.topBar,
         overlay && styles.topBarOverlay,
-        { paddingTop: headerTop },
+        {
+          paddingTop: headerTop,
+          paddingLeft: resultPadLeft,
+          paddingRight: resultPadRight,
+          width: formWidth,
+          maxWidth: formMaxWidth,
+          alignSelf: 'center',
+        },
       ]}
       pointerEvents={overlay ? 'box-none' : 'auto'}>
       <Pressable
@@ -1580,7 +1444,7 @@ export default function ScanScreen() {
         <Ionicons name="close" size={22} color={colors.text} />
       </Pressable>
       <Text style={[styles.topTitle, overlay && styles.topTitleOverlay]}>{headerTitle}</Text>
-      <View style={{ width: 44 }} />
+      <View style={styles.iconBtnSpacer} />
     </View>
   );
 
@@ -1588,36 +1452,18 @@ export default function ScanScreen() {
     <SafeAreaView style={styles.safe} edges={['bottom']}>
       {phase === 'result' || (demoAutoScan && phase === 'camera') ? renderHeader() : null}
 
-      {error ? (
+      {error && !(scanMode === 'text' && isFoodAnalyzeError(error)) ? (
         <Animated.View
           entering={FadeInDown.duration(320)}
           style={[
             styles.errorBanner,
-            scanMode === 'barcode' && styles.errorBannerOutlined,
             phase === 'camera' && !demoAutoScan
               ? [styles.errorBannerOverlay, { top: headerTop + 52 }]
               : { marginTop: spacing.sm },
           ]}>
           <Ionicons name="alert-circle" size={15} color={colors.danger} />
-          <View style={{ flex: 1, gap: 6 }}>
-            <Text style={styles.errorText}>{error}</Text>
-            {pendingMissCode && phase === 'camera' ? (
-              <Pressable
-                onPress={() => void continueWithMissedBarcode()}
-                hitSlop={6}
-                style={styles.barcodeMissCta}
-                accessibilityRole="button"
-                accessibilityLabel="Continue with barcode and enter macros manually">
-                <Text style={styles.barcodeMissCtaText}>Continue with {pendingMissCode}</Text>
-              </Pressable>
-            ) : null}
-          </View>
-          <Pressable
-            onPress={() => {
-              setError(null);
-              setPendingMissCode(null);
-            }}
-            hitSlop={8}>
+          <Text style={styles.errorText}>{error}</Text>
+          <Pressable onPress={() => setError(null)} hitSlop={8}>
             <Ionicons name="close" size={14} color={colors.textTertiary} />
           </Pressable>
         </Animated.View>
@@ -1640,17 +1486,10 @@ export default function ScanScreen() {
               ref={setCameraRef}
               style={styles.camera}
               facing="back"
+              // Native: do not mirror stills. Web preview flip is stripped separately
+              // (expo-camera web ignores this for live <video> scaleX(-1)).
+              mirror={false}
               pictureSize={pictureSize}
-              barcodeScannerSettings={
-                scanMode === 'barcode' ? { barcodeTypes: [...BARCODE_SCANNER_SETTINGS.barcodeTypes] } : undefined
-              }
-              onBarcodeScanned={
-                scanMode === 'barcode'
-                  ? (result) => {
-                      void handleBarcodeScannedRef.current(result);
-                    }
-                  : undefined
-              }
               onCameraReady={() => {
                 setCameraInitialized(true);
                 void (async () => {
@@ -1660,7 +1499,7 @@ export default function ScanScreen() {
                     } | null;
                     const sizes = await cam?.getAvailablePictureSizesAsync?.();
                     if (!sizes?.length) return;
-                    // Prefer ~1440–1920px long side: sharp food detail, not full 4K lag.
+                    // Prefer ~1920–2560px long side for sharp food detail; export may cap at 1600.
                     const ranked = sizes
                       .map((size) => {
                         const [a, b] = size.split('x').map((n) => Number(n));
@@ -1670,7 +1509,7 @@ export default function ScanScreen() {
                       .filter((s) => s.long > 0)
                       .sort((x, y) => {
                         const score = (long: number) =>
-                          Math.abs(long - 1600) + (long > 2200 ? (long - 2200) * 0.5 : 0);
+                          Math.abs(long - 2200) + (long > 3200 ? (long - 3200) * 0.5 : 0);
                         return score(x.long) - score(y.long);
                       });
                     if (ranked[0]?.size) setPictureSize(ranked[0].size);
@@ -1740,11 +1579,10 @@ export default function ScanScreen() {
               width={finderW}
               height={finderH}
               top={viewfinderTop}
-              left={viewfinderLeft}
+              left={scanFrameLeft}
               viewportW={vw}
               viewportH={vh}
               scale={uiScale}
-              mode={scanMode === 'barcode' ? 'barcode' : 'photo'}
             />
           ) : null}
 
@@ -1837,22 +1675,24 @@ export default function ScanScreen() {
                 zIndex: 20,
                 gap: controlsGap,
                 paddingBottom: controlsPadBottom,
-                maxWidth: stageMaxWidth,
-                alignSelf: 'center',
-                width: '100%',
+                alignItems: 'stretch',
               },
             ]}>
             <View
-              style={{
-                width: '100%',
-                alignItems: 'center',
-                marginBottom: Math.max(0, modeToggleToShutterGap - controlsGap),
-              }}>
+              style={[
+                scanFrameColumnStyle,
+                {
+                  overflow: 'hidden',
+                  marginBottom: Math.max(0, modeToggleToShutterGap - controlsGap),
+                },
+              ]}>
               <ScanModeToggle
                 value={scanMode}
-                onChange={setScanMode}
+                onChange={(mode) => {
+                  setError(null);
+                  setScanMode(mode === 'text' ? 'text' : 'photo');
+                }}
                 disabled={capturing}
-                maxWidth={Math.min(stageWidth, finderW + sideGutter * 2)}
                 itemH={modeToggleH}
                 iconSize={modeToggleIconSize}
                 tinyH={tinyH}
@@ -1863,232 +1703,142 @@ export default function ScanScreen() {
             <View
               style={[
                 styles.shutterRow,
+                shutterRowLayout,
                 {
-                  paddingHorizontal: Math.max(sideGutter, veryNarrow ? spacing.sm : spacing.md),
-                  maxWidth: Math.min(stageWidth, finderW + sideGutter * 2),
-                  alignSelf: 'center',
-                  width: '100%',
                   marginTop: 0,
                 },
               ]}>
-              {scanMode === 'barcode' ? (
-                <View style={styles.barcodeControlsCol}>
-                  <View
-                    style={[styles.barcodeAutoChip, capturing && { opacity: 0.85 }]}
-                    accessibilityRole="text"
-                    accessibilityLabel={
-                      barcodeStatus ||
-                      (capturing ? 'Looking up barcode product' : 'Barcode scans automatically')
-                    }>
-                    <Ionicons
-                      name={
-                        capturing || barcodeStatus ? 'sync-outline' : 'barcode-outline'
-                      }
-                      size={Math.max(16, Math.round(18 * uiScale))}
-                      color={colors.accent}
-                    />
-                    <Text
-                      style={[
-                        styles.barcodeAutoChipText,
-                        (tinyH || veryNarrow) && { fontSize: 12 },
-                      ]}
-                      numberOfLines={2}>
-                      {barcodeStatus
-                        ? barcodeStatus
-                        : capturing
-                          ? 'Looking up product…'
-                          : tinyH || veryNarrow
-                            ? 'Auto-scans in view'
-                            : 'Auto-scans when code is in view'}
-                    </Text>
-                  </View>
-                  {manualBarcodeOpen ? (
-                    <View style={styles.manualBarcodeRow}>
-                      <TextInput
-                        style={[styles.manualBarcodeInput, textInputWeb]}
-                        value={manualBarcodeInput}
-                        onChangeText={(t) => setManualBarcodeInput(t.replace(/[^\d]/g, ''))}
-                        placeholder="Type UPC / EAN"
-                        placeholderTextColor={colors.textTertiary}
-                        keyboardType="number-pad"
-                        inputMode="numeric"
-                        maxLength={18}
-                        autoFocus
-                        returnKeyType="done"
-                        onSubmitEditing={() => void submitManualBarcode()}
-                        accessibilityLabel="Manual barcode entry"
-                      />
-                      <Pressable
-                        onPress={() => void submitManualBarcode()}
-                        disabled={capturing || manualBarcodeInput.replace(/\D/g, '').length < 6}
-                        style={[
-                          styles.manualBarcodeGo,
-                          (capturing || manualBarcodeInput.replace(/\D/g, '').length < 6) && {
-                            opacity: 0.4,
-                          },
-                        ]}
-                        accessibilityRole="button"
-                        accessibilityLabel="Look up typed barcode">
-                        <Text style={styles.manualBarcodeGoText}>Go</Text>
-                      </Pressable>
-                      <Pressable
-                        onPress={() => {
-                          setManualBarcodeOpen(false);
-                          setManualBarcodeInput('');
-                        }}
-                        hitSlop={8}
-                        accessibilityLabel="Cancel manual barcode">
-                        <Ionicons name="close" size={18} color={colors.textTertiary} />
-                      </Pressable>
-                    </View>
-                  ) : (
-                    <Pressable
-                      onPress={() => {
-                        setError(null);
-                        setManualBarcodeOpen(true);
-                      }}
-                      disabled={capturing}
-                      hitSlop={8}
-                      style={styles.manualBarcodeLink}
-                      accessibilityRole="button"
-                      accessibilityLabel="Enter barcode manually">
-                      <Ionicons name="keypad-outline" size={14} color={colors.textSecondary} />
-                      <Text style={styles.manualBarcodeLinkText}>Type barcode instead</Text>
-                    </Pressable>
-                  )}
-                </View>
-              ) : (
-                <>
-                  {scanMode === 'text' ? (
-                    <View style={styles.sideAction}>
-                      <View
-                        style={[
-                          styles.libraryBtn,
-                          {
-                            opacity: 0,
-                            width: librarySize,
-                            height: librarySize,
-                            borderRadius: librarySize / 2,
-                          },
-                        ]}
-                      />
-                      <Text style={[styles.sideActionLabel, { opacity: 0 }]}>SPACER</Text>
-                    </View>
-                  ) : (
-                    <Pressable
-                      onPress={pickFromLibrary}
-                      disabled={capturing}
-                      accessibilityLabel="Upload from gallery"
-                      accessibilityRole="button"
-                      style={[styles.sideAction, capturing && { opacity: 0.35 }]}
-                      hitSlop={8}>
-                      <View
-                        style={[
-                          styles.libraryBtn,
-                          {
-                            width: librarySize,
-                            height: librarySize,
-                            borderRadius: librarySize / 2,
-                          },
-                        ]}>
-                        <Ionicons
-                          name="images-outline"
-                          size={Math.max(18, Math.round(22 * uiScale))}
-                          color={colors.text}
-                        />
-                      </View>
-                      <Text style={styles.sideActionLabel}>GALLERY</Text>
-                    </Pressable>
-                  )}
-
-                  {scanMode === 'text' ? (
-                    <Pressable
-                      onPress={continueWithText}
-                      disabled={capturing}
-                      accessibilityLabel="Continue to confirm and log"
-                      accessibilityRole="button"
-                      style={[styles.continueAction, capturing && { opacity: 0.35 }]}>
-                      <View
-                        style={[
-                          styles.continueBtn,
-                          {
-                            minWidth: Math.max(
-                              tinyH || veryNarrow ? 128 : 152,
-                              Math.round(shutterSize * (tinyH ? 1.55 : 1.85)),
-                            ),
-                            height: Math.max(
-                              tinyH ? 44 : 50,
-                              Math.round(shutterSize * (tinyH ? 0.62 : 0.7)),
-                            ),
-                            borderRadius: 13,
-                            paddingHorizontal: tinyH || veryNarrow ? 14 : 18,
-                          },
-                        ]}>
-                        <Text
-                          style={styles.continueBtnLabel}
-                          numberOfLines={1}
-                          adjustsFontSizeToFit
-                          minimumFontScale={0.85}>
-                          Continue
-                        </Text>
-                        <Ionicons
-                          name="arrow-forward"
-                          size={Math.max(15, Math.round(16 * uiScale))}
-                          color="#FFFFFF"
-                        />
-                      </View>
-                    </Pressable>
-                  ) : (
-                    <Pressable
-                      onPress={capture}
-                      disabled={!cameraReady || capturing}
-                      accessibilityLabel="Scan meal"
-                      accessibilityRole="button"
-                      style={[
-                        styles.scanAction,
-                        (!cameraReady || capturing) && { opacity: 0.35 },
-                      ]}>
-                      <View
-                        style={[
-                          styles.shutter,
-                          {
-                            width: shutterSize,
-                            height: shutterSize,
-                            borderRadius: shutterSize / 2,
-                          },
-                          capturing && { transform: [{ scale: 0.92 }] },
-                        ]}>
-                        <View
-                          style={[
-                            styles.shutterInner,
-                            {
-                              width: Math.round(shutterSize * 0.8),
-                              height: Math.round(shutterSize * 0.8),
-                              borderRadius: Math.round(shutterSize * 0.4),
-                            },
-                          ]}
-                        />
-                      </View>
-                      <Text style={styles.scanActionLabel}>SCAN</Text>
-                    </Pressable>
-                  )}
-
-                  <View style={styles.sideAction}>
+              <View style={styles.sideSlot}>
+                {scanMode === 'text' ? (
+                  renderSideSlotMirror()
+                ) : (
+                  <Pressable
+                    onPress={pickFromLibrary}
+                    disabled={capturing}
+                    accessibilityLabel="Upload from gallery"
+                    accessibilityRole="button"
+                    style={[
+                      styles.sideAction,
+                      { gap: controlActionGap },
+                      capturing && { opacity: 0.35 },
+                    ]}
+                    hitSlop={10}>
                     <View
                       style={[
                         styles.libraryBtn,
                         {
-                          opacity: 0,
                           width: librarySize,
                           height: librarySize,
                           borderRadius: librarySize / 2,
                         },
-                      ]}
-                    />
-                    <Text style={[styles.sideActionLabel, { opacity: 0 }]}>SPACER</Text>
-                  </View>
-                </>
-              )}
+                      ]}>
+                      <Ionicons name="images-outline" size={libraryIconSize} color={colors.text} />
+                    </View>
+                    <Text
+                      style={[
+                        styles.sideActionLabel,
+                        { height: controlLabelH, lineHeight: controlLabelH },
+                      ]}>
+                      GALLERY
+                    </Text>
+                  </Pressable>
+                )}
+              </View>
+
+              <View style={styles.centerSlot}>
+                {scanMode === 'text' ? (
+                  <Pressable
+                    onPress={continueWithText}
+                    disabled={capturing}
+                    accessibilityLabel="Continue to confirm and log"
+                    accessibilityRole="button"
+                    style={[
+                      styles.continueAction,
+                      { gap: controlActionGap },
+                      capturing && { opacity: 0.35 },
+                    ]}>
+                    <View
+                      style={[
+                        styles.continueBtn,
+                        {
+                          minWidth: Math.max(
+                            tinyH || veryNarrow ? 128 : 152,
+                            Math.round(shutterSize * (tinyH ? 1.55 : 1.85)),
+                          ),
+                          height: Math.max(
+                            tinyH ? 44 : 50,
+                            Math.round(shutterSize * (tinyH ? 0.62 : 0.7)),
+                          ),
+                          borderRadius: 13,
+                          paddingHorizontal: tinyH || veryNarrow ? 14 : 18,
+                        },
+                      ]}>
+                      <View pointerEvents="none" style={styles.continueBtnSheen} />
+                      <Text
+                        style={styles.continueBtnLabel}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                        minimumFontScale={0.85}>
+                        Continue
+                      </Text>
+                      <Ionicons
+                        name="arrow-forward"
+                        size={Math.max(15, Math.round(16 * uiScale))}
+                        color="#FFFFFF"
+                      />
+                    </View>
+                    <Text
+                      style={[
+                        styles.scanActionLabel,
+                        { height: controlLabelH, lineHeight: controlLabelH, opacity: 0 },
+                      ]}>
+                      SCAN
+                    </Text>
+                  </Pressable>
+                ) : (
+                  <Pressable
+                    onPress={capture}
+                    disabled={!cameraReady || capturing}
+                    accessibilityLabel="Scan meal"
+                    accessibilityRole="button"
+                    style={[
+                      styles.scanAction,
+                      { gap: controlActionGap },
+                      (!cameraReady || capturing) && { opacity: 0.35 },
+                    ]}>
+                    <View
+                      style={[
+                        styles.shutter,
+                        {
+                          width: shutterSize,
+                          height: shutterSize,
+                          borderRadius: shutterSize / 2,
+                        },
+                        capturing && { transform: [{ scale: 0.92 }] },
+                      ]}>
+                      <View
+                        style={[
+                          styles.shutterInner,
+                          {
+                            width: Math.round(shutterSize * 0.8),
+                            height: Math.round(shutterSize * 0.8),
+                            borderRadius: Math.round(shutterSize * 0.4),
+                          },
+                        ]}
+                      />
+                    </View>
+                    <Text
+                      style={[
+                        styles.scanActionLabel,
+                        { height: controlLabelH, lineHeight: controlLabelH },
+                      ]}>
+                      SCAN
+                    </Text>
+                  </Pressable>
+                )}
+              </View>
+
+              <View style={styles.sideSlot}>{renderSideSlotMirror()}</View>
             </View>
             {firstScanRequired ? (
               <Pressable
@@ -2130,13 +1880,11 @@ export default function ScanScreen() {
 
           <View style={styles.analyzingHero}>
             <Ionicons
-              name={scanMode === 'barcode' ? 'barcode-outline' : 'scan-outline'}
+              name="scan-outline"
               size={Math.round((isTablet || isDesktop ? 36 : 32) * Math.min(uiScale, 1.06))}
               color={colors.accent}
             />
-            <Text style={styles.analyzingEyebrow}>
-              {scanMode === 'barcode' ? 'LOOKING UP' : 'ANALYZING'}
-            </Text>
+            <Text style={styles.analyzingEyebrow}>ANALYZING</Text>
             <Text
               style={[
                 styles.analyzingHeroTitle,
@@ -2147,16 +1895,14 @@ export default function ScanScreen() {
                   ),
                 },
               ]}>
-              {scanMode === 'barcode' ? 'Finding your product' : 'Analyzing your meal'}
+              Analyzing your meal
             </Text>
             <Text
               style={[
                 styles.analyzingHeroSub,
                 { fontSize: Math.round((isTablet ? 16 : 14) * Math.min(uiScale, 1)), maxWidth: isTablet ? 420 : 300 },
               ]}>
-              {scanMode === 'barcode'
-                ? 'Pulling name and nutrition from Open Food Facts'
-                : 'Our AI is identifying ingredients and estimating portions'}
+              Our AI is identifying ingredients and estimating portions
             </Text>
           </View>
 
@@ -2189,7 +1935,7 @@ export default function ScanScreen() {
 
           <View style={styles.analyzingFooter}>
             <Text style={styles.analyzingStatus}>
-              {scanMode === 'barcode' ? 'Looking up…' : 'Analyzing...'}
+              Analyzing...
             </Text>
             <AnalyzingProgressBar progress={analyzeProgress} />
           </View>
@@ -2201,7 +1947,8 @@ export default function ScanScreen() {
           contentContainerStyle={[
             styles.resultScroll,
             {
-              paddingHorizontal: horizontalPad,
+              paddingLeft: resultPadLeft,
+              paddingRight: resultPadRight,
               maxWidth: formMaxWidth,
               width: formWidth,
               alignSelf: 'center',
@@ -2285,9 +2032,9 @@ export default function ScanScreen() {
                       : null,
                   ]}
                   value={proteinOverride}
-                  onChangeText={(t) => setProteinOverride(t.replace(/[^0-9.]/g, ''))}
+                  onChangeText={(t) => setProteinOverride(sanitizeNutritionDraft(t))}
                   keyboardType="numeric"
-                  maxLength={5}
+                  maxLength={16}
                 />
                 <Text style={styles.totalUnit}>g</Text>
               </View>
@@ -2310,9 +2057,9 @@ export default function ScanScreen() {
                       : null,
                   ]}
                   value={calorieOverride}
-                  onChangeText={(t) => setCalorieOverride(t.replace(/[^0-9.]/g, ''))}
+                  onChangeText={(t) => setCalorieOverride(sanitizeNutritionDraft(t))}
                   keyboardType="numeric"
-                  maxLength={5}
+                  maxLength={16}
                 />
                 <Text style={styles.totalUnit}>cal</Text>
               </View>
@@ -2521,16 +2268,21 @@ export default function ScanScreen() {
           profile={profile}
           evolved={celebration?.evolved ?? false}
           leveledUp={celebration?.leveledUp ?? false}
+          goalJustHit={celebration?.goalJustHit ?? false}
+          xpGained={celebration?.xpGained}
           perkUnlocked={celebration?.perkUnlocked}
           levelBefore={celebration?.levelBefore}
           levelAfter={celebration?.levelAfter}
           previousStageIndex={celebration?.previousStageIndex}
           onDone={() => {
+            const snap = celebration;
             setCelebration(null);
             goHome({
               fed: true,
-              protein: Number(proteinOverride) || undefined,
-              food: analysis?.food_name?.trim() || undefined,
+              protein: snap?.proteinG,
+              loot: snap?.lootDropped,
+              freeze: snap?.streakFreezeUsed,
+              food: snap?.foodName?.trim() || analysis?.food_name?.trim() || undefined,
             });
           }}
         />
@@ -2545,7 +2297,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: spacing.md,
     paddingBottom: spacing.sm,
   },
   topBarOverlay: {
@@ -2562,12 +2313,16 @@ const styles = StyleSheet.create({
     textShadowRadius: 4,
   },
   iconBtn: {
-    width: 44,
-    height: 44,
+    width: layout.iconBtn,
+    height: layout.iconBtn,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 22,
+    borderRadius: layout.iconBtn / 2,
     backgroundColor: 'rgba(12, 11, 16, 0.72)',
+  },
+  iconBtnSpacer: {
+    width: layout.iconBtn,
+    height: layout.iconBtn,
   },
   scanCloseBtn: {
     position: 'absolute',
@@ -2691,14 +2446,15 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingHorizontal: spacing.lg,
   },
-  finderGuideOutlined: {
-    paddingVertical: 12,
-    paddingHorizontal: spacing.md,
-    borderRadius: radius.chip,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 122, 89, 0.45)',
-    backgroundColor: 'rgba(12, 11, 16, 0.55)',
-    maxWidth: '88%',
+  finderGuideTipOutside: {
+    position: 'absolute',
+    alignItems: 'center',
+  },
+  finderGuideTipText: {
+    textAlign: 'center',
+    textShadowColor: 'rgba(12, 11, 16, 0.75)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
   },
   finderGuideTitle: {
     fontFamily: fonts.displayHeavy,
@@ -2733,6 +2489,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignSelf: 'stretch',
     width: '100%',
+    maxWidth: '100%',
+    overflow: 'hidden',
     borderRadius: 14,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(255,255,255,0.18)',
@@ -2740,10 +2498,12 @@ const styles = StyleSheet.create({
   modeToggleItem: {
     flex: 1,
     minWidth: 0,
+    flexShrink: 1,
     flexDirection: 'row',
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
   modeToggleItemOn: {
     backgroundColor: 'rgba(90, 42, 34, 0.72)',
@@ -2813,13 +2573,35 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 7,
     paddingHorizontal: spacing.xl,
-    backgroundColor: colors.accent,
+    overflow: 'hidden',
     borderRadius: 13,
-    shadowColor: '#000',
-    shadowOpacity: 0.18,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255, 210, 190, 0.55)',
+    backgroundColor: 'rgba(255, 122, 89, 0.78)',
+    ...(Platform.OS === 'web'
+      ? ({
+          backdropFilter: 'blur(10px) saturate(1.25)',
+          WebkitBackdropFilter: 'blur(10px) saturate(1.25)',
+          boxShadow:
+            '0 6px 16px rgba(255,122,89,0.22), inset 0 1px 0 rgba(255,255,255,0.28)',
+        } as object)
+      : {
+          shadowColor: '#FF7A59',
+          shadowOpacity: 0.22,
+          shadowRadius: 10,
+          shadowOffset: { width: 0, height: 4 },
+          elevation: 4,
+        }),
+  },
+  continueBtnSheen: {
+    position: 'absolute',
+    top: 0,
+    left: 12,
+    right: 12,
+    height: StyleSheet.hairlineWidth * 2,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.38)',
+    opacity: 0.7,
   },
   continueBtnLabel: {
     fontFamily: fonts.displayHeavy,
@@ -2838,16 +2620,18 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   barcodeControlsCol: {
-    flex: 1,
+    width: '100%',
+    flexGrow: 1,
     gap: 8,
-    alignItems: 'stretch',
+    alignItems: 'center',
+    alignSelf: 'center',
   },
   barcodeAutoChip: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
-    flex: 1,
+    width: '100%',
     minHeight: 52,
     paddingVertical: 12,
     paddingHorizontal: spacing.md,
@@ -2861,18 +2645,49 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.text,
     flexShrink: 1,
+    textAlign: 'center',
   },
   manualBarcodeLink: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 4,
+    alignSelf: 'center',
+    gap: 8,
+    width: '100%',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: radius.chip,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 122, 89, 0.35)',
+    backgroundColor: 'rgba(255, 122, 89, 0.1)',
   },
   manualBarcodeLinkText: {
+    fontFamily: fonts.displayMedium,
+    fontSize: 13,
+    color: colors.accent,
+    textAlign: 'center',
+  },
+  barcodeHintBanner: {
+    position: 'absolute',
+    left: spacing.md,
+    right: spacing.md,
+    zIndex: 40,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 122, 89, 0.4)',
+    backgroundColor: 'rgba(12, 11, 16, 0.88)',
+  },
+  barcodeHintText: {
+    flex: 1,
     fontFamily: fonts.body,
     fontSize: 12,
-    color: colors.textSecondary,
+    color: colors.text,
+    lineHeight: 16,
   },
   manualBarcodeRow: {
     flexDirection: 'row',
@@ -2902,36 +2717,42 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#fff',
   },
-  barcodeMissCta: {
-    alignSelf: 'flex-start',
-    paddingVertical: 2,
-  },
-  barcodeMissCtaText: {
-    fontFamily: fonts.body,
-    fontSize: 12,
-    color: colors.accent,
-    textDecorationLine: 'underline',
-  },
   shutterRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     width: '100%',
-    paddingHorizontal: spacing.xl,
+  },
+  shutterRowCentered: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  /** Equal left/right flex slots keep the shutter optically centered. */
+  sideSlot: {
+    flex: 1,
+    minWidth: 0,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+  centerSlot: {
+    flexShrink: 0,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    paddingHorizontal: 8,
   },
   sideAction: {
-    width: 64,
-    minWidth: 52,
-    maxWidth: 72,
-    flexShrink: 1,
     alignItems: 'center',
-    gap: 6,
+    justifyContent: 'flex-end',
+    minWidth: 64,
   },
   sideActionLabel: {
     fontFamily: fonts.mono,
     fontSize: 10,
-    letterSpacing: 1.4,
-    color: colors.text,
+    letterSpacing: 1.2,
+    color: 'rgba(246,244,248,0.88)',
+    textAlign: 'center',
+    textTransform: 'uppercase',
+    includeFontPadding: false,
   },
   libraryBtn: {
     width: 52,
@@ -2939,19 +2760,28 @@ const styles = StyleSheet.create({
     borderRadius: 26,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(12, 11, 16, 0.78)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.16)',
+    backgroundColor: 'rgba(12, 11, 16, 0.72)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.22)',
+    ...(Platform.OS === 'web'
+      ? ({
+          backdropFilter: 'blur(12px) saturate(1.15)',
+          WebkitBackdropFilter: 'blur(12px) saturate(1.15)',
+        } as object)
+      : {}),
   },
   scanAction: {
     alignItems: 'center',
-    gap: 8,
+    justifyContent: 'flex-end',
   },
   scanActionLabel: {
     fontFamily: fonts.monoBold,
-    fontSize: 11,
-    letterSpacing: 1.8,
+    fontSize: 10,
+    letterSpacing: 1.4,
     color: colors.accent,
+    textAlign: 'center',
+    textTransform: 'uppercase',
+    includeFontPadding: false,
   },
   shutter: {
     width: 78,

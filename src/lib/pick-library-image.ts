@@ -51,7 +51,8 @@ export async function pickLibraryImage(): Promise<PickedImage | null> {
 
   const result = await ImagePicker.launchImageLibraryAsync({
     mediaTypes: ['images'],
-    quality: 0.9,
+    // Full quality; prepareSquareMealPhoto may lightly downscale for API payload limits.
+    quality: 1,
     // Android photo picker only (no legacy chooser that can list camera apps)
     legacy: false,
   });

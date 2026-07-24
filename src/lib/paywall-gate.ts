@@ -1,13 +1,12 @@
 import {
-  GRANDFATHER_FREE_DAILY_SCANS,
-  isGrandfathered,
-} from './retention';
+  getPaywallConfig,
+  isPromoUnlimitedActive,
+} from './paywall-config';
+import { isGrandfathered } from './retention';
 import type { Profile } from './types';
 
-/** Free tier after the habit trial: AI photo scans per calendar day (soft paywall). */
+/** Bundled fallbacks (remote `app_paywall_config` overrides at runtime). */
 export const FREE_DAILY_SCANS = 1;
-
-/** No paywall and unlimited scans for the first N calendar days after signup. */
 export const HABIT_GRACE_DAYS = 2;
 
 export function isPro(profile: Profile | null | undefined): boolean {
@@ -31,7 +30,11 @@ export function accountAgeCalendarDays(
   return Math.floor((todayDay.getTime() - signupDay.getTime()) / 86_400_000);
 }
 
-/** First N calendar days after signup (day 0 = signup day): no paywall, unlimited scans. */
+function habitGraceDays(): number {
+  return getPaywallConfig().habitGraceDays;
+}
+
+/** First N calendar days after signup: no paywall, unlimited scans. */
 export function isInHabitGracePeriod(
   profile: Profile | null | undefined,
   now = new Date(),
@@ -39,7 +42,15 @@ export function isInHabitGracePeriod(
   if (!profile || isPro(profile)) return false;
   const ageDays = accountAgeCalendarDays(profile, now);
   if (ageDays === null) return false;
-  return ageDays >= 0 && ageDays < HABIT_GRACE_DAYS;
+  return ageDays >= 0 && ageDays < habitGraceDays();
+}
+
+/** Pro, trial, or remote promo unlimited day. */
+export function hasUnlimitedScans(profile: Profile | null | undefined): boolean {
+  if (isPro(profile)) return true;
+  if (isPromoUnlimitedActive()) return true;
+  if (isInHabitGracePeriod(profile)) return true;
+  return false;
 }
 
 /** Trends (7-day rhythm view) is free for all users. */
@@ -47,13 +58,14 @@ export function canAccessTrends(_profile: Profile | null | undefined): boolean {
   return true;
 }
 
-/** Daily free photo-scan quota after trial (grandfathered users keep 1/day). */
+/** Daily free photo-scan quota after trial. */
 export function freeDailyScanQuota(
   profile: Profile | null | undefined,
   lifetimeMeals = 0,
 ): number {
-  if (isGrandfathered(profile, lifetimeMeals)) return GRANDFATHER_FREE_DAILY_SCANS;
-  return FREE_DAILY_SCANS;
+  const cfg = getPaywallConfig();
+  if (isGrandfathered(profile, lifetimeMeals)) return cfg.grandfatherFreeDailyScans;
+  return cfg.freeDailyScans;
 }
 
 export function canScan(
@@ -61,8 +73,7 @@ export function canScan(
   scansUsedToday: number,
   lifetimeMeals = 0,
 ): boolean {
-  if (isPro(profile)) return true;
-  if (isInHabitGracePeriod(profile)) return true;
+  if (hasUnlimitedScans(profile)) return true;
   return scansUsedToday < freeDailyScanQuota(profile, lifetimeMeals);
 }
 
@@ -77,7 +88,6 @@ export function shouldOpenPaywallFromScanTap(
 
 /**
  * Soft paywall: after trial, only push hard paywall once the user has felt value (≥2 meals).
- * Zero-meal trial-enders get a softer path (caller may still route to paywall with soft copy).
  */
 export function shouldHardPaywall(
   profile: Profile | null | undefined,
@@ -93,7 +103,7 @@ export function remainingFreeScans(
   profile?: Profile | null,
   lifetimeMeals = 0,
 ): number {
-  if (profile && isInHabitGracePeriod(profile)) return Number.POSITIVE_INFINITY;
+  if (hasUnlimitedScans(profile ?? null)) return Number.POSITIVE_INFINITY;
   const quota = freeDailyScanQuota(profile, lifetimeMeals);
   if (quota <= 0) return 0;
   return Math.max(quota - scansUsedToday, 0);
@@ -105,7 +115,11 @@ export function scansLimitLabel(
   lifetimeMeals = 0,
 ): string {
   if (isPro(profile)) return 'Unlimited scans';
-  if (isInHabitGracePeriod(profile)) return 'Unlimited scans, 2-day free trial';
+  if (isPromoUnlimitedActive()) return 'Unlimited scans · promo day';
+  if (isInHabitGracePeriod(profile)) {
+    const days = habitGraceDays();
+    return `Unlimited scans, ${days}-day free trial`;
+  }
   const left = remainingFreeScans(scansUsedToday, profile, lifetimeMeals);
   if (left === 0) return 'Out of free scans. Go Pro';
   return `${left} free scan${left === 1 ? '' : 's'} left today`;
