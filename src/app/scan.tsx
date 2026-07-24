@@ -46,6 +46,7 @@ import {
   uploadFoodPhoto,
 } from '@/lib/api';
 import { lookupBarcodeProduct } from '@/lib/barcode';
+import { detectBarcodeFromVideo, findCameraVideo } from '@/lib/web-barcode';
 import { trackEvent } from '@/lib/analytics';
 import { rememberLocalMealPhoto } from '@/lib/local-meal-photo';
 import {
@@ -122,8 +123,22 @@ const SCAN_MODE_OPTIONS: {
 ];
 
 const DEMO_AUTO_SCAN_KEY = 'pq_demo_auto_scan';
+/** Stable settings so CameraView web scanner does not thrash on every render. */
+const BARCODE_SCANNER_SETTINGS = {
+  barcodeTypes: ['ean13', 'ean8', 'upc_a', 'upc_e', 'code128', 'code39', 'qr'] as const,
+};
 /** App icon mark (coral dragon + bowl). Pair with ProteinQuest wordmark text. */
 const BRAND_MARK = require('@/assets/images/icon.png');
+const BRAND_WORD = 'ProteinQuest';
+/** Outfit_600SemiBold: slightly high so we shrink early and never clip. */
+const BRAND_CHAR_EM = 0.62;
+const BRAND_LETTER_SPACING = 0.2;
+
+/** Estimated rendered width of the ProteinQuest wordmark at a font size. */
+function brandWordmarkWidth(fontSize: number, letterSpacing = BRAND_LETTER_SPACING): number {
+  const n = BRAND_WORD.length;
+  return fontSize * BRAND_CHAR_EM * n + letterSpacing * Math.max(0, n - 1);
+}
 
 function isDemoAutoScan(): boolean {
   if (Platform.OS !== 'web') return false;
@@ -481,14 +496,53 @@ export default function ScanScreen() {
   const veryNarrow = screenW < 340;
   /** Keep brand clear of the absolute close button on both edges. */
   const brandSideClear = edgePad + 44 + (veryNarrow ? 4 : 8);
-  const showBrandMark = !tinyH && !veryNarrow && !landscape;
-  const brandMarkSize = Math.round(
-    (tinyH ? 32 : compactH ? 40 : isTablet || isDesktop ? 56 : 48) * Math.min(uiScale, 1.06),
+  const brandGap = veryNarrow || tinyH ? 6 : 8;
+  /** Stage-capped row width so the lockup fits beside the close control. */
+  const brandStageCap = isDesktop ? 520 : isTablet ? 460 : landscape ? 520 : 420;
+  const brandRowMaxW = Math.max(96, Math.min(screenW, brandStageCap) - brandSideClear * 2);
+  const brandTitleMax = Math.round(
+    (isTablet || isDesktop ? 34 : tallH ? 30 : compactH ? 26 : tinyH || veryNarrow ? 22 : 28) *
+      Math.min(uiScale, 1.08),
   );
-  const brandTitleSize = Math.round(
-    (tinyH || veryNarrow ? 20 : compactH ? 24 : isTablet || isDesktop ? 32 : 28) *
-      Math.min(uiScale, 1.06),
+  const brandMarkMax = Math.round(
+    (isTablet || isDesktop ? 56 : tallH ? 48 : compactH ? 40 : tinyH || veryNarrow ? 30 : 44) *
+      Math.min(uiScale, 1.08),
   );
+  const brandTitleFloor = 13;
+  const brandMarkFloor = 20;
+  /** Scale title (then mark) so full "ProteinQuest" always fits; never ellipsize. */
+  let brandMarkSize = brandMarkMax;
+  let brandTitleSize = brandTitleMax;
+  const brandNeeded = (mark: number, title: number) =>
+    mark + brandGap + brandWordmarkWidth(title);
+  if (brandNeeded(brandMarkSize, brandTitleSize) > brandRowMaxW) {
+    const textBudget = brandRowMaxW - brandMarkSize - brandGap;
+    brandTitleSize = Math.max(
+      brandTitleFloor,
+      Math.floor(
+        (textBudget - BRAND_LETTER_SPACING * (BRAND_WORD.length - 1)) /
+          (BRAND_CHAR_EM * BRAND_WORD.length),
+      ),
+    );
+  }
+  if (brandNeeded(brandMarkSize, brandTitleSize) > brandRowMaxW) {
+    brandMarkSize = Math.max(
+      brandMarkFloor,
+      Math.floor(brandRowMaxW - brandGap - brandWordmarkWidth(brandTitleSize)),
+    );
+  }
+  if (brandNeeded(brandMarkSize, brandTitleSize) > brandRowMaxW) {
+    brandMarkSize = brandMarkFloor;
+    const textBudget = Math.max(64, brandRowMaxW - brandMarkSize - brandGap);
+    brandTitleSize = Math.max(
+      11,
+      Math.floor(
+        (textBudget - BRAND_LETTER_SPACING * (BRAND_WORD.length - 1)) /
+          (BRAND_CHAR_EM * BRAND_WORD.length),
+      ),
+    );
+  }
+  const showBrandMark = true;
   const titleBlockEst = Math.round(
     (Math.max(showBrandMark ? brandMarkSize : 0, brandTitleSize) +
       heroPadV * 2 +
@@ -579,8 +633,10 @@ export default function ScanScreen() {
   };
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
+  const cameraWrapRef = useRef<View>(null);
   /** Synchronous lock so rapid taps can't launch parallel capture/library flows. */
   const busyRef = useRef(false);
+  const handleBarcodeScannedRef = useRef<(result: BarcodeScanningResult) => void>(() => {});
 
   const [phase, setPhase] = useState<Phase>('camera');
   const [cameraInitialized, setCameraInitialized] = useState(false);
@@ -870,34 +926,65 @@ export default function ScanScreen() {
   }
 
   /** Open CONFIRM & LOG with an empty meal so they can add ingredients / edit / log. */
-  function continueWithText() {
+  async function continueWithText() {
     if (busyRef.current) return;
     if (profile && !isDailyDragonLockedForToday(profile, todayISODate())) {
       router.replace('/(tabs)/today');
       return;
     }
-    setError(null);
-    setDisplayUri(null);
-    setPreviewSquare(false);
-    setImageBase64(null);
-    photoUploadRef.current = null;
-    setManualEntry(true);
-    setAnalysis({
-      is_food: true,
-      food_name: '',
-      items: [],
-      total_protein_g: 0,
-      calories: 0,
-      confidence: 'medium',
-      notes: '',
-    });
-    setProteinOverride('0');
-    setCalorieOverride('0');
-    setScannedAt(new Date());
-    analyzeDoneRef.current = true;
-    trackEvent('first_scan_started', { mode: 'text' });
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-    setPhase('result');
+    busyRef.current = true;
+    setCapturing(true);
+    try {
+      // Same freemium gate + consume as photo/barcode (1 free scan/day after trial).
+      let usedAtStart: number | null = null;
+      try {
+        usedAtStart = await ensureCanScan();
+        if (needsScanQuota && usedAtStart === null) return;
+      } catch {
+        /* count failed — recheck below */
+      }
+      let usedNow = usedAtStart;
+      if (needsScanQuota) {
+        usedNow = await countTodayPhotoScans();
+        setScansLeft(remainingFreeScans(usedNow, profile));
+        if (!canScan(profile!, usedNow)) {
+          openPaywallForLimit();
+          return;
+        }
+        if (session?.user.id) {
+          await recordPhotoScan(session.user.id);
+          setScansLeft(remainingFreeScans(usedNow + 1, profile));
+        }
+      }
+
+      setError(null);
+      setDisplayUri(null);
+      setPreviewSquare(false);
+      setImageBase64(null);
+      photoUploadRef.current = null;
+      setManualEntry(true);
+      setAnalysis({
+        is_food: true,
+        food_name: '',
+        items: [],
+        total_protein_g: 0,
+        calories: 0,
+        confidence: 'medium',
+        notes: '',
+      });
+      setProteinOverride('0');
+      setCalorieOverride('0');
+      setScannedAt(new Date());
+      analyzeDoneRef.current = true;
+      trackEvent('first_scan_started', { mode: 'text' });
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+      setPhase('result');
+    } catch (e: any) {
+      showError(e?.message ?? 'Could not continue. Try again.');
+    } finally {
+      busyRef.current = false;
+      setCapturing(false);
+    }
   }
 
   async function handleBarcodeScanned(result: BarcodeScanningResult) {
@@ -954,12 +1041,13 @@ export default function ScanScreen() {
           return;
         }
       }
-      const product = await lookupBarcodeProduct(data);
+      const product = await lookupBarcodeProduct(code);
       if (!product) {
         lookupFailed = true;
         showError('Barcode not found in Open Food Facts. Try photo mode on the label.');
         return;
       }
+      // Consumes via finishAnalysis → recordPhotoScan (same counter as photo).
       await finishAnalysis(product, { usedNow: usedNow ?? usedAtStart });
     } catch (e: any) {
       lookupFailed = true;
@@ -974,9 +1062,55 @@ export default function ScanScreen() {
       // Cool-down so one hold doesn't re-fire after a failed / cancelled lookup.
       setTimeout(() => {
         barcodeLockRef.current = false;
-      }, lookupFailed ? 1200 : 1800);
+      }, lookupFailed ? 900 : 1600);
     }
   }
+  handleBarcodeScannedRef.current = handleBarcodeScanned;
+
+  /**
+   * Web: expo-camera's built-in scanner can miss product codes (wasm/createImageBitmap).
+   * Poll the live <video> with BarcodeDetector / zxing so barcodes auto-fire like native.
+   */
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    if (scanMode !== 'barcode' || phase !== 'camera' || !permission?.granted) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const tick = async () => {
+      if (cancelled) return;
+      try {
+        if (
+          !busyRef.current &&
+          !barcodeLockRef.current &&
+          phaseRef.current === 'camera' &&
+          scanModeRef.current === 'barcode'
+        ) {
+          const video = findCameraVideo(cameraWrapRef.current);
+          if (video) {
+            const hit = await detectBarcodeFromVideo(video);
+            if (hit && !cancelled) {
+              handleBarcodeScannedRef.current({
+                data: hit.data,
+                type: hit.type,
+                bounds: { origin: { x: 0, y: 0 }, size: { width: 0, height: 0 } },
+                cornerPoints: [],
+              });
+            }
+          }
+        }
+      } catch {
+        /* keep polling */
+      }
+      if (!cancelled) timer = setTimeout(tick, 320);
+    };
+
+    timer = setTimeout(tick, 450);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [scanMode, phase, permission?.granted]);
 
   async function analyze(uri: string, cameraCrop?: CameraCrop) {
     setError(null);
@@ -1385,6 +1519,7 @@ export default function ScanScreen() {
 
       {phase === 'camera' && !demoAutoScan && (
         <View
+          ref={cameraWrapRef}
           style={[
             styles.cameraWrap,
             isWide && {
@@ -1401,22 +1536,14 @@ export default function ScanScreen() {
               facing="back"
               pictureSize={pictureSize}
               barcodeScannerSettings={
-                scanMode === 'barcode'
-                  ? {
-                      barcodeTypes: [
-                        'ean13',
-                        'ean8',
-                        'upc_a',
-                        'upc_e',
-                        'code128',
-                        'code39',
-                        'qr',
-                      ],
-                    }
-                  : undefined
+                scanMode === 'barcode' ? { barcodeTypes: [...BARCODE_SCANNER_SETTINGS.barcodeTypes] } : undefined
               }
               onBarcodeScanned={
-                scanMode === 'barcode' && !capturing ? handleBarcodeScanned : undefined
+                scanMode === 'barcode'
+                  ? (result) => {
+                      void handleBarcodeScannedRef.current(result);
+                    }
+                  : undefined
               }
               onCameraReady={() => {
                 setCameraInitialized(true);
@@ -1554,7 +1681,9 @@ export default function ScanScreen() {
                     paddingHorizontal: brandSideClear,
                   },
                 ]}>
-                <View style={styles.scanBrandRow} accessibilityRole="header">
+                <View
+                  style={[styles.scanBrandRow, { gap: brandGap, maxWidth: brandRowMaxW }]}
+                  accessibilityRole="header">
                   {showBrandMark ? (
                     <Image
                       source={BRAND_MARK}
@@ -1577,14 +1706,11 @@ export default function ScanScreen() {
                       {
                         fontSize: brandTitleSize,
                         lineHeight: displayLH(brandTitleSize),
-                        flexShrink: 1,
-                        minWidth: 0,
+                        letterSpacing: brandTitleSize < 16 ? 0 : BRAND_LETTER_SPACING,
+                        flexShrink: 0,
                       },
                     ]}
-                    numberOfLines={1}
-                    adjustsFontSizeToFit
-                    minimumFontScale={0.78}
-                    ellipsizeMode="tail">
+                    allowFontScaling={false}>
                     Protein
                     <Text style={styles.scanBrandTitleAccent}>Quest</Text>
                   </Text>
@@ -1598,6 +1724,7 @@ export default function ScanScreen() {
               const h = e.nativeEvent.layout.height;
               if (h > 0 && Math.abs(h - botChromeH) > 1) setBotChromeH(h);
             }}
+            pointerEvents="box-none"
             style={[
               styles.controls,
               {
@@ -2326,9 +2453,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    maxWidth: '100%',
-    minWidth: 0,
+    flexWrap: 'nowrap',
+    alignSelf: 'center',
+    overflow: 'visible',
   },
   scanBrandMark: {
     backgroundColor: colors.bg,
@@ -2337,7 +2464,8 @@ const styles = StyleSheet.create({
     ...noTextCaret,
     fontFamily: fonts.displayHeavy,
     color: colors.text,
-    letterSpacing: 0.2,
+    flexShrink: 0,
+    overflow: 'visible',
   },
   scanBrandTitleAccent: {
     color: colors.accent,

@@ -45,6 +45,15 @@
     "plugins": [
       "expo-router",
       [
+        "expo-camera",
+        {
+          "cameraPermission": "ProteinQuest uses the camera to photograph your meals, read barcodes, and estimate protein content.",
+          "microphonePermission": "ProteinQuest uses the microphone only if you record video.",
+          "recordAudioAndroid": false,
+          "barcodeScannerEnabled": true
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "backgroundColor": "#0C0B10",
