@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
-import { router, useLocalSearchParams } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import * as Haptics from 'expo-haptics';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Platform,
@@ -14,7 +15,6 @@ import {
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { Button } from '@/components/Button';
 import { MealPhotoPreview } from '@/components/MealPhotoPreview';
 import { PageCanvas } from '@/components/PageCanvas';
 import { fetchLogById, getFoodPhotoUrl, updateLog } from '@/lib/api';
@@ -26,16 +26,50 @@ import {
   clampProteinOverride,
   maxAllowedOverride,
 } from '@/lib/log-limits';
+import { todayISODate } from '@/lib/protein';
+import { consumePendingIngredientEdit } from '@/lib/scan-ingredient-edit';
 import type { FoodItem, ProteinLog } from '@/lib/types';
-import { colors, displayLH, fonts, pressableWeb, spacing, textInputWeb } from '@/theme';
+import {
+  colors,
+  displayLH,
+  fonts,
+  pressableWeb,
+  radius,
+  spacing,
+  textInputWeb,
+} from '@/theme';
 
 function asItems(raw: ProteinLog['items']): FoodItem[] {
   return Array.isArray(raw) ? raw : [];
 }
 
+function formatMealMeta(createdAt: string | null | undefined): string {
+  const d = createdAt ? new Date(createdAt) : new Date();
+  if (Number.isNaN(d.getTime())) return 'Logged meal';
+  const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  const today = todayISODate();
+  const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
+    d.getDate(),
+  ).padStart(2, '0')}`;
+  if (day === today) return `Scanned today, ${time}`;
+  return `Scanned ${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}, ${time}`;
+}
+
 export default function MealDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { horizontalPad, contentMaxWidth, contentWidth } = useLayout();
+  const {
+    horizontalPad,
+    contentMaxWidth,
+    contentWidth,
+    height,
+    isTablet,
+    isDesktop,
+  } = useLayout();
+  const tinyH = height < 700;
+  const compactH = height < 780;
+  const stageMaxWidth = Math.min(contentWidth, isDesktop ? 560 : isTablet ? 520 : 480);
+
+  const foodNameRef = useRef<TextInput>(null);
   const [log, setLog] = useState<ProteinLog | null>(null);
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [foodName, setFoodName] = useState('');
@@ -90,20 +124,68 @@ export default function MealDetailScreen() {
     };
   }, [id]);
 
+  useFocusEffect(
+    useCallback(() => {
+      const edit = consumePendingIngredientEdit();
+      if (!edit) return;
+
+      setItems((prev) => {
+        const action = edit.action ?? 'update';
+        let next = [...prev];
+
+        if (action === 'delete') {
+          if (edit.index < 0 || edit.index >= next.length) return prev;
+          next = next.filter((_, i) => i !== edit.index);
+        } else if (action === 'add') {
+          next.push({
+            name: edit.name,
+            portion: edit.portion,
+            protein_g: edit.protein_g,
+            calories_g: edit.calories_g,
+            estimated_grams: edit.estimated_grams,
+            confidence: 'medium',
+          });
+        } else {
+          const current = next[edit.index];
+          if (!current) return prev;
+          next[edit.index] = {
+            ...current,
+            name: edit.name,
+            portion: edit.portion,
+            protein_g: edit.protein_g,
+            calories_g: edit.calories_g,
+            estimated_grams: edit.estimated_grams,
+          };
+        }
+
+        const totalProtein = next.reduce((s, i) => s + (Number(i.protein_g) || 0), 0);
+        const itemCalSum = next.reduce((s, i) => {
+          const c = Number(i.calories_g);
+          return s + (Number.isFinite(c) && c >= 0 ? c : 0);
+        }, 0);
+        const nextProtein = Math.round(totalProtein * 10) / 10;
+        const nextCalories = Math.round(itemCalSum);
+
+        setAnchorProtein(nextProtein);
+        setAnchorCalories(nextCalories);
+        setProteinOverride(String(nextProtein));
+        setCalorieOverride(String(nextCalories));
+        return next;
+      });
+    }, []),
+  );
+
   async function handleSave() {
-    if (!log) return;
+    if (!log || saving) return;
     const proteinEntered = parseFloat(proteinOverride);
     if (Number.isNaN(proteinEntered) || proteinEntered < 0) {
       setError('Enter the protein amount in grams.');
       return;
     }
     const proteinClamp = clampProteinOverride(proteinEntered, anchorProtein);
+    // Soft-clamp: apply the max and still save (do not dead-end the CTA).
     if (proteinClamp.clamped) {
       setProteinOverride(String(proteinClamp.max));
-      setError(
-        `Protein capped at ${proteinClamp.max}g, the most we can verify from this photo.`,
-      );
-      return;
     }
     const proteinG = proteinClamp.value;
 
@@ -122,8 +204,6 @@ export default function MealDetailScreen() {
     const calorieClamp = clampCalorieOverride(caloriesEntered, anchorCalories || caloriesEntered);
     if (calorieClamp.clamped) {
       setCalorieOverride(String(calorieClamp.max));
-      setError(`Calories capped at ${calorieClamp.max}, the most we can verify from this photo.`);
-      return;
     }
 
     setSaving(true);
@@ -135,14 +215,20 @@ export default function MealDetailScreen() {
         calories: calorieClamp.value,
         items,
       });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      // Prefer back so Today stays mounted (keeps thumbs/dragon warm).
       if (router.canGoBack()) router.back();
       else router.replace('/(tabs)/today');
-    } catch {
-      setError('Could not save changes. Try again.');
+    } catch (e) {
+      const msg =
+        e instanceof Error && e.message ? e.message : 'Could not save changes. Try again.';
+      setError(msg);
     } finally {
       setSaving(false);
     }
   }
+
+  const close = () => (router.canGoBack() ? router.back() : router.replace('/(tabs)/today'));
 
   return (
     <PageCanvas>
@@ -158,15 +244,15 @@ export default function MealDetailScreen() {
             },
           ]}>
           <Pressable
-            onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)/today'))}
+            onPress={close}
             hitSlop={12}
             style={({ pressed }) => [styles.iconBtn, pressableWeb, pressed && { opacity: 0.7 }]}
             accessibilityRole="button"
             accessibilityLabel="Close">
             <Ionicons name="close" size={22} color={colors.text} />
           </Pressable>
-          <Text style={styles.topTitle}>MEAL</Text>
-          <View style={styles.iconBtn} />
+          <Text style={styles.topTitle}>CONFIRM & LOG</Text>
+          <View style={styles.iconBtnSpacer} />
         </View>
 
         {error ? (
@@ -189,7 +275,7 @@ export default function MealDetailScreen() {
         ) : (
           <ScrollView
             showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
+            keyboardShouldPersistTaps="always"
             contentContainerStyle={[
               styles.resultScroll,
               {
@@ -200,120 +286,225 @@ export default function MealDetailScreen() {
               },
             ]}>
             {photoUri ? (
-              <Animated.View entering={FadeIn} style={styles.resultImageWrap}>
-                <MealPhotoPreview uri={photoUri} bordered />
+              <Animated.View
+                entering={FadeIn}
+                style={[
+                  styles.resultImageWrap,
+                  {
+                    maxWidth: Math.min(stageMaxWidth, isTablet || isDesktop ? 480 : 420),
+                  },
+                ]}>
+                <View style={styles.resultPhotoShell}>
+                  <MealPhotoPreview
+                    uri={photoUri}
+                    square
+                    bordered={false}
+                    borderRadius={radius.md}
+                    maxHeightRatio={
+                      tinyH ? 0.34 : compactH ? 0.38 : isTablet || isDesktop ? 0.4 : 0.42
+                    }
+                  />
+                  {log.confidence ? (
+                    <View style={styles.confidenceBadge} pointerEvents="none">
+                      <Ionicons name="star" size={12} color={colors.accent} />
+                      <Text style={styles.confidenceBadgeText}>
+                        <Text style={styles.confidenceLevel}>
+                          {log.confidence.toUpperCase()}
+                        </Text>
+                        {' CONFIDENCE'}
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
               </Animated.View>
             ) : null}
 
-            <Animated.View entering={FadeInDown.delay(80).duration(400)}>
-              <TextInput
-                style={[styles.foodName, styles.foodNameInput, textInputWeb]}
-                value={foodName}
-                onChangeText={setFoodName}
-                placeholder="Meal name"
-                placeholderTextColor={colors.textTertiary}
-                autoCapitalize="sentences"
-                autoCorrect
-                maxLength={80}
-                returnKeyType="done"
-                accessibilityLabel="Edit food name"
-              />
-              <Text style={styles.metaText}>
-                TAP NAME TO EDIT
-                {log.confidence ? ` · ${log.confidence.toUpperCase()} CONFIDENCE` : ''}
-              </Text>
+            <Animated.View
+              entering={FadeInDown.delay(80).duration(400)}
+              style={styles.resultTitleBlock}>
+              <View style={styles.foodNameRow}>
+                <TextInput
+                  ref={foodNameRef}
+                  style={[styles.foodName, styles.foodNameInput, textInputWeb, { flex: 1 }]}
+                  value={foodName}
+                  onChangeText={setFoodName}
+                  placeholder="Meal name"
+                  placeholderTextColor={colors.textTertiary}
+                  autoCapitalize="sentences"
+                  autoCorrect
+                  maxLength={80}
+                  returnKeyType="done"
+                  accessibilityLabel="Edit food name"
+                />
+                <Pressable
+                  onPress={() => foodNameRef.current?.focus()}
+                  hitSlop={10}
+                  accessibilityLabel="Edit food name"
+                  style={styles.foodNameEditBtn}>
+                  <Ionicons name="pencil" size={18} color={colors.text} />
+                </Pressable>
+              </View>
+              <Text style={styles.metaText}>{formatMealMeta(log.created_at)}</Text>
             </Animated.View>
 
-            <View style={styles.rule} />
+            <Animated.View
+              entering={FadeInDown.delay(160).duration(400)}
+              style={styles.nutritionCard}>
+              <View style={styles.nutritionCol}>
+                <Text style={styles.totalLabel}>TOTAL PROTEIN</Text>
+                <View style={styles.totalInputRow}>
+                  <TextInput
+                    style={[
+                      styles.totalInput,
+                      textInputWeb,
+                      Platform.OS === 'web'
+                        ? ({ width: `${Math.max(proteinOverride.length, 1)}ch` } as object)
+                        : null,
+                    ]}
+                    value={proteinOverride}
+                    onChangeText={(t) => setProteinOverride(t.replace(/[^0-9.]/g, ''))}
+                    keyboardType="numeric"
+                    maxLength={5}
+                  />
+                  <Text style={styles.totalUnit}>g</Text>
+                </View>
+                <Text style={styles.totalHint}>
+                  tap to adjust • max{' '}
+                  {maxAllowedOverride(anchorProtein, PROTEIN_OVERRIDE_BUFFER_G)}g
+                </Text>
+              </View>
+              <View style={styles.nutritionDivider} />
+              <View style={styles.nutritionCol}>
+                <Text style={styles.totalLabel}>CALORIES</Text>
+                <View style={styles.totalInputRow}>
+                  <TextInput
+                    style={[
+                      styles.totalInput,
+                      textInputWeb,
+                      Platform.OS === 'web'
+                        ? ({ width: `${Math.max(calorieOverride.length, 1)}ch` } as object)
+                        : null,
+                    ]}
+                    value={calorieOverride}
+                    onChangeText={(t) => setCalorieOverride(t.replace(/[^0-9.]/g, ''))}
+                    keyboardType="numeric"
+                    maxLength={5}
+                  />
+                  <Text style={styles.totalUnit}>cal</Text>
+                </View>
+                <Text style={styles.totalHint}>
+                  tap to adjust • max{' '}
+                  {maxAllowedOverride(
+                    anchorCalories || Number(calorieOverride) || 0,
+                    CALORIE_OVERRIDE_BUFFER,
+                  )}
+                </Text>
+              </View>
+            </Animated.View>
 
-            {items.length > 0 ? (
-              <Animated.View entering={FadeInDown.delay(160).duration(400)}>
-                {items.map((item, i) => (
-                  <View
-                    key={`${item.name}-${i}`}
-                    style={[styles.itemRow, i > 0 && styles.itemRowBorder]}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.itemName}>{item.name}</Text>
-                      <Text style={styles.itemPortion}>
-                        {item.estimated_grams ? `~${item.estimated_grams}g · ` : ''}
-                        {item.portion}
-                      </Text>
-                    </View>
-                    <View style={styles.itemRight}>
+            <Animated.View entering={FadeInDown.delay(220).duration(400)}>
+              <View style={styles.ingredientsCard}>
+                <View style={styles.ingredientsHeader}>
+                  <Text style={styles.ingredientsTitle}>INGREDIENTS ({items.length})</Text>
+                </View>
+
+                {items.map((item, i) => {
+                  const totalProtein = items.reduce(
+                    (s, it) => s + (Number(it.protein_g) || 0),
+                    0,
+                  );
+                  const totalCal = Number(calorieOverride) || anchorCalories || 0;
+                  const itemCalories =
+                    typeof item.calories_g === 'number' && item.calories_g >= 0
+                      ? item.calories_g
+                      : totalProtein > 0
+                        ? Math.round(totalCal * (item.protein_g / totalProtein))
+                        : Math.round(totalCal / Math.max(items.length, 1));
+                  return (
+                    <Pressable
+                      key={`${item.name}-${i}`}
+                      onPress={() => {
+                        Haptics.selectionAsync().catch(() => {});
+                        const q = new URLSearchParams({
+                          index: String(i),
+                          name: item.name,
+                          portion: item.portion || '1 serving',
+                          protein: String(item.protein_g),
+                          calories: String(itemCalories),
+                        });
+                        if (item.estimated_grams != null) {
+                          q.set('grams', String(item.estimated_grams));
+                        }
+                        router.push(`/scan-adjust?${q.toString()}` as never);
+                      }}
+                      style={[styles.ingredientRow, i > 0 && styles.ingredientRowBorder]}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Adjust ${item.name}`}>
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text style={styles.itemName} numberOfLines={1}>
+                          {item.name}
+                        </Text>
+                        <Text style={styles.itemPortion} numberOfLines={1}>
+                          {item.estimated_grams ? `~${item.estimated_grams}g • ` : ''}
+                          {item.portion}
+                        </Text>
+                      </View>
                       <Text style={styles.itemProtein}>
                         {item.protein_g < 10
                           ? item.protein_g.toFixed(1)
                           : Math.round(item.protein_g)}
                         g
                       </Text>
-                      {item.confidence === 'low' ? (
-                        <Text style={styles.itemLowConf}>low conf.</Text>
-                      ) : null}
-                    </View>
-                  </View>
-                ))}
-              </Animated.View>
-            ) : null}
-
-            <View style={styles.rule} />
-
-            <Animated.View entering={FadeInDown.delay(240).duration(400)} style={styles.totalBlock}>
-              <Text style={styles.totalLabel}>TOTAL PROTEIN</Text>
-              <View style={styles.totalInputRow}>
-                <TextInput
-                  style={[
-                    styles.totalInput,
-                    textInputWeb,
-                    Platform.OS === 'web'
-                      ? ({ width: `${Math.max(proteinOverride.length, 1)}ch` } as object)
-                      : null,
-                  ]}
-                  value={proteinOverride}
-                  onChangeText={(t) => setProteinOverride(t.replace(/[^0-9.]/g, ''))}
-                  keyboardType="numeric"
-                  maxLength={5}
-                />
-                <Text style={styles.totalUnit}>g</Text>
+                      <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+                    </Pressable>
+                  );
+                })}
               </View>
-              <Text style={styles.totalHint}>
-                tap to adjust · max{' '}
-                {maxAllowedOverride(anchorProtein, PROTEIN_OVERRIDE_BUFFER_G)}g
-              </Text>
+
+              <Pressable
+                onPress={() => {
+                  Haptics.selectionAsync().catch(() => {});
+                  router.push('/scan-ingredient' as never);
+                }}
+                style={({ pressed }) => [
+                  styles.addIngredientRow,
+                  pressableWeb,
+                  pressed && { opacity: 0.88 },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Add ingredient">
+                <View style={styles.addIngredientIcon}>
+                  <Ionicons name="add" size={18} color={colors.accent} />
+                </View>
+                <Text style={styles.addIngredientText}>Add ingredient</Text>
+              </Pressable>
             </Animated.View>
 
-            <Animated.View entering={FadeInDown.delay(280).duration(400)} style={styles.totalBlock}>
-              <Text style={styles.totalLabel}>CALORIES</Text>
-              <View style={styles.totalInputRow}>
-                <TextInput
-                  style={[
-                    styles.totalInput,
-                    textInputWeb,
-                    Platform.OS === 'web'
-                      ? ({ width: `${Math.max(calorieOverride.length, 1)}ch` } as object)
-                      : null,
-                  ]}
-                  value={calorieOverride}
-                  onChangeText={(t) => setCalorieOverride(t.replace(/[^0-9.]/g, ''))}
-                  keyboardType="numeric"
-                  maxLength={5}
-                />
-                <Text style={styles.totalUnit}>cal</Text>
-              </View>
-              <Text style={styles.totalHint}>
-                tap to adjust · max{' '}
-                {maxAllowedOverride(anchorCalories || Number(calorieOverride) || 0, CALORIE_OVERRIDE_BUFFER)}
-              </Text>
-            </Animated.View>
-
-            <Animated.View entering={FadeInDown.delay(320)} style={{ gap: 4, marginTop: spacing.lg }}>
-              <Button title="Save changes" onPress={handleSave} loading={saving} />
-              <Button
-                title="Close"
-                variant="ghost"
-                onPress={() =>
-                  router.canGoBack() ? router.back() : router.replace('/(tabs)/today')
-                }
-              />
+            <Animated.View entering={FadeInDown.delay(320)} style={styles.resultActions}>
+              <Pressable
+                onPress={() => {
+                  void handleSave();
+                }}
+                disabled={saving}
+                hitSlop={8}
+                pressRetentionOffset={{ top: 20, bottom: 20, left: 20, right: 20 }}
+                style={({ pressed }) => [
+                  styles.logItBtn,
+                  pressableWeb,
+                  saving && { opacity: 0.5 },
+                  pressed && !saving && { opacity: 0.85 },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Save changes">
+                {saving ? (
+                  <ActivityIndicator color={colors.onAccent} />
+                ) : (
+                  <>
+                    <Ionicons name="checkmark-circle" size={22} color={colors.onAccent} />
+                    <Text style={styles.logItBtnText}>Save changes</Text>
+                  </>
+                )}
+              </Pressable>
             </Animated.View>
           </ScrollView>
         )}
@@ -341,6 +532,10 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.hairlineBright,
   },
+  iconBtnSpacer: {
+    width: 44,
+    height: 44,
+  },
   topTitle: {
     fontFamily: fonts.mono,
     fontSize: 11,
@@ -367,14 +562,53 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontFamily: fonts.body,
-    fontSize: 14,
+    fontSize: 15,
     color: colors.textSecondary,
   },
   resultScroll: { paddingTop: spacing.sm, paddingBottom: spacing.xxl },
   resultImageWrap: {
-    width: '85%',
+    width: '100%',
     alignSelf: 'center',
-    marginBottom: spacing.lg,
+    marginBottom: spacing.md,
+  },
+  resultPhotoShell: {
+    width: '100%',
+    position: 'relative',
+    overflow: 'hidden',
+    borderRadius: radius.md,
+  },
+  confidenceBadge: {
+    position: 'absolute',
+    top: spacing.sm,
+    left: spacing.sm,
+    zIndex: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: radius.full,
+    backgroundColor: 'rgba(12, 11, 16, 0.82)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.12)',
+  },
+  confidenceBadgeText: {
+    fontFamily: fonts.mono,
+    fontSize: 10,
+    letterSpacing: 1.1,
+    color: colors.text,
+  },
+  confidenceLevel: {
+    color: colors.accent,
+    fontFamily: fonts.mono,
+  },
+  resultTitleBlock: {
+    marginBottom: spacing.md,
+  },
+  foodNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
   foodName: {
     fontFamily: fonts.displayHeavy,
@@ -387,85 +621,161 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs,
     paddingHorizontal: 0,
     margin: 0,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.hairlineBright,
+    borderBottomWidth: 0,
+  },
+  foodNameEditBtn: {
+    padding: 4,
   },
   metaText: {
-    fontFamily: fonts.mono,
-    fontSize: 10,
-    letterSpacing: 1,
+    fontFamily: fonts.body,
+    fontSize: 13,
     color: colors.textTertiary,
-    marginTop: 6,
+    marginTop: 2,
   },
-  rule: {
-    height: StyleSheet.hairlineWidth,
+  nutritionCard: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  nutritionCol: {
+    flex: 1,
+    paddingHorizontal: spacing.sm,
+  },
+  nutritionDivider: {
+    width: StyleSheet.hairlineWidth,
     backgroundColor: colors.hairlineBright,
-    marginVertical: spacing.lg,
+    alignSelf: 'stretch',
   },
-  itemRow: {
+  ingredientsCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  ingredientsHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 14,
-    gap: spacing.md,
+    justifyContent: 'space-between',
+    paddingVertical: spacing.sm,
   },
-  itemRowBorder: {
+  ingredientsTitle: {
+    fontFamily: fonts.mono,
+    fontSize: 11,
+    letterSpacing: 1.6,
+    color: colors.textSecondary,
+  },
+  ingredientRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    gap: spacing.sm,
+  },
+  ingredientRowBorder: {
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.hairline,
   },
-  itemName: { fontFamily: fonts.displayMedium, fontSize: 14, color: colors.text },
+  addIngredientRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 10,
+    marginBottom: spacing.sm,
+    paddingVertical: 14,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,138,61,0.28)',
+  },
+  addIngredientIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,138,61,0.14)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,138,61,0.4)',
+  },
+  addIngredientText: {
+    fontFamily: fonts.displayMedium,
+    fontSize: 15,
+    color: colors.accent,
+  },
+  itemName: { fontFamily: fonts.displayMedium, fontSize: 15, color: colors.text },
   itemPortion: {
-    fontFamily: fonts.mono,
-    fontSize: 10,
+    fontFamily: fonts.body,
+    fontSize: 12,
     color: colors.textTertiary,
     marginTop: 2,
-    letterSpacing: 0.3,
   },
-  itemRight: { alignItems: 'flex-end' },
   itemProtein: {
     fontFamily: fonts.display,
-    fontSize: 16,
+    fontSize: 15,
     color: colors.text,
     fontVariant: ['tabular-nums'],
   },
-  itemLowConf: {
-    fontFamily: fonts.mono,
-    fontSize: 9,
-    color: colors.textTertiary,
-    marginTop: 2,
-  },
-  totalBlock: { marginBottom: spacing.md },
   totalLabel: {
     fontFamily: fonts.mono,
-    fontSize: 9,
-    letterSpacing: 1.6,
+    fontSize: 10,
+    letterSpacing: 1.4,
     color: colors.textTertiary,
-    marginBottom: 4,
   },
   totalInputRow: {
     flexDirection: 'row',
-    alignItems: 'baseline',
+    alignItems: 'flex-end',
+    alignSelf: 'flex-start',
     gap: 4,
+    marginTop: 2,
   },
   totalInput: {
-    fontFamily: fonts.displayHeavy,
     fontSize: 40,
     lineHeight: displayLH(40),
-    color: colors.text,
-    letterSpacing: -1.2,
-    minWidth: 48,
+    fontFamily: fonts.displayHeavy,
+    color: colors.accent,
+    fontVariant: ['tabular-nums'],
     padding: 0,
-    margin: 0,
+    minWidth: 28,
+    letterSpacing: -1.2,
   },
   totalUnit: {
-    fontFamily: fonts.mono,
-    fontSize: 16,
-    color: colors.textTertiary,
+    fontSize: 18,
+    lineHeight: displayLH(18),
+    fontFamily: fonts.displayHeavy,
+    color: colors.accent,
+    marginBottom: 8,
+    marginLeft: 1,
   },
   totalHint: {
     fontFamily: fonts.mono,
-    fontSize: 10,
+    fontSize: 9,
     color: colors.textTertiary,
-    marginTop: 4,
     letterSpacing: 0.3,
+    marginTop: 4,
+  },
+  resultActions: {
+    gap: spacing.sm,
+    marginTop: spacing.lg,
+  },
+  logItBtn: {
+    height: 54,
+    borderRadius: radius.button,
+    backgroundColor: colors.accent,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  logItBtnText: {
+    fontFamily: fonts.displayMedium,
+    fontSize: 16,
+    color: colors.onAccent,
+    letterSpacing: 0.2,
   },
 });
