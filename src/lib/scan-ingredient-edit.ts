@@ -238,6 +238,191 @@ export function formatQuantityLabel(qty: number): string {
   return qty.toFixed(1).replace(/\.0$/, '');
 }
 
+const GRAIN_KEYWORDS = [
+  'rice',
+  'basmati',
+  'jasmine',
+  'quinoa',
+  'oats',
+  'oatmeal',
+  'cereal',
+  'muesli',
+  'granola',
+  'couscous',
+  'porridge',
+  'bulgur',
+  'farro',
+  'barley',
+  'millet',
+  'polenta',
+  'grits',
+  'congee',
+  'risotto',
+] as const;
+
+const SPOONABLE_KEYWORDS = [
+  'curd',
+  'yogurt',
+  'yoghurt',
+  'raita',
+  'cream',
+  'sour cream',
+  'sugar',
+  'honey',
+  'jam',
+  'jelly',
+  'butter',
+  'peanut butter',
+  'almond butter',
+  'nutella',
+] as const;
+
+const DRINK_KEYWORDS = [
+  'milk',
+  'juice',
+  'water',
+  'coffee',
+  'tea',
+  'latte',
+  'smoothie',
+  'shake',
+  'lassi',
+  'buttermilk',
+  'coconut milk',
+] as const;
+
+const BOWL_FOOD_KEYWORDS = [
+  'soup',
+  'broth',
+  'stew',
+  'dal',
+  'dahl',
+  'sambar',
+  'sambhar',
+  'rasam',
+  'curry',
+  'bisque',
+  'chowder',
+  'consomme',
+  'chili',
+  'chilli',
+] as const;
+
+const DRIZZLE_KEYWORDS = ['oil', 'olive oil', 'dressing', 'vinaigrette'] as const;
+const SALAD_KEYWORDS = ['salad', 'slaw', 'coleslaw'] as const;
+
+const EMBEDDED_QTY_RE =
+  /(\d+(?:\.\d+)?)\s*(cups?|glasses?|servings?|bowls?|plates?|scoops?|slices?|pieces?|spoonfuls?|spoons?|tbsp|tsp|tablespoons?|teaspoons?)\b/i;
+
+const KNOWN_COUNT_UNITS = new Set([
+  'cup',
+  'glass',
+  'bowl',
+  'plate',
+  'ladle',
+  'scoop',
+  'slice',
+  'piece',
+  'spoonful',
+  'teaspoon',
+  'drizzle',
+]);
+
+const NATURAL_UNIT_RE =
+  /\b(cups?|glasses?|bowls?|plates?|ladles?|scoops?|slices?|pieces?|spoonfuls?|spoons?|tbsp|tablespoons?|tsp|teaspoons?|drizzle|servings?)\b/i;
+
+function normalizeCountUnit(raw: string): string {
+  const lower = raw.toLowerCase();
+  if (/^bowls?$/.test(lower)) return 'bowl';
+  if (/^plates?$/.test(lower)) return 'plate';
+  if (/^cups?$/.test(lower)) return 'cup';
+  if (/^glasses?$/.test(lower)) return 'glass';
+  if (/^scoops?$/.test(lower)) return 'scoop';
+  if (/^slices?$/.test(lower)) return 'slice';
+  if (/^pieces?$/.test(lower)) return 'piece';
+  if (/^servings?$/.test(lower)) return 'serving';
+  if (/^ladles?$/.test(lower)) return 'ladle';
+  if (/^(spoonfuls?|spoons?|tbsp|tablespoons?)$/.test(lower)) return 'spoonful';
+  if (/^(tsp|teaspoons?)$/.test(lower)) return 'teaspoon';
+  if (/^drizzle$/.test(lower)) return 'drizzle';
+  return lower.replace(/s$/, '');
+}
+
+function detectNaturalUnit(text: string): string | null {
+  const m = text.match(NATURAL_UNIT_RE);
+  if (!m?.[1]) return null;
+  return normalizeCountUnit(m[1]);
+}
+
+function isWeightOnlyRest(rest: string): boolean {
+  const t = rest.trim();
+  if (!t) return false;
+  if (EMBEDDED_QTY_RE.test(t)) return false;
+  return WEIGHT_OR_VOLUME_RE.test(t) || LEADING_WEIGHT_RE.test(t);
+}
+
+/** Default vessel/unit for foods that rarely say "1 serving". */
+export function resolveNaturalMeasureUnit(name: string, portion: string): string | null {
+  const fromText = detectNaturalUnit(`${portion} ${name}`);
+  if (fromText && fromText !== 'serving') return fromText;
+  const hay = `${name} ${portion}`.trim();
+  if (textHasKeyword(hay, GRAIN_KEYWORDS)) return 'cup';
+  if (textHasKeyword(hay, SPOONABLE_KEYWORDS)) return 'spoonful';
+  if (textHasKeyword(hay, DRINK_KEYWORDS)) return 'cup';
+  if (textHasKeyword(hay, BOWL_FOOD_KEYWORDS)) return 'bowl';
+  if (textHasKeyword(hay, DRIZZLE_KEYWORDS)) return 'spoonful';
+  if (textHasKeyword(hay, SALAD_KEYWORDS)) return 'bowl';
+  return null;
+}
+
+/**
+ * Unit label for the count wheel ("eggs", "slices", "cups", food name, …).
+ * Always returns a singular base; pair with formatCountUnitLabel for display.
+ */
+export function resolveAdjustCountUnit(name: string, portion: string): string {
+  const fromCount = detectCountUnit(`${name} ${portion}`.trim().toLowerCase());
+  if (fromCount) return fromCount;
+
+  const natural = resolveNaturalMeasureUnit(name, portion);
+  if (natural && natural !== 'drizzle') return natural;
+
+  const vessel = detectVessel(portion);
+  if (vessel && vessel !== 'serving') return vessel;
+
+  const { rest } = parsePortionQuantity(portion);
+  if (/^servings?$/i.test(rest.trim())) return 'serving';
+
+  const cleaned = rest
+    .replace(/^~?\d+(?:\.\d+)?\s*(g|grams?|kg|oz|ml)\b/i, '')
+    .replace(/[•|,]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (cleaned && !isWeightOnlyRest(cleaned) && !/^servings?$/i.test(cleaned)) {
+    const nested = detectVessel(cleaned);
+    if (nested && nested !== 'serving') return nested;
+    const singular = cleaned.replace(/s$/i, '') || cleaned;
+    if (!/^~?\d/.test(cleaned) && !KNOWN_COUNT_UNITS.has(singular.toLowerCase())) {
+      return singular;
+    }
+  }
+
+  return foodLower(name);
+}
+
+/** Pluralize a count-wheel unit for the given quantity. */
+export function formatCountUnitLabel(unit: string, qty: number): string {
+  const base = unit.trim() || 'serving';
+  if (base === 'spoonful') return Math.abs(qty - 1) < 0.001 ? 'spoonful' : 'spoonfuls';
+  if (base === 'drizzle') return Math.abs(qty - 1) < 0.001 ? 'drizzle' : 'drizzles';
+  if (Math.abs(qty - 1) < 0.001) {
+    if (/s$/i.test(base) && !/ss$/i.test(base)) return base.replace(/s$/i, '');
+    return base;
+  }
+  if (/s$/i.test(base)) return base;
+  if (/[^aeiou]y$/i.test(base)) return `${base.slice(0, -1)}ies`;
+  return `${base}s`;
+}
+
 const SAUCE_ADD_KEYWORDS = [
   'chutney',
   'sauce',
