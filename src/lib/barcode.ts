@@ -343,7 +343,7 @@ const OFF_HOSTS = [
   'https://world.openproductsfacts.org',
 ] as const;
 
-const BARCODE_FETCH_TIMEOUT_MS = 6_000;
+const BARCODE_FETCH_TIMEOUT_MS = 2_500;
 
 async function fetchOffProduct(code: string): Promise<{ product: OffProduct; source: string } | null> {
   const headers = {
