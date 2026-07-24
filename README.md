@@ -4,7 +4,7 @@ Snap a photo of your food. AI counts the protein. Hit your daily goal.
 
 CalAI-style food tracking, ruthlessly focused on one number: **grams of protein**.
 
-**Live web version: https://proteinquest.app**
+**Live web version: https://proteinquest.vercel.app**
 
 Demo video: `demo/proteinquest-demo.mp4`
 
@@ -30,7 +30,7 @@ That's it — full app with the real camera flow.
 npx expo start --web        # local
 ```
 
-or just open https://proteinquest.app (deployed). Web has a full in-app
+or just open https://proteinquest.vercel.app (deployed). Web has a full in-app
 camera viewfinder (getUserMedia) plus a library upload button.
 
 ## How it works
@@ -70,7 +70,7 @@ Anonymous Supabase session only — no sign-in UI. Sessions are created automati
 | Layer | Tech |
 |---|---|
 | App | React Native + Expo (SDK 56), expo-router, TypeScript |
-| Web deploy | Vercel (Expo export), https://proteinquest.app |
+| Web deploy | Vercel (Expo export), https://proteinquest.vercel.app |
 | Backend | Supabase `csxdkvpvcasuknhnprxp` (Postgres + RLS, anonymous auth, Storage, Edge Functions) |
 | AI | OpenAI vision (`gpt-4o` primary, Gemini fallback) via the `analyze-food` Edge Function — key stays server-side |
 
