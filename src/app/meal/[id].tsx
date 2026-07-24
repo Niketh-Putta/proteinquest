@@ -18,6 +18,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MealPhotoPreview } from '@/components/MealPhotoPreview';
 import { PageCanvas } from '@/components/PageCanvas';
 import { fetchLogById, getFoodPhotoUrl, updateLog } from '@/lib/api';
+import { getLocalMealPhoto } from '@/lib/local-meal-photo';
 import { useLayout } from '@/lib/layout';
 import {
   CALORIE_OVERRIDE_BUFFER,
@@ -110,7 +111,8 @@ export default function MealDetailScreen() {
         setAnchorCalories(calories);
         setProteinOverride(String(Math.round(protein)));
         setCalorieOverride(calories > 0 ? String(Math.round(calories)) : '');
-        const uri = await getFoodPhotoUrl(row.image_path);
+        const uri =
+          (await getFoodPhotoUrl(row.image_path)) ?? getLocalMealPhoto(row.id);
         if (!cancelled) setPhotoUri(uri);
       } catch {
         if (!cancelled) setError('Could not load this meal');

@@ -27,11 +27,12 @@ import {
   AdjustSize,
   buildAdjustQuestion,
   buildSizePortion,
+  formatCountUnitLabel,
   formatQuantityLabel,
   formatSizeLabel,
   parsePortionQuantity,
   parsePortionSize,
-  pluralizeFood,
+  resolveAdjustCountUnit,
   resolveAdjustQuantityMode,
   setPendingIngredientEdit,
 } from '@/lib/scan-ingredient-edit';
@@ -97,9 +98,13 @@ export default function ScanAdjustScreen() {
   );
   const sizeMode = mode === 'size';
 
-  const { qty: parsedQty, rest: portionRest } = useMemo(
+  const { qty: parsedQty } = useMemo(
     () => parsePortionQuantity(initialPortion),
     [initialPortion],
+  );
+  const countUnit = useMemo(
+    () => resolveAdjustCountUnit(name, initialPortion),
+    [name, initialPortion],
   );
   // New ingredients always start at quantity 1; catalog macros are per unit.
   const baseQty = isAdd ? 1 : parsedQty;
@@ -199,7 +204,7 @@ export default function ScanAdjustScreen() {
       ? buildSizePortion(nextSize, name)
       : nextQty === 0
         ? 'none'
-        : `${formatQuantityLabel(nextQty)} ${portionRest || pluralizeFood(name, nextQty)}`.trim();
+        : `${formatQuantityLabel(nextQty)} ${formatCountUnitLabel(countUnit, nextQty)}`.trim();
     setPendingIngredientEdit({
       index: -1,
       name: name.trim() || 'Ingredient',
@@ -220,7 +225,7 @@ export default function ScanAdjustScreen() {
     caloriesPerUnit,
     gramsPerUnit,
     name,
-    portionRest,
+    countUnit,
   ]);
 
   const scaledProtein = roundProtein(
@@ -237,7 +242,7 @@ export default function ScanAdjustScreen() {
     return Math.max(0, Math.round(gramsPerUnit * qty));
   })();
 
-  const unitLabel = portionRest || pluralizeFood(name, qty === 0 ? 2 : qty);
+  const unitLabel = formatCountUnitLabel(countUnit, qty === 0 ? 2 : qty);
   const question = useMemo(
     () => buildAdjustQuestion(name, initialPortion, mode),
     [name, initialPortion, mode],
@@ -271,8 +276,7 @@ export default function ScanAdjustScreen() {
 
   function buildPortion(nextQty: number): string {
     if (nextQty === 0) return 'none';
-    const label = portionRest || pluralizeFood(name, nextQty);
-    return `${formatQuantityLabel(nextQty)} ${label}`.trim();
+    return `${formatQuantityLabel(nextQty)} ${formatCountUnitLabel(countUnit, nextQty)}`.trim();
   }
 
   function buildEditAtIndex(i: number) {
