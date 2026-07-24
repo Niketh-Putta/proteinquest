@@ -11,13 +11,20 @@ export type SquareMealPhoto = {
 
 export type { CameraCrop } from './camera-geometry';
 
-/** Enough detail for portions; smaller = faster upload + model TTFT. */
-const EXPORT_MAX_SIDE = 512;
+/**
+ * Longest side after crop/resize.
+ * 720 keeps portion detail sharp for the model without huge upload/TTFT cost.
+ * (Previously 448 @ 0.48 JPEG, which looked soft in Logged Today + analysis.)
+ */
+export const EXPORT_MAX_SIDE = 720;
 
 /**
  * Prepare a meal photo for analyze.
  * - Live camera: crop to the square viewfinder, then resize to EXPORT_MAX_SIDE.
  * - Library import: keep the full image aspect ratio (no square crop); only downscale.
+ *
+ * `uri` is always a `data:image/jpeg;base64,...` URL so web previews work under CSP
+ * (img-src allows data: but not blob:) and Safari never shows a broken "Load Error".
  */
 export async function prepareSquareMealPhoto(
   uri: string,
@@ -25,10 +32,16 @@ export async function prepareSquareMealPhoto(
 ): Promise<SquareMealPhoto> {
   // Image.getSize can return Fresco's downsampled dimensions on Android.
   // Decode through ImageManipulator so crop coordinates match its actual bitmap.
+  // Reuse the decoded ref for crop/resize so we do not reload the source URI
+  // (web ImageManipulator sets crossOrigin=anonymous, which can fail on data:/blob:).
   const source = await ImageManipulator.manipulate(uri).renderAsync();
   const { width, height } = source;
 
-  let chain = ImageManipulator.manipulate(uri);
+  if (!width || !height) {
+    throw new Error('Could not read that image. Try again or pick a different photo.');
+  }
+
+  let chain = ImageManipulator.manipulate(source);
 
   if (cameraCrop) {
     const crop = cameraViewfinderCrop(width, height, cameraCrop);
@@ -42,7 +55,8 @@ export async function prepareSquareMealPhoto(
 
   const saved = await rendered.saveAsync({
     format: SaveFormat.JPEG,
-    compress: 0.55,
+    // ~0.8: crisp food detail without ballooning base64 / upload time.
+    compress: 0.8,
     base64: true,
   });
 
@@ -51,7 +65,7 @@ export async function prepareSquareMealPhoto(
   }
 
   return {
-    uri: saved.uri,
+    uri: `data:image/jpeg;base64,${saved.base64}`,
     base64: saved.base64,
     width: saved.width,
     height: saved.height,

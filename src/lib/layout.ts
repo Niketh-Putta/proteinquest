@@ -48,27 +48,36 @@ export function useLayout() {
   const isTablet = breakpoint === 'tablet';
   const isDesktop = breakpoint === 'desktop';
   const isWide = width >= 600;
+  const isVeryNarrow = width < 340;
+  const isNarrow = width < 400;
+  /** Short viewports (SE / landscape phone) need tighter chrome. */
+  const isTinyH = height < 620;
+  const isCompactH = !isTinyH && height < 740;
 
-  const contentMaxWidth = isDesktop ? 880 : isTablet ? 680 : 480;
+  /** Wide shell for split/sidebar heroes (Today). */
+  const contentMaxWidth = isDesktop ? 1100 : isTablet ? 760 : 480;
+  /** Single-column forms/lists stay phone-like on tablet/iPad. */
+  const formMaxWidth = isDesktop ? 560 : isTablet ? 520 : 480;
   const contentWidth = Math.min(width, contentMaxWidth);
-  const horizontalPad = width < 380 ? 16 : isDesktop ? 40 : isTablet ? 28 : 20;
+  const formWidth = Math.min(width, formMaxWidth);
+  const horizontalPad = isVeryNarrow ? 12 : width < 380 ? 16 : isDesktop ? 40 : isTablet ? 28 : 20;
   const touchMin = 44;
 
   const ringSize = isDesktop
-    ? 320
+    ? 360
     : isTablet
-      ? Math.min(300, width - 160)
+      ? Math.min(320, width - 160)
       : Math.min(width - 48, width < 400 ? 220 : 264);
 
   /** stack = phone column · split = tablet ring+dragon row · sidebar = desktop logs | dragon */
   const heroLayout: HeroLayout = isDesktop ? 'sidebar' : isTablet ? 'split' : 'stack';
 
-  const columnGap = isDesktop ? 32 : isTablet ? 24 : 0;
-  const asideWidth = isDesktop ? 360 : 0;
+  const columnGap = isDesktop ? 40 : isTablet ? 28 : 0;
+  const asideWidth = isDesktop ? 400 : 0;
 
-  const typeScale = isDesktop ? 1.15 : isTablet ? 1.05 : 1;
+  const typeScale = isDesktop ? 1.2 : isTablet ? 1.08 : 1;
   const titleSize = Math.round(38 * typeScale);
-  const characterScale = isDesktop ? 1.2 : isTablet ? 1.08 : 1;
+  const characterScale = isDesktop ? 1.28 : isTablet ? 1.1 : 1;
 
   return {
     width,
@@ -78,9 +87,14 @@ export function useLayout() {
     isTablet,
     isDesktop,
     isWide,
-    isNarrow: width < 400,
+    isNarrow,
+    isVeryNarrow,
+    isTinyH,
+    isCompactH,
     contentWidth,
     contentMaxWidth,
+    formWidth,
+    formMaxWidth,
     horizontalPad,
     ringSize,
     touchMin,

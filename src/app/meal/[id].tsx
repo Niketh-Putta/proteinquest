@@ -28,7 +28,11 @@ import {
   maxAllowedOverride,
 } from '@/lib/log-limits';
 import { todayISODate } from '@/lib/protein';
-import { consumePendingIngredientEdit } from '@/lib/scan-ingredient-edit';
+import {
+  consumePendingIngredientEdit,
+  registerIngredientEditApplier,
+  type ScanIngredientEdit,
+} from '@/lib/scan-ingredient-edit';
 import type { FoodItem, ProteinLog } from '@/lib/types';
 import {
   colors,
@@ -60,15 +64,15 @@ export default function MealDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const {
     horizontalPad,
-    contentMaxWidth,
-    contentWidth,
+    formMaxWidth,
+    formWidth,
     height,
     isTablet,
     isDesktop,
   } = useLayout();
   const tinyH = height < 700;
   const compactH = height < 780;
-  const stageMaxWidth = Math.min(contentWidth, isDesktop ? 560 : isTablet ? 520 : 480);
+  const stageMaxWidth = Math.min(formWidth, isDesktop ? 560 : isTablet ? 520 : 480);
 
   const foodNameRef = useRef<TextInput>(null);
   const [log, setLog] = useState<ProteinLog | null>(null);
@@ -126,55 +130,59 @@ export default function MealDetailScreen() {
     };
   }, [id]);
 
+  const applyIngredientEdit = useCallback((edit: ScanIngredientEdit) => {
+    setItems((prev) => {
+      const action = edit.action ?? 'update';
+      let next = [...prev];
+
+      if (action === 'delete') {
+        if (edit.index < 0 || edit.index >= next.length) return prev;
+        next = next.filter((_, i) => i !== edit.index);
+      } else if (action === 'add') {
+        next.push({
+          name: edit.name,
+          portion: edit.portion,
+          protein_g: edit.protein_g,
+          calories_g: edit.calories_g,
+          estimated_grams: edit.estimated_grams,
+          confidence: 'medium',
+        });
+      } else {
+        const current = next[edit.index];
+        if (!current) return prev;
+        next[edit.index] = {
+          ...current,
+          name: edit.name,
+          portion: edit.portion,
+          protein_g: edit.protein_g,
+          calories_g: edit.calories_g,
+          estimated_grams: edit.estimated_grams,
+        };
+      }
+
+      const totalProtein = next.reduce((s, i) => s + (Number(i.protein_g) || 0), 0);
+      const itemCalSum = next.reduce((s, i) => {
+        const c = Number(i.calories_g);
+        return s + (Number.isFinite(c) && c >= 0 ? c : 0);
+      }, 0);
+      const nextProtein = Math.round(totalProtein * 10) / 10;
+      const nextCalories = Math.round(itemCalSum);
+
+      setAnchorProtein(nextProtein);
+      setAnchorCalories(nextCalories);
+      setProteinOverride(String(nextProtein));
+      setCalorieOverride(String(nextCalories));
+      return next;
+    });
+  }, []);
+
+  useEffect(() => registerIngredientEditApplier(applyIngredientEdit), [applyIngredientEdit]);
+
   useFocusEffect(
     useCallback(() => {
       const edit = consumePendingIngredientEdit();
-      if (!edit) return;
-
-      setItems((prev) => {
-        const action = edit.action ?? 'update';
-        let next = [...prev];
-
-        if (action === 'delete') {
-          if (edit.index < 0 || edit.index >= next.length) return prev;
-          next = next.filter((_, i) => i !== edit.index);
-        } else if (action === 'add') {
-          next.push({
-            name: edit.name,
-            portion: edit.portion,
-            protein_g: edit.protein_g,
-            calories_g: edit.calories_g,
-            estimated_grams: edit.estimated_grams,
-            confidence: 'medium',
-          });
-        } else {
-          const current = next[edit.index];
-          if (!current) return prev;
-          next[edit.index] = {
-            ...current,
-            name: edit.name,
-            portion: edit.portion,
-            protein_g: edit.protein_g,
-            calories_g: edit.calories_g,
-            estimated_grams: edit.estimated_grams,
-          };
-        }
-
-        const totalProtein = next.reduce((s, i) => s + (Number(i.protein_g) || 0), 0);
-        const itemCalSum = next.reduce((s, i) => {
-          const c = Number(i.calories_g);
-          return s + (Number.isFinite(c) && c >= 0 ? c : 0);
-        }, 0);
-        const nextProtein = Math.round(totalProtein * 10) / 10;
-        const nextCalories = Math.round(itemCalSum);
-
-        setAnchorProtein(nextProtein);
-        setAnchorCalories(nextCalories);
-        setProteinOverride(String(nextProtein));
-        setCalorieOverride(String(nextCalories));
-        return next;
-      });
-    }, []),
+      if (edit) applyIngredientEdit(edit);
+    }, [applyIngredientEdit]),
   );
 
   async function handleSave() {
@@ -240,7 +248,7 @@ export default function MealDetailScreen() {
             styles.topBar,
             {
               paddingHorizontal: horizontalPad,
-              maxWidth: contentMaxWidth,
+              maxWidth: formMaxWidth,
               width: '100%',
               alignSelf: 'center',
             },
@@ -282,8 +290,8 @@ export default function MealDetailScreen() {
               styles.resultScroll,
               {
                 paddingHorizontal: horizontalPad,
-                maxWidth: contentMaxWidth,
-                width: contentWidth,
+                maxWidth: formMaxWidth,
+                width: formWidth,
                 alignSelf: 'center',
               },
             ]}>

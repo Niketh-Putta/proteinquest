@@ -32,8 +32,8 @@ export function GlassPanel({ children, style, emphasized = false }: Props) {
     return (
       <GlassView
         style={[styles.base, style]}
-        glassEffectStyle="regular"
-        tintColor={emphasized ? 'rgba(255,122,89,0.28)' : 'rgba(255,255,255,0.08)'}
+        glassEffectStyle={emphasized ? 'clear' : 'regular'}
+        tintColor={emphasized ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.08)'}
         isInteractive={emphasized}>
         {children}
       </GlassView>
@@ -46,7 +46,7 @@ export function GlassPanel({ children, style, emphasized = false }: Props) {
         styles.base,
         styles.fallback,
         emphasized && styles.fallbackEmphasized,
-        webBlurStyle,
+        emphasized ? webBlurEmphasized : webBlurStyle,
         style,
       ]}>
       {children}
@@ -62,6 +62,14 @@ const webBlurStyle: ViewStyle | null =
       } as ViewStyle)
     : null;
 
+const webBlurEmphasized: ViewStyle | null =
+  Platform.OS === 'web'
+    ? ({
+        backdropFilter: 'blur(40px) saturate(1.55)',
+        WebkitBackdropFilter: 'blur(40px) saturate(1.55)',
+      } as ViewStyle)
+    : null;
+
 const styles = StyleSheet.create({
   base: {
     borderRadius: radius.lg,
@@ -73,7 +81,12 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.14)',
   },
   fallbackEmphasized: {
-    backgroundColor: 'rgba(255,122,89,0.12)',
-    borderColor: 'rgba(255,122,89,0.45)',
+    backgroundColor: 'rgba(28, 24, 36, 0.42)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.22)',
+    shadowColor: '#FF7A59',
+    shadowOpacity: 0.18,
+    shadowRadius: 28,
+    shadowOffset: { width: 0, height: 12 },
   },
 });

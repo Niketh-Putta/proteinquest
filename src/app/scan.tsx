@@ -1,11 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
-import { CameraView, useCameraPermissions } from 'expo-camera';
+import { CameraView, useCameraPermissions, type BarcodeScanningResult } from 'expo-camera';
 import * as Haptics from 'expo-haptics';
+import { LinearGradient } from 'expo-linear-gradient';
 import { router, useFocusEffect } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Image,
   Keyboard,
-  KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
@@ -44,6 +45,7 @@ import {
   updateLogImagePath,
   uploadFoodPhoto,
 } from '@/lib/api';
+import { lookupBarcodeProduct } from '@/lib/barcode';
 import { trackEvent } from '@/lib/analytics';
 import { rememberLocalMealPhoto } from '@/lib/local-meal-photo';
 import {
@@ -73,13 +75,18 @@ import {
 } from '@/lib/paywall-gate';
 import { todayISODate } from '@/lib/protein';
 import { getRetention, markCareDay, rollLootDrop } from '@/lib/retention';
-import { consumePendingIngredientEdit } from '@/lib/scan-ingredient-edit';
+import {
+  consumePendingIngredientEdit,
+  registerIngredientEditApplier,
+  type ScanIngredientEdit,
+} from '@/lib/scan-ingredient-edit';
 import { useSession } from '@/lib/session';
 import type { Analysis } from '@/lib/types';
 import {
   colors,
   displayLH,
   fonts,
+  noTextCaret,
   pressableWeb,
   radius,
   shadowCard,
@@ -88,8 +95,35 @@ import {
 } from '@/theme';
 
 type Phase = 'camera' | 'analyzing' | 'result';
+type ScanMode = 'photo' | 'barcode' | 'text';
+
+const SCAN_MODE_OPTIONS: {
+  value: ScanMode;
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  labelNarrow: string;
+  a11y: string;
+}[] = [
+  { value: 'photo', icon: 'camera', label: 'PHOTO', labelNarrow: 'PHOTO', a11y: 'Photo' },
+  {
+    value: 'barcode',
+    icon: 'barcode-outline',
+    label: 'BARCODE',
+    labelNarrow: 'BARCODE',
+    a11y: 'Barcode',
+  },
+  {
+    value: 'text',
+    icon: 'text-outline',
+    label: 'TEXT',
+    labelNarrow: 'TEXT',
+    a11y: 'Text',
+  },
+];
 
 const DEMO_AUTO_SCAN_KEY = 'pq_demo_auto_scan';
+/** App icon mark (coral dragon + bowl). Pair with ProteinQuest wordmark text. */
+const BRAND_MARK = require('@/assets/images/icon.png');
 
 function isDemoAutoScan(): boolean {
   if (Platform.OS !== 'web') return false;
@@ -199,39 +233,132 @@ function AnalyzingProgressBar({ progress }: { progress: number }) {
   );
 }
 
+function ScanModeToggle({
+  value,
+  onChange,
+  disabled,
+  maxWidth,
+  itemH,
+  iconSize,
+  tinyH,
+  compactH,
+}: {
+  value: ScanMode;
+  onChange: (mode: ScanMode) => void;
+  disabled?: boolean;
+  maxWidth: number;
+  itemH: number;
+  iconSize: number;
+  tinyH: boolean;
+  compactH: boolean;
+}) {
+  const { width: winW } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  /** Width + height tiers from parent (tinyH/compactH/uiScale). */
+  const veryNarrow = winW < 340;
+  const narrow = winW < 380 || tinyH;
+  const wide = winW >= 430 && !tinyH && !compactH;
+  const sideInset = Math.max(insets.left, insets.right);
+  const outerPadH = (narrow ? 8 : wide ? 16 : 12) + (sideInset > 0 ? Math.min(sideInset, 6) : 0);
+  const trackPad = narrow ? 3 : wide ? 5 : 4;
+  const itemPadH = veryNarrow ? 2 : narrow ? 4 : wide ? 10 : 6;
+  const gap = narrow ? 2 : wide ? 4 : 3;
+  const labelSize = veryNarrow ? 8 : narrow ? 9 : compactH ? 10 : 11;
+  const itemGap = veryNarrow ? 3 : narrow ? 4 : 5;
+  const inactiveColor = 'rgba(210, 205, 215, 0.72)';
+
+  return (
+    <View style={{ width: '100%', maxWidth, paddingHorizontal: outerPadH, alignSelf: 'center' }}>
+      <GlassPanel style={[styles.modeToggle, { padding: trackPad, gap }]}>
+        {SCAN_MODE_OPTIONS.map((opt) => {
+          const selected = value === opt.value;
+          const tint = selected ? colors.accent : inactiveColor;
+          const label = veryNarrow ? opt.labelNarrow : opt.label;
+          return (
+            <Pressable
+              key={opt.value}
+              onPress={() => onChange(opt.value)}
+              disabled={disabled}
+              accessibilityRole="button"
+              accessibilityState={{ selected }}
+              accessibilityLabel={`Scan mode ${opt.a11y}`}
+              style={[
+                styles.modeToggleItem,
+                {
+                  height: itemH,
+                  paddingHorizontal: itemPadH,
+                  gap: itemGap,
+                },
+                selected && styles.modeToggleItemOn,
+                pressableWeb,
+              ]}>
+              <Ionicons name={opt.icon} size={iconSize} color={tint} />
+              <Text
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.78}
+                style={[
+                  styles.modeToggleLabel,
+                  {
+                    fontSize: labelSize,
+                    letterSpacing: veryNarrow ? 0.2 : narrow ? 0.35 : 0.55,
+                    color: tint,
+                  },
+                ]}>
+                {label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </GlassPanel>
+    </View>
+  );
+}
+
 function ScanViewfinder({
-  size,
+  width,
+  height,
   top,
   left,
   viewportW,
   viewportH,
   scale = 1,
-  onOutsidePress,
+  mode = 'photo',
 }: {
-  size: number;
+  width: number;
+  height: number;
   top: number;
   left: number;
   viewportW: number;
   viewportH: number;
   scale?: number;
-  onOutsidePress?: () => void;
+  mode?: Exclude<ScanMode, 'text'>;
 }) {
+  const shortSide = Math.min(width, height);
   /** Mild rectangle radius so brackets + dim hole stay aligned. */
-  const radius = Math.max(10, Math.min(16, Math.round(size * 0.045)));
+  const radius = Math.max(10, Math.min(16, Math.round(shortSide * 0.045)));
   const corner = Math.max(18, Math.round(28 * scale));
   const inset = Math.max(8, Math.round(10 * scale));
-  const iconSize = Math.max(24, Math.round(36 * scale));
+  const iconSize = Math.max(22, Math.round((mode === 'barcode' ? 30 : 36) * scale));
   const titleSize = Math.max(12, Math.round(15 * scale));
   const subSize = Math.max(11, Math.round(13 * scale));
-  const showGuide = size >= 180;
+  const showGuide = width >= 160 && height >= 88;
   const maskId = 'scan-finder-hole';
+  const guide =
+    mode === 'barcode'
+      ? {
+          icon: 'barcode-outline' as const,
+          title: 'ALIGN BARCODE',
+          sub: 'Hold steady over the code',
+        }
+      : {
+          icon: 'restaurant-outline' as const,
+          title: 'CENTER YOUR MEAL',
+          sub: "Make sure it's well lit",
+        };
   return (
-    <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Dismiss keyboard"
-        onPress={onOutsidePress}
-        style={StyleSheet.absoluteFill}>
+    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+      <View style={StyleSheet.absoluteFill}>
         <Svg width={viewportW} height={viewportH} style={StyleSheet.absoluteFill}>
           <Defs>
             <Mask id={maskId}>
@@ -239,8 +366,8 @@ function ScanViewfinder({
               <Rect
                 x={left}
                 y={top}
-                width={size}
-                height={size}
+                width={width}
+                height={height}
                 rx={radius}
                 ry={radius}
                 fill="#000"
@@ -256,18 +383,15 @@ function ScanViewfinder({
             mask={`url(#${maskId})`}
           />
         </Svg>
-      </Pressable>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Dismiss keyboard"
-        onPress={onOutsidePress}
+      </View>
+      <View
         style={[
           styles.finderGlass,
           {
             top,
             left,
-            width: size,
-            height: size,
+            width,
+            height,
             borderRadius: radius,
           },
         ]}>
@@ -290,20 +414,35 @@ function ScanViewfinder({
           />
         ))}
         {showGuide ? (
-          <View pointerEvents="none" style={[styles.finderGuide, { gap: Math.round(8 * scale) }]}>
-            <Ionicons name="restaurant-outline" size={iconSize} color={colors.accent} />
-            <Text style={[styles.finderGuideTitle, { fontSize: titleSize }]}>CENTER YOUR MEAL</Text>
-            <Text style={[styles.finderGuideSub, { fontSize: subSize }]}>Make sure it's well lit</Text>
+          <View
+            pointerEvents="none"
+            style={[
+              styles.finderGuide,
+              { gap: Math.round(8 * scale) },
+              mode === 'barcode' && styles.finderGuideOutlined,
+            ]}>
+            <Ionicons name={guide.icon} size={iconSize} color={colors.accent} />
+            <Text style={[styles.finderGuideTitle, { fontSize: titleSize }]}>{guide.title}</Text>
+            <Text style={[styles.finderGuideSub, { fontSize: subSize }]}>{guide.sub}</Text>
           </View>
         ) : null}
-      </Pressable>
+      </View>
     </View>
   );
 }
 
 export default function ScanScreen() {
   const { session, profile, saveProfile } = useSession();
-  const { horizontalPad, contentWidth, contentMaxWidth, isWide, isDesktop, isTablet } = useLayout();
+  const {
+    horizontalPad,
+    contentWidth,
+    contentMaxWidth,
+    formMaxWidth,
+    formWidth,
+    isWide,
+    isDesktop,
+    isTablet,
+  } = useLayout();
   const { width: screenW, height: screenH } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const [cameraViewport, setCameraViewport] = useState({
@@ -314,6 +453,7 @@ export default function ScanScreen() {
   const [botChromeH, setBotChromeH] = useState(0);
   /** True when onboarding just finished and Scan is required until they skip or log. */
   const [firstScanRequired, setFirstScanRequired] = useState(false);
+  const [scanMode, setScanMode] = useState<ScanMode>('photo');
 
   /** Keep chrome below Dynamic Island / front camera on all phones. */
   const vw = cameraViewport.width;
@@ -328,67 +468,109 @@ export default function ScanScreen() {
     isDesktop ? 1.08 : isTablet ? 1.05 : 1.12,
     Math.max(0.76, Math.min(shortSide / 390, vh / (landscape ? 420 : 780))),
   );
-  const showHeroSub = !tinyH && !landscape;
-  const showHeroIcon = !tinyH;
-  const heroPadV = tinyH || landscape ? 0 : compactH ? 2 : tallH ? spacing.sm : spacing.xs;
+  /** Vertical rhythm: tighter on short screens, airier on tall phones (not huge voids). */
+  const stackGapMd = tinyH || landscape ? 8 : compactH ? 12 : tallH ? 18 : 14;
+  const stackGapLg = tinyH || landscape ? 10 : compactH ? 14 : tallH ? 22 : 18;
+  const heroPadV = tinyH || landscape ? 2 : compactH ? 4 : tallH ? spacing.md : spacing.sm;
+  /** Drop brand lockup below the close row (was negative lift / too high). */
+  const brandDrop = tinyH || landscape ? 4 : compactH ? 10 : tallH ? 18 : 14;
+  const heroBelow = stackGapMd;
   const headerTop =
-    Math.max(insets.top, Platform.OS === 'web' ? 20 : 12) + spacing.sm;
+    Math.max(insets.top, Platform.OS === 'web' ? 20 : 12) + (tinyH ? spacing.xs : spacing.sm);
   const edgePad = Math.max(insets.left, spacing.md);
-  const titleBlockEst = Math.round(
-    ((showHeroIcon ? 22 : 0) + (showHeroSub ? 56 : 34) + heroPadV * 2) * Math.min(uiScale, 1),
+  const veryNarrow = screenW < 340;
+  /** Keep brand clear of the absolute close button on both edges. */
+  const brandSideClear = edgePad + 44 + (veryNarrow ? 4 : 8);
+  const showBrandMark = !tinyH && !veryNarrow && !landscape;
+  const brandMarkSize = Math.round(
+    (tinyH ? 32 : compactH ? 40 : isTablet || isDesktop ? 56 : 48) * Math.min(uiScale, 1.06),
   );
-  const noteChromeEst = Math.round((tinyH ? 44 : compactH ? 50 : 56) * Math.min(uiScale, 1));
+  const brandTitleSize = Math.round(
+    (tinyH || veryNarrow ? 20 : compactH ? 24 : isTablet || isDesktop ? 32 : 28) *
+      Math.min(uiScale, 1.06),
+  );
+  const titleBlockEst = Math.round(
+    (Math.max(showBrandMark ? brandMarkSize : 0, brandTitleSize) +
+      heroPadV * 2 +
+      brandDrop +
+      heroBelow) *
+      Math.min(uiScale, 1),
+  );
   const shutterSize = Math.round(
-    (tinyH ? 60 : compactH ? 70 : isTablet || isDesktop ? 82 : 78) * Math.min(uiScale, 1.06),
+    (tinyH ? 56 : compactH ? 68 : isTablet || isDesktop ? 82 : 76) * Math.min(uiScale, 1.06),
   );
   const librarySize = Math.round(
-    (tinyH ? 42 : isTablet || isDesktop ? 56 : 52) * Math.min(uiScale, 1.06),
+    (tinyH ? 40 : isTablet || isDesktop ? 56 : 50) * Math.min(uiScale, 1.06),
   );
-  const controlsChromeEst =
+  const modeToggleH = Math.round((tinyH ? 36 : compactH ? 42 : 48) * Math.min(uiScale, 1));
+  const modeToggleIconSize = Math.round((tinyH ? 12 : compactH ? 14 : 16) * Math.min(uiScale, 1));
+  const controlsGap = tinyH || landscape ? 4 : compactH ? 6 : 10;
+  /** TEXT: lift Continue; scale down on short phones so chrome stays clear of the finder. */
+  const textContinueLift =
+    scanMode === 'text' ? (tinyH || landscape ? 12 : compactH ? 28 : 50) : 0;
+  const controlsPadBottom =
+    Math.max(insets.bottom, tinyH ? spacing.sm : spacing.md) +
+    (tinyH ? 2 : spacing.xs) +
+    textContinueLift;
+  /** Decorative lift of mode toggle above shutter; capped so bottom chrome never starves the finder. */
+  const rawToggleGap = tinyH || landscape ? 22 : compactH ? 40 : 72;
+  const controlsCoreH =
+    modeToggleH +
     shutterSize +
-    26 +
-    (firstScanRequired ? 34 : 0) +
-    Math.max(insets.bottom, spacing.md) +
-    spacing.sm;
-  const headerChromeEst = headerTop + 44 + titleBlockEst;
+    22 +
+    (firstScanRequired ? 32 : 0) +
+    controlsPadBottom +
+    spacing.xs;
+  const maxBotChrome = Math.round(vh * (tinyH || landscape ? 0.36 : compactH ? 0.4 : 0.42));
+  const modeToggleToShutterGap = Math.max(
+    tinyH || landscape ? 10 : 14,
+    Math.min(rawToggleGap, maxBotChrome - controlsCoreH),
+  );
+  const controlsChromeEst = controlsCoreH + modeToggleToShutterGap;
+  const headerChromeEst = headerTop + 44 + spacing.sm + brandDrop + titleBlockEst;
   /** Phone column stays app-like; tablet/desktop keep a focused scan stage. */
   const stageMaxWidth = isDesktop ? 520 : isTablet ? 460 : Math.min(contentMaxWidth, landscape ? 520 : 420);
   const stageWidth = Math.min(vw, stageMaxWidth);
   const sideGutter = Math.max(
-    tinyH ? 12 : 16,
-    Math.round((isTablet || isDesktop ? 28 : 22) * Math.min(uiScale, 1)),
+    tinyH ? 10 : compactH ? 14 : 16,
+    Math.round((isTablet || isDesktop ? 28 : 20) * Math.min(uiScale, 1)),
   );
   const finderCap = landscape
-    ? Math.min(280, vh * 0.55)
+    ? Math.min(260, vh * 0.5)
     : isDesktop
-      ? 380
+      ? 360
       : isTablet
-        ? 340
-        : Math.min(tallH ? 380 : 360, shortSide - sideGutter * 2);
-  const topReserve = topChromeH > 0 ? topChromeH : headerChromeEst + noteChromeEst;
+        ? 320
+        : Math.min(tallH ? 340 : compactH ? 300 : 320, shortSide - sideGutter * 2);
+  const topReserve = topChromeH > 0 ? topChromeH : headerChromeEst;
   const botReserve = botChromeH > 0 ? botChromeH : controlsChromeEst;
-  const chromeGap = tinyH || landscape ? spacing.md : spacing.lg;
-  const bottomGap = tinyH ? spacing.md : landscape ? spacing.sm : isTablet || isDesktop ? spacing.xl : spacing.lg;
+  /** Gap between top chrome and finder; between finder and bottom controls. */
+  const chromeGap = stackGapLg;
+  const bottomGap = tinyH || landscape ? stackGapMd : tallH ? stackGapLg + 4 : stackGapLg;
   const availableForFinder = Math.max(
-    128,
+    tinyH ? 112 : 128,
     vh - topReserve - botReserve - chromeGap - bottomGap,
   );
   const viewfinderSize = Math.max(
-    128,
+    tinyH ? 112 : 128,
     Math.min(stageWidth - sideGutter * 2, availableForFinder, finderCap),
   );
-  /** Prefer optical center; clamp so note + shutter never collide with the square. */
-  const idealTop = (vh - viewfinderSize) / 2 - (landscape ? 0 : Math.min(12, vh * 0.01));
+  /** Photo: square. Barcode: wide short rectangle for EAN/UPC alignment. */
+  const finderW = viewfinderSize;
+  const finderH =
+    scanMode === 'barcode'
+      ? Math.max(
+          tinyH ? 84 : 96,
+          Math.min(Math.round(finderW * 0.4), Math.round(availableForFinder * 0.5)),
+        )
+      : viewfinderSize;
+  /** Prefer optical center; clamp so header + shutter never collide with the finder. */
+  const idealTop = (vh - finderH) / 2 - (landscape ? 0 : Math.min(8, vh * 0.008));
   const minTop = topReserve + chromeGap;
-  const maxTop = Math.max(minTop, vh - botReserve - bottomGap - viewfinderSize);
+  const maxTop = Math.max(minTop, vh - botReserve - bottomGap - finderH);
   const viewfinderTop = Math.min(maxTop, Math.max(minTop, idealTop));
-  const viewfinderLeft = (vw - viewfinderSize) / 2;
+  const viewfinderLeft = (vw - finderW) / 2;
   const stageLeft = (vw - stageWidth) / 2;
-  const heroTitleSize = Math.round(
-    (tinyH ? 20 : compactH ? 24 : isTablet || isDesktop ? 30 : 28) * Math.min(uiScale, 1.06),
-  );
-  const heroSubSize = Math.round((isTablet ? 15 : 14) * Math.min(uiScale, 1));
-  const notePillMax = Math.min(viewfinderSize, stageWidth - sideGutter * 2);
   const chromeColumnStyle = {
     maxWidth: stageMaxWidth,
     width: '100%' as const,
@@ -412,8 +594,13 @@ export default function ScanScreen() {
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [proteinOverride, setProteinOverride] = useState('');
   const [calorieOverride, setCalorieOverride] = useState('');
-  const [scanNote, setScanNote] = useState('');
+  /** True when confirm/log was opened from "add in text" (manual empty meal). */
+  const [manualEntry, setManualEntry] = useState(false);
   const [scannedAt, setScannedAt] = useState<Date | null>(null);
+  const barcodeLockRef = useRef(false);
+  const lastBarcodeRef = useRef<{ code: string; at: number }>({ code: '', at: 0 });
+  const scanModeRef = useRef<ScanMode>(scanMode);
+  scanModeRef.current = scanMode;
   const foodNameRef = useRef<TextInput>(null);
   const [discardOpen, setDiscardOpen] = useState(false);
   const discardActionRef = useRef<null | (() => void)>(null);
@@ -557,7 +744,7 @@ export default function ScanScreen() {
   useEffect(() => {
     setTopChromeH(0);
     setBotChromeH(0);
-  }, [cameraViewport.width, cameraViewport.height]);
+  }, [cameraViewport.width, cameraViewport.height, scanMode]);
 
   async function capture() {
     // Synchronous lock guards against a second tap in the same frame launching
@@ -583,8 +770,8 @@ export default function ScanScreen() {
         viewfinder: {
           originX: viewfinderLeft,
           originY: viewfinderTop,
-          width: viewfinderSize,
-          height: viewfinderSize,
+          width: finderW,
+          height: finderH,
         },
       };
       // Keep the live preview in place until the exact viewfinder crop is ready.
@@ -641,6 +828,156 @@ export default function ScanScreen() {
     return used;
   }
 
+  async function finishAnalysis(
+    res: Analysis,
+    opts?: { displayUri?: string | null; imageBase64?: string | null; usedNow?: number | null },
+  ) {
+    if (!res.is_food) {
+      showError(res.notes || "This doesn't look like food. Try a clearer description or photo.");
+      return;
+    }
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    const proteinG = Number(res.total_protein_g);
+    const caloriesN = Number(res.calories);
+    const safeProtein = Number.isFinite(proteinG) && proteinG >= 0 ? Math.round(proteinG) : 1;
+    const safeCalories =
+      Number.isFinite(caloriesN) && caloriesN > 0
+        ? Math.round(caloriesN)
+        : Math.max(safeProtein * 8, 50);
+    setManualEntry(false);
+    setAnalysis({ ...res, total_protein_g: safeProtein, calories: safeCalories });
+    setProteinOverride(String(safeProtein));
+    setCalorieOverride(String(safeCalories));
+    setScannedAt(new Date());
+    if (opts?.displayUri != null) setDisplayUri(opts.displayUri);
+    if (opts?.imageBase64 != null) setImageBase64(opts.imageBase64);
+
+    if (opts?.imageBase64 && session?.user.id) {
+      photoUploadRef.current = uploadFoodPhoto(session.user.id, opts.imageBase64);
+    } else {
+      photoUploadRef.current = null;
+    }
+
+    if (needsScanQuota && session?.user.id) {
+      await recordPhotoScan(session.user.id);
+      setScansLeft(remainingFreeScans((opts?.usedNow ?? 0) + 1, profile));
+    }
+
+    setAnalyzeProgress(1);
+    analyzeDoneRef.current = true;
+    await new Promise((r) => setTimeout(r, 60));
+    setPhase('result');
+  }
+
+  /** Open CONFIRM & LOG with an empty meal so they can add ingredients / edit / log. */
+  function continueWithText() {
+    if (busyRef.current) return;
+    if (profile && !isDailyDragonLockedForToday(profile, todayISODate())) {
+      router.replace('/(tabs)/today');
+      return;
+    }
+    setError(null);
+    setDisplayUri(null);
+    setPreviewSquare(false);
+    setImageBase64(null);
+    photoUploadRef.current = null;
+    setManualEntry(true);
+    setAnalysis({
+      is_food: true,
+      food_name: '',
+      items: [],
+      total_protein_g: 0,
+      calories: 0,
+      confidence: 'medium',
+      notes: '',
+    });
+    setProteinOverride('0');
+    setCalorieOverride('0');
+    setScannedAt(new Date());
+    analyzeDoneRef.current = true;
+    trackEvent('first_scan_started', { mode: 'text' });
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    setPhase('result');
+  }
+
+  async function handleBarcodeScanned(result: BarcodeScanningResult) {
+    if (scanModeRef.current !== 'barcode') return;
+    if (busyRef.current || barcodeLockRef.current || phaseRef.current !== 'camera') return;
+    const data = String(result?.data || '').trim();
+    if (!data) return;
+    const code = data.replace(/\D/g, '') || data;
+    if (code.length < 6) return;
+    const now = Date.now();
+    // Debounce duplicate reads of the same code (camera fires many frames).
+    if (
+      lastBarcodeRef.current.code === code &&
+      now - lastBarcodeRef.current.at < 2200
+    ) {
+      return;
+    }
+    lastBarcodeRef.current = { code, at: now };
+    barcodeLockRef.current = true;
+    busyRef.current = true;
+    setCapturing(true);
+    setError(null);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    let lookupFailed = false;
+    try {
+      if (profile && !isDailyDragonLockedForToday(profile, todayISODate())) {
+        router.replace('/(tabs)/today');
+        return;
+      }
+      let usedAtStart: number | null = null;
+      try {
+        usedAtStart = await ensureCanScan();
+        if (needsScanQuota && usedAtStart === null) {
+          lookupFailed = true;
+          return;
+        }
+      } catch {
+        /* allow attempt */
+      }
+      setDisplayUri(null);
+      setPreviewSquare(false);
+      setImageBase64(null);
+      setManualEntry(false);
+      setAnalyzeStep(0);
+      setPhase('analyzing');
+      trackEvent('first_scan_started', { mode: 'barcode' });
+      const usedNow = needsScanQuota ? await countTodayPhotoScans() : usedAtStart;
+      if (needsScanQuota && usedNow !== null) {
+        setScansLeft(remainingFreeScans(usedNow, profile));
+        if (!canScan(profile!, usedNow)) {
+          lookupFailed = true;
+          setPhase('camera');
+          openPaywallForLimit();
+          return;
+        }
+      }
+      const product = await lookupBarcodeProduct(data);
+      if (!product) {
+        lookupFailed = true;
+        showError('Barcode not found in Open Food Facts. Try photo mode on the label.');
+        return;
+      }
+      await finishAnalysis(product, { usedNow: usedNow ?? usedAtStart });
+    } catch (e: any) {
+      lookupFailed = true;
+      showError(e.message ?? 'Could not look up that barcode. Try again.');
+    } finally {
+      busyRef.current = false;
+      setCapturing(false);
+      // On failure, clear debounce so the same code can retry after unlock.
+      if (lookupFailed) {
+        lastBarcodeRef.current = { code: '', at: 0 };
+      }
+      // Cool-down so one hold doesn't re-fire after a failed / cancelled lookup.
+      setTimeout(() => {
+        barcodeLockRef.current = false;
+      }, lookupFailed ? 1200 : 1800);
+    }
+  }
+
   async function analyze(uri: string, cameraCrop?: CameraCrop) {
     setError(null);
     if (profile && !isDailyDragonLockedForToday(profile, todayISODate())) {
@@ -686,7 +1023,7 @@ export default function ScanScreen() {
       }
       setImageBase64(square.base64);
 
-      const res = await analyzeFoodPhoto(square.base64, 'image/jpeg', scanNote);
+      const res = await analyzeFoodPhoto(square.base64, 'image/jpeg');
       if (!res.is_food) {
         showError(res.notes || "This doesn't look like food. Point the camera at your meal.");
         return;
@@ -699,6 +1036,7 @@ export default function ScanScreen() {
         Number.isFinite(caloriesN) && caloriesN > 0
           ? Math.round(caloriesN)
           : Math.max(safeProtein * 8, 50);
+      setManualEntry(false);
       setAnalysis({ ...res, total_protein_g: safeProtein, calories: safeCalories });
       setProteinOverride(String(safeProtein));
       setCalorieOverride(String(safeCalories));
@@ -734,15 +1072,18 @@ export default function ScanScreen() {
       setError('Enter the protein amount in grams.');
       return;
     }
-    const proteinClamp = clampProteinOverride(proteinEntered, analysis.total_protein_g);
-    if (proteinClamp.clamped) {
-      setProteinOverride(String(proteinClamp.max));
-      setError(
-        `Protein capped at ${proteinClamp.max}g, the most we can verify from this photo. Scan again to log more.`,
-      );
-      return;
+    let proteinG = proteinEntered;
+    if (!manualEntry) {
+      const proteinClamp = clampProteinOverride(proteinEntered, analysis.total_protein_g);
+      if (proteinClamp.clamped) {
+        setProteinOverride(String(proteinClamp.max));
+        setError(
+          `Protein capped at ${proteinClamp.max}g, the most we can verify from this photo. Scan again to log more.`,
+        );
+        return;
+      }
+      proteinG = proteinClamp.value;
     }
-    const proteinG = proteinClamp.value;
 
     const calorieRaw = calorieOverride.trim();
     const caloriesParsed = calorieRaw.length > 0 ? parseFloat(calorieRaw) : NaN;
@@ -756,15 +1097,18 @@ export default function ScanScreen() {
         : Number.isFinite(analysis.calories) && analysis.calories > 0
           ? Math.round(analysis.calories)
           : Math.max(Math.round(proteinG) * 8, 50);
-    const calorieClamp = clampCalorieOverride(caloriesEntered, analysis.calories);
-    if (calorieClamp.clamped) {
-      setCalorieOverride(String(calorieClamp.max));
-      setError(
-        `Calories capped at ${calorieClamp.max}, the most we can verify from this photo.`,
-      );
-      return;
+    let calories = caloriesEntered;
+    if (!manualEntry) {
+      const calorieClamp = clampCalorieOverride(caloriesEntered, analysis.calories);
+      if (calorieClamp.clamped) {
+        setCalorieOverride(String(calorieClamp.max));
+        setError(
+          `Calories capped at ${calorieClamp.max}, the most we can verify from this photo.`,
+        );
+        return;
+      }
+      calories = calorieClamp.value;
     }
-    const calories = calorieClamp.value;
     setSaving(true);
     try {
       const todayISO = todayISODate();
@@ -790,7 +1134,7 @@ export default function ScanScreen() {
         calories,
         confidence: analysis.confidence,
         imagePath: imagePath ?? null,
-        source: 'photo',
+        source: manualEntry ? 'manual' : 'photo',
       });
 
       // Instant Today thumb from the local capture (before signed URL is ready).
@@ -877,7 +1221,7 @@ export default function ScanScreen() {
   const cameraReady = hasCameraPermission && cameraInitialized;
 
   const headerTitle =
-    phase === 'result' ? 'CONFIRM & LOG' : phase === 'analyzing' ? 'ANALYZING' : 'SCAN MEAL';
+    phase === 'result' ? 'CONFIRM & LOG' : phase === 'analyzing' ? 'ANALYZING' : 'ProteinQuest';
 
   async function skipFirstScan() {
     await clearNeedsFirstScan();
@@ -897,67 +1241,69 @@ export default function ScanScreen() {
     setPhase('camera');
   }, []);
 
+  const applyIngredientEdit = useCallback((edit: ScanIngredientEdit) => {
+    setAnalysis((prev) => {
+      if (!prev) return prev;
+      const action = edit.action ?? 'update';
+      let items = [...prev.items];
+
+      if (action === 'delete') {
+        if (edit.index < 0 || edit.index >= items.length) return prev;
+        items = items.filter((_, i) => i !== edit.index);
+      } else if (action === 'add') {
+        items.push({
+          name: edit.name,
+          portion: edit.portion,
+          protein_g: edit.protein_g,
+          calories_g: edit.calories_g,
+          estimated_grams: edit.estimated_grams,
+          confidence: 'medium',
+        });
+      } else {
+        const current = items[edit.index];
+        if (!current) return prev;
+        items[edit.index] = {
+          ...current,
+          name: edit.name,
+          portion: edit.portion,
+          protein_g: edit.protein_g,
+          calories_g: edit.calories_g,
+          estimated_grams: edit.estimated_grams,
+        };
+      }
+
+      const totalProtein = items.reduce((s, i) => s + (Number(i.protein_g) || 0), 0);
+      const totalCalories = items.reduce((s, i) => {
+        const c = Number(i.calories_g);
+        return s + (Number.isFinite(c) && c >= 0 ? c : 0);
+      }, 0);
+      const nextProtein = Math.round(totalProtein * 10) / 10;
+      const nextCalories = Math.round(totalCalories);
+      setProteinOverride(String(nextProtein));
+      setCalorieOverride(String(nextCalories));
+      return {
+        ...prev,
+        items,
+        total_protein_g: nextProtein,
+        calories: nextCalories,
+        food_name:
+          items.length === 0
+            ? prev.food_name
+            : items.length === 1
+              ? items[0].name
+              : items.map((i) => i.name).slice(0, 3).join(' + '),
+      };
+    });
+  }, []);
+
+  // Prefer immediate flush from scan-adjust; keep focus consume as fallback.
+  useEffect(() => registerIngredientEditApplier(applyIngredientEdit), [applyIngredientEdit]);
+
   useFocusEffect(
     useCallback(() => {
       const edit = consumePendingIngredientEdit();
-      if (!edit) return;
-      let nextProteinStr: string | null = null;
-      let nextCaloriesStr: string | null = null;
-      setAnalysis((prev) => {
-        if (!prev) return prev;
-        const action = edit.action ?? 'update';
-        let items = [...prev.items];
-
-        if (action === 'delete') {
-          if (edit.index < 0 || edit.index >= items.length) return prev;
-          items = items.filter((_, i) => i !== edit.index);
-        } else if (action === 'add') {
-          items.push({
-            name: edit.name,
-            portion: edit.portion,
-            protein_g: edit.protein_g,
-            calories_g: edit.calories_g,
-            estimated_grams: edit.estimated_grams,
-            confidence: 'medium',
-          });
-        } else {
-          const current = items[edit.index];
-          if (!current) return prev;
-          items[edit.index] = {
-            ...current,
-            name: edit.name,
-            portion: edit.portion,
-            protein_g: edit.protein_g,
-            calories_g: edit.calories_g,
-            estimated_grams: edit.estimated_grams,
-          };
-        }
-
-        const totalProtein = items.reduce((s, i) => s + (Number(i.protein_g) || 0), 0);
-        const totalCalories = items.reduce((s, i) => {
-          const c = Number(i.calories_g);
-          return s + (Number.isFinite(c) && c >= 0 ? c : 0);
-        }, 0);
-        const nextProtein = Math.round(totalProtein * 10) / 10;
-        const nextCalories = Math.round(totalCalories);
-        nextProteinStr = String(nextProtein);
-        nextCaloriesStr = String(nextCalories);
-        return {
-          ...prev,
-          items,
-          total_protein_g: nextProtein,
-          calories: nextCalories,
-          food_name:
-            items.length === 0
-              ? prev.food_name
-              : items.length === 1
-                ? items[0].name
-                : items.map((i) => i.name).slice(0, 3).join(' + '),
-        };
-      });
-      if (nextProteinStr != null) setProteinOverride(nextProteinStr);
-      if (nextCaloriesStr != null) setCalorieOverride(nextCaloriesStr);
-    }, []),
+      if (edit) applyIngredientEdit(edit);
+    }, [applyIngredientEdit]),
   );
 
   const requestLeaveUnsaved = useCallback((action: () => void) => {
@@ -981,14 +1327,6 @@ export default function ScanScreen() {
   const cancelDiscard = useCallback(() => {
     discardActionRef.current = null;
     setDiscardOpen(false);
-  }, []);
-
-  const dismissKeyboard = useCallback(() => {
-    Keyboard.dismiss();
-    if (Platform.OS === 'web' && typeof document !== 'undefined') {
-      const active = document.activeElement;
-      if (active instanceof HTMLElement) active.blur();
-    }
   }, []);
 
   const leavePressLockRef = useRef(0);
@@ -1032,6 +1370,7 @@ export default function ScanScreen() {
           entering={FadeInDown.duration(320)}
           style={[
             styles.errorBanner,
+            scanMode === 'barcode' && styles.errorBannerOutlined,
             phase === 'camera' && !demoAutoScan
               ? [styles.errorBannerOverlay, { top: headerTop + 52 }]
               : { marginTop: spacing.sm },
@@ -1045,16 +1384,15 @@ export default function ScanScreen() {
       ) : null}
 
       {phase === 'camera' && !demoAutoScan && (
-        <KeyboardAvoidingView
+        <View
           style={[
             styles.cameraWrap,
             isWide && {
-              maxWidth: Math.max(stageMaxWidth, contentMaxWidth),
+              maxWidth: Math.min(formMaxWidth, Math.max(stageMaxWidth + 120, 520)),
               width: '100%',
               alignSelf: 'center',
             },
           ]}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           onLayout={onCameraLayout}>
           {hasCameraPermission ? (
             <CameraView
@@ -1062,6 +1400,24 @@ export default function ScanScreen() {
               style={styles.camera}
               facing="back"
               pictureSize={pictureSize}
+              barcodeScannerSettings={
+                scanMode === 'barcode'
+                  ? {
+                      barcodeTypes: [
+                        'ean13',
+                        'ean8',
+                        'upc_a',
+                        'upc_e',
+                        'code128',
+                        'code39',
+                        'qr',
+                      ],
+                    }
+                  : undefined
+              }
+              onBarcodeScanned={
+                scanMode === 'barcode' && !capturing ? handleBarcodeScanned : undefined
+              }
               onCameraReady={() => {
                 setCameraInitialized(true);
                 void (async () => {
@@ -1111,23 +1467,53 @@ export default function ScanScreen() {
             </View>
           )}
 
-          {hasCameraPermission ? (
+          {scanMode === 'text' ? (
+            <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.textModeBackdrop]} />
+          ) : null}
+
+          {scanMode === 'text' ? (
+            <Animated.View
+              pointerEvents="none"
+              entering={FadeIn.duration(280)}
+              style={[
+                styles.textModeHintWrap,
+                {
+                  top: topReserve + chromeGap,
+                  bottom: botReserve + bottomGap,
+                  paddingHorizontal: sideGutter,
+                },
+              ]}>
+              <View style={styles.textModeHintChip}>
+                <View style={[styles.textModeHintIcon, tinyH && { width: 22, height: 22, borderRadius: 11 }]}>
+                  <Ionicons
+                    name="restaurant"
+                    size={tinyH ? 11 : 13}
+                    color={colors.accent}
+                  />
+                </View>
+                <Text
+                  style={[
+                    styles.textModeHintText,
+                    tinyH && { fontSize: 12, lineHeight: 16 },
+                  ]}>
+                  Click Continue to add your food and ingredients
+                </Text>
+              </View>
+            </Animated.View>
+          ) : null}
+
+          {scanMode !== 'text' && hasCameraPermission ? (
             <ScanViewfinder
-              size={viewfinderSize}
+              width={finderW}
+              height={finderH}
               top={viewfinderTop}
               left={viewfinderLeft}
               viewportW={vw}
               viewportH={vh}
               scale={uiScale}
-              onOutsidePress={dismissKeyboard}
+              mode={scanMode === 'barcode' ? 'barcode' : 'photo'}
             />
-          ) : (
-            <Pressable
-              style={StyleSheet.absoluteFill}
-              onPress={dismissKeyboard}
-              accessible={false}
-            />
-          )}
+          ) : null}
 
           <Animated.View
             pointerEvents="none"
@@ -1155,7 +1541,7 @@ export default function ScanScreen() {
             }}
             style={[
               styles.scanChrome,
-              { paddingTop: headerTop + 44 + spacing.xs, zIndex: 30 },
+              { paddingTop: headerTop + 44 + spacing.sm + brandDrop, zIndex: 30 },
             ]}>
             <View style={chromeColumnStyle}>
               <View
@@ -1164,95 +1550,45 @@ export default function ScanScreen() {
                   {
                     paddingTop: heroPadV,
                     paddingBottom: heroPadV,
-                    gap: tinyH || landscape ? 2 : 4,
-                    // Lift icon/title/subtitle ~30px; keep note pill + viewfinder put.
-                    marginTop: -30,
-                    marginBottom: 30,
+                    marginBottom: heroBelow,
+                    paddingHorizontal: brandSideClear,
                   },
                 ]}>
-                {showHeroIcon ? (
-                  <Ionicons
-                    name="scan-outline"
-                    size={Math.max(18, Math.round(22 * uiScale))}
-                    color={colors.accent}
-                  />
-                ) : null}
-                <Text
-                  style={[
-                    styles.scanHeroTitle,
-                    { fontSize: heroTitleSize, lineHeight: displayLH(heroTitleSize) },
-                  ]}>
-                  SCAN MEAL
-                </Text>
-                {showHeroSub ? (
+                <View style={styles.scanBrandRow} accessibilityRole="header">
+                  {showBrandMark ? (
+                    <Image
+                      source={BRAND_MARK}
+                      style={[
+                        styles.scanBrandMark,
+                        {
+                          width: brandMarkSize,
+                          height: brandMarkSize,
+                          borderRadius: Math.round(brandMarkSize * 0.28),
+                          flexShrink: 0,
+                        },
+                      ]}
+                      resizeMode="cover"
+                      accessibilityIgnoresInvertColors
+                    />
+                  ) : null}
                   <Text
                     style={[
-                      styles.scanHeroSub,
-                      { fontSize: heroSubSize, lineHeight: heroSubSize + 6 },
-                    ]}>
-                    Scan your meal to detect protein instantly
-                  </Text>
-                ) : null}
-              </View>
-
-              <View
-                style={[
-                  styles.notePill,
-                  {
-                    maxWidth: notePillMax,
-                    alignSelf: 'center',
-                    width: '100%',
-                    minHeight: tinyH ? 42 : 52,
-                    paddingVertical: tinyH ? 6 : 8,
-                  },
-                ]}>
-                <View
-                  style={[
-                    styles.noteIconWrap,
-                    tinyH && { width: 28, height: 28, borderRadius: 14 },
-                  ]}>
-                  <Ionicons name="restaurant" size={tinyH ? 13 : 16} color={colors.accent} />
-                </View>
-                <View style={styles.noteField}>
-                  <TextInput
-                    style={[
-                      styles.noteInput,
-                      textInputWeb,
-                      tinyH && { fontSize: 14, lineHeight: 18 },
+                      styles.scanBrandTitle,
+                      {
+                        fontSize: brandTitleSize,
+                        lineHeight: displayLH(brandTitleSize),
+                        flexShrink: 1,
+                        minWidth: 0,
+                      },
                     ]}
-                    value={scanNote}
-                    onChangeText={setScanNote}
-                    placeholder=""
-                    placeholderTextColor="transparent"
-                    maxLength={280}
-                    returnKeyType="done"
-                    blurOnSubmit
-                    onSubmitEditing={dismissKeyboard}
-                    autoCorrect
-                    autoCapitalize="sentences"
-                    editable={!capturing}
-                    accessibilityLabel="Optional extra info for AI"
-                  />
-                  {!scanNote.trim() ? (
-                    <View pointerEvents="none" style={styles.notePlaceholder}>
-                      <Text
-                        style={[
-                          styles.notePlaceholderTitle,
-                          tinyH && { fontSize: 14, lineHeight: 17 },
-                        ]}>
-                        extra info?
-                      </Text>
-                      <Text
-                        style={[
-                          styles.notePlaceholderSub,
-                          tinyH && { fontSize: 12, lineHeight: 15 },
-                        ]}>
-                        add it here
-                      </Text>
-                    </View>
-                  ) : null}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.78}
+                    ellipsizeMode="tail">
+                    Protein
+                    <Text style={styles.scanBrandTitleAccent}>Quest</Text>
+                  </Text>
                 </View>
-                <Ionicons name="chevron-forward" size={tinyH ? 16 : 18} color={colors.textTertiary} />
               </View>
             </View>
           </View>
@@ -1266,87 +1602,199 @@ export default function ScanScreen() {
               styles.controls,
               {
                 zIndex: 20,
-                paddingBottom: Math.max(insets.bottom, spacing.md) + (tinyH ? spacing.xs : spacing.sm),
+                gap: controlsGap,
+                paddingBottom: controlsPadBottom,
                 maxWidth: stageMaxWidth,
                 alignSelf: 'center',
                 width: '100%',
               },
             ]}>
             <View
+              style={{
+                width: '100%',
+                alignItems: 'center',
+                marginBottom: Math.max(0, modeToggleToShutterGap - controlsGap),
+              }}>
+              <ScanModeToggle
+                value={scanMode}
+                onChange={setScanMode}
+                disabled={capturing}
+                maxWidth={Math.min(stageWidth, finderW + sideGutter * 2)}
+                itemH={modeToggleH}
+                iconSize={modeToggleIconSize}
+                tinyH={tinyH}
+                compactH={compactH}
+              />
+            </View>
+
+            <View
               style={[
                 styles.shutterRow,
                 {
-                  paddingHorizontal: Math.max(sideGutter, spacing.md),
-                  maxWidth: Math.min(stageWidth, viewfinderSize + sideGutter * 2),
+                  paddingHorizontal: Math.max(sideGutter, veryNarrow ? spacing.sm : spacing.md),
+                  maxWidth: Math.min(stageWidth, finderW + sideGutter * 2),
                   alignSelf: 'center',
                   width: '100%',
+                  marginTop: 0,
                 },
               ]}>
-              <Pressable
-                onPress={pickFromLibrary}
-                disabled={capturing}
-                accessibilityLabel="Upload from gallery"
-                accessibilityRole="button"
-                style={[styles.sideAction, capturing && { opacity: 0.35 }]}
-                hitSlop={8}>
+              {scanMode === 'barcode' ? (
                 <View
-                  style={[
-                    styles.libraryBtn,
-                    { width: librarySize, height: librarySize, borderRadius: librarySize / 2 },
-                  ]}>
+                  style={[styles.barcodeAutoChip, capturing && { opacity: 0.85 }]}
+                  accessibilityRole="text"
+                  accessibilityLabel={
+                    capturing ? 'Looking up barcode product' : 'Barcode scans automatically'
+                  }>
                   <Ionicons
-                    name="images-outline"
-                    size={Math.max(18, Math.round(22 * uiScale))}
-                    color={colors.text}
+                    name={capturing ? 'sync-outline' : 'barcode-outline'}
+                    size={Math.max(16, Math.round(18 * uiScale))}
+                    color={colors.accent}
                   />
-                </View>
-                <Text style={styles.sideActionLabel}>GALLERY</Text>
-              </Pressable>
-
-              <Pressable
-                onPress={capture}
-                disabled={!cameraReady || capturing}
-                accessibilityLabel="Scan meal"
-                accessibilityRole="button"
-                style={[styles.scanAction, (!cameraReady || capturing) && { opacity: 0.35 }]}>
-                <View
-                  style={[
-                    styles.shutter,
-                    {
-                      width: shutterSize,
-                      height: shutterSize,
-                      borderRadius: shutterSize / 2,
-                    },
-                    capturing && { transform: [{ scale: 0.92 }] },
-                  ]}>
-                  <View
+                  <Text
                     style={[
-                      styles.shutterInner,
-                      {
-                        width: Math.round(shutterSize * 0.8),
-                        height: Math.round(shutterSize * 0.8),
-                        borderRadius: Math.round(shutterSize * 0.4),
-                      },
+                      styles.barcodeAutoChipText,
+                      (tinyH || veryNarrow) && { fontSize: 12 },
                     ]}
-                  />
+                    numberOfLines={2}>
+                    {capturing
+                      ? 'Looking up product…'
+                      : tinyH || veryNarrow
+                        ? 'Auto-scans in view'
+                        : 'Auto-scans when code is in view'}
+                  </Text>
                 </View>
-                <Text style={styles.scanActionLabel}>SCAN</Text>
-              </Pressable>
+              ) : (
+                <>
+                  {scanMode === 'text' ? (
+                    <View style={styles.sideAction}>
+                      <View
+                        style={[
+                          styles.libraryBtn,
+                          {
+                            opacity: 0,
+                            width: librarySize,
+                            height: librarySize,
+                            borderRadius: librarySize / 2,
+                          },
+                        ]}
+                      />
+                      <Text style={[styles.sideActionLabel, { opacity: 0 }]}>SPACER</Text>
+                    </View>
+                  ) : (
+                    <Pressable
+                      onPress={pickFromLibrary}
+                      disabled={capturing}
+                      accessibilityLabel="Upload from gallery"
+                      accessibilityRole="button"
+                      style={[styles.sideAction, capturing && { opacity: 0.35 }]}
+                      hitSlop={8}>
+                      <View
+                        style={[
+                          styles.libraryBtn,
+                          {
+                            width: librarySize,
+                            height: librarySize,
+                            borderRadius: librarySize / 2,
+                          },
+                        ]}>
+                        <Ionicons
+                          name="images-outline"
+                          size={Math.max(18, Math.round(22 * uiScale))}
+                          color={colors.text}
+                        />
+                      </View>
+                      <Text style={styles.sideActionLabel}>GALLERY</Text>
+                    </Pressable>
+                  )}
 
-              <View style={styles.sideAction}>
-                <View
-                  style={[
-                    styles.libraryBtn,
-                    {
-                      opacity: 0,
-                      width: librarySize,
-                      height: librarySize,
-                      borderRadius: librarySize / 2,
-                    },
-                  ]}
-                />
-                <Text style={[styles.sideActionLabel, { opacity: 0 }]}>SPACER</Text>
-              </View>
+                  {scanMode === 'text' ? (
+                    <Pressable
+                      onPress={continueWithText}
+                      disabled={capturing}
+                      accessibilityLabel="Continue to confirm and log"
+                      accessibilityRole="button"
+                      style={[styles.continueAction, capturing && { opacity: 0.35 }]}>
+                      <View
+                        style={[
+                          styles.continueBtn,
+                          {
+                            minWidth: Math.max(
+                              tinyH || veryNarrow ? 128 : 152,
+                              Math.round(shutterSize * (tinyH ? 1.55 : 1.85)),
+                            ),
+                            height: Math.max(
+                              tinyH ? 44 : 50,
+                              Math.round(shutterSize * (tinyH ? 0.62 : 0.7)),
+                            ),
+                            borderRadius: 13,
+                            paddingHorizontal: tinyH || veryNarrow ? 14 : 18,
+                          },
+                        ]}>
+                        <Text
+                          style={styles.continueBtnLabel}
+                          numberOfLines={1}
+                          adjustsFontSizeToFit
+                          minimumFontScale={0.85}>
+                          Continue
+                        </Text>
+                        <Ionicons
+                          name="arrow-forward"
+                          size={Math.max(15, Math.round(16 * uiScale))}
+                          color="#FFFFFF"
+                        />
+                      </View>
+                    </Pressable>
+                  ) : (
+                    <Pressable
+                      onPress={capture}
+                      disabled={!cameraReady || capturing}
+                      accessibilityLabel="Scan meal"
+                      accessibilityRole="button"
+                      style={[
+                        styles.scanAction,
+                        (!cameraReady || capturing) && { opacity: 0.35 },
+                      ]}>
+                      <View
+                        style={[
+                          styles.shutter,
+                          {
+                            width: shutterSize,
+                            height: shutterSize,
+                            borderRadius: shutterSize / 2,
+                          },
+                          capturing && { transform: [{ scale: 0.92 }] },
+                        ]}>
+                        <View
+                          style={[
+                            styles.shutterInner,
+                            {
+                              width: Math.round(shutterSize * 0.8),
+                              height: Math.round(shutterSize * 0.8),
+                              borderRadius: Math.round(shutterSize * 0.4),
+                            },
+                          ]}
+                        />
+                      </View>
+                      <Text style={styles.scanActionLabel}>SCAN</Text>
+                    </Pressable>
+                  )}
+
+                  <View style={styles.sideAction}>
+                    <View
+                      style={[
+                        styles.libraryBtn,
+                        {
+                          opacity: 0,
+                          width: librarySize,
+                          height: librarySize,
+                          borderRadius: librarySize / 2,
+                        },
+                      ]}
+                    />
+                    <Text style={[styles.sideActionLabel, { opacity: 0 }]}>SPACER</Text>
+                  </View>
+                </>
+              )}
             </View>
             {firstScanRequired ? (
               <Pressable
@@ -1360,7 +1808,7 @@ export default function ScanScreen() {
               </Pressable>
             ) : null}
           </View>
-        </KeyboardAvoidingView>
+        </View>
       )}
 
       {phase === 'analyzing' && (
@@ -1369,7 +1817,7 @@ export default function ScanScreen() {
           style={[
             styles.analyzingWrap,
             {
-              maxWidth: contentMaxWidth,
+              maxWidth: formMaxWidth,
               width: '100%',
               alignSelf: 'center',
               paddingTop: headerTop,
@@ -1388,11 +1836,13 @@ export default function ScanScreen() {
 
           <View style={styles.analyzingHero}>
             <Ionicons
-              name="scan-outline"
+              name={scanMode === 'barcode' ? 'barcode-outline' : 'scan-outline'}
               size={Math.round((isTablet || isDesktop ? 36 : 32) * Math.min(uiScale, 1.06))}
               color={colors.accent}
             />
-            <Text style={styles.analyzingEyebrow}>ANALYZING</Text>
+            <Text style={styles.analyzingEyebrow}>
+              {scanMode === 'barcode' ? 'LOOKING UP' : 'ANALYZING'}
+            </Text>
             <Text
               style={[
                 styles.analyzingHeroTitle,
@@ -1403,14 +1853,16 @@ export default function ScanScreen() {
                   ),
                 },
               ]}>
-              Analyzing your meal
+              {scanMode === 'barcode' ? 'Finding your product' : 'Analyzing your meal'}
             </Text>
             <Text
               style={[
                 styles.analyzingHeroSub,
                 { fontSize: Math.round((isTablet ? 16 : 14) * Math.min(uiScale, 1)), maxWidth: isTablet ? 420 : 300 },
               ]}>
-              Our AI is identifying ingredients and estimating portions
+              {scanMode === 'barcode'
+                ? 'Pulling name and nutrition from Open Food Facts'
+                : 'Our AI is identifying ingredients and estimating portions'}
             </Text>
           </View>
 
@@ -1439,31 +1891,12 @@ export default function ScanScreen() {
                 <View style={styles.analyzingPlaceholder} />
               )}
             </View>
-
-            {scanNote.trim() ? (
-              <View
-                style={[
-                  styles.analyzingNotePill,
-                  {
-                    maxWidth: Math.min(stageMaxWidth, isTablet || isDesktop ? 380 : 320),
-                  },
-                ]}
-                accessibilityLabel={`Your note: ${scanNote.trim()}`}>
-                <View style={styles.analyzingNoteIcon}>
-                  <Ionicons name="create-outline" size={13} color={colors.accent} />
-                </View>
-                <View style={styles.analyzingNoteCopy}>
-                  <Text style={styles.analyzingNoteLabel}>Your note</Text>
-                  <Text style={styles.analyzingNoteText} numberOfLines={2}>
-                    {scanNote.trim()}
-                  </Text>
-                </View>
-              </View>
-            ) : null}
           </View>
 
           <View style={styles.analyzingFooter}>
-            <Text style={styles.analyzingStatus}>Analyzing...</Text>
+            <Text style={styles.analyzingStatus}>
+              {scanMode === 'barcode' ? 'Looking up…' : 'Analyzing...'}
+            </Text>
             <AnalyzingProgressBar progress={analyzeProgress} />
           </View>
         </Animated.View>
@@ -1475,8 +1908,8 @@ export default function ScanScreen() {
             styles.resultScroll,
             {
               paddingHorizontal: horizontalPad,
-              maxWidth: contentMaxWidth,
-              width: contentWidth,
+              maxWidth: formMaxWidth,
+              width: formWidth,
               alignSelf: 'center',
             },
           ]}
@@ -1565,8 +1998,9 @@ export default function ScanScreen() {
                 <Text style={styles.totalUnit}>g</Text>
               </View>
               <Text style={styles.totalHint}>
-                tap to adjust • max{' '}
-                {maxAllowedOverride(analysis.total_protein_g, PROTEIN_OVERRIDE_BUFFER_G)}g
+                {manualEntry
+                  ? 'tap to adjust • add ingredients below'
+                  : `tap to adjust • max ${maxAllowedOverride(analysis.total_protein_g, PROTEIN_OVERRIDE_BUFFER_G)}g`}
               </Text>
             </View>
             <View style={styles.nutritionDivider} />
@@ -1589,8 +2023,9 @@ export default function ScanScreen() {
                 <Text style={styles.totalUnit}>cal</Text>
               </View>
               <Text style={styles.totalHint}>
-                tap to adjust • max{' '}
-                {maxAllowedOverride(analysis.calories, CALORIE_OVERRIDE_BUFFER)}
+                {manualEntry
+                  ? 'tap to adjust • add ingredients below'
+                  : `tap to adjust • max ${maxAllowedOverride(analysis.calories, CALORIE_OVERRIDE_BUFFER)}`}
               </Text>
             </View>
           </Animated.View>
@@ -1678,25 +2113,62 @@ export default function ScanScreen() {
             <Pressable
               onPress={handleSave}
               disabled={saving}
-              style={[styles.logItBtn, saving && { opacity: 0.5 }]}
+              style={({ pressed }) => [
+                styles.logItBtn,
+                pressableWeb,
+                saving && styles.logItBtnDisabled,
+                pressed && !saving && styles.logItBtnPressed,
+              ]}
               accessibilityRole="button"
               accessibilityLabel="Log it">
-              {saving ? (
-                <Text style={styles.logItBtnText}>Saving…</Text>
-              ) : (
-                <>
-                  <Ionicons name="checkmark-circle" size={22} color={colors.onAccent} />
-                  <Text style={styles.logItBtnText}>Log it</Text>
-                </>
-              )}
+              <LinearGradient
+                pointerEvents="none"
+                colors={['#FF9B82', '#FF7A59', '#E85F42']}
+                locations={[0, 0.48, 1]}
+                start={{ x: 0.15, y: 0 }}
+                end={{ x: 0.85, y: 1 }}
+                style={StyleSheet.absoluteFill}
+              />
+              <View pointerEvents="none" style={styles.logItSheen} />
+              <View style={styles.logItInner}>
+                {saving ? (
+                  <Text style={styles.logItBtnText}>Saving…</Text>
+                ) : (
+                  <>
+                    <Ionicons name="checkmark" size={19} color={colors.onAccent} />
+                    <Text style={styles.logItBtnText}>Log it</Text>
+                  </>
+                )}
+              </View>
             </Pressable>
             <Pressable
               onPress={() => requestLeaveUnsaved(resetToCamera)}
-              style={styles.retakeBtn}
+              style={({ pressed }) => [
+                styles.retakeBtn,
+                pressableWeb,
+                pressed && styles.retakeBtnPressed,
+              ]}
               accessibilityRole="button"
-              accessibilityLabel="Retake Scan">
-              <Ionicons name="refresh" size={18} color={colors.text} />
-              <Text style={styles.retakeBtnText}>Retake Scan</Text>
+              accessibilityLabel={manualEntry ? 'Start over' : 'Retake Scan'}>
+              <LinearGradient
+                pointerEvents="none"
+                colors={['rgba(255,255,255,0.1)', 'rgba(255,255,255,0.03)', 'rgba(255,255,255,0.015)']}
+                locations={[0, 0.55, 1]}
+                start={{ x: 0.2, y: 0 }}
+                end={{ x: 0.8, y: 1 }}
+                style={StyleSheet.absoluteFill}
+              />
+              <View pointerEvents="none" style={styles.retakeSheen} />
+              <View style={styles.retakeInner}>
+                <Ionicons
+                  name={manualEntry ? 'arrow-back' : 'refresh'}
+                  size={17}
+                  color={colors.text}
+                />
+                <Text style={styles.retakeBtnText}>
+                  {manualEntry ? 'Start over' : 'Retake Scan'}
+                </Text>
+              </View>
             </Pressable>
           </Animated.View>
         </ScrollView>
@@ -1815,6 +2287,13 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.danger,
   },
+  errorBannerOutlined: {
+    borderWidth: 1,
+    borderColor: 'rgba(255, 122, 89, 0.55)',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 122, 89, 0.55)',
+    backgroundColor: 'rgba(12, 11, 16, 0.72)',
+  },
   errorBannerOverlay: {
     position: 'absolute',
     left: 0,
@@ -1838,97 +2317,30 @@ const styles = StyleSheet.create({
   },
   scanHero: {
     alignItems: 'center',
-    paddingHorizontal: spacing.lg,
+    justifyContent: 'center',
+    width: '100%',
     paddingTop: 0,
     paddingBottom: spacing.xs,
-    gap: 4,
   },
-  scanHeroTitle: {
-    fontFamily: fonts.displayHeavy,
-    fontSize: 28,
-    lineHeight: displayLH(28),
-    color: colors.text,
-    letterSpacing: 1.2,
-  },
-  scanHeroSub: {
-    fontFamily: fonts.body,
-    fontSize: 14,
-    lineHeight: 20,
-    color: 'rgba(246,244,248,0.78)',
-    textAlign: 'center',
-  },
-  notePill: {
+  scanBrandRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
-    minHeight: 58,
-    borderRadius: 14,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 10,
-    backgroundColor: 'rgba(255, 255, 255, 0.12)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.22)',
-    ...(Platform.OS === 'web'
-      ? ({
-          backdropFilter: 'blur(14px) saturate(1.2)',
-          WebkitBackdropFilter: 'blur(14px) saturate(1.2)',
-        } as object)
-      : {}),
-  },
-  noteIconWrap: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(120, 52, 38, 0.5)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,122,89,0.4)',
-  },
-  noteField: {
-    flex: 1,
+    gap: 8,
+    maxWidth: '100%',
     minWidth: 0,
-    position: 'relative',
-    justifyContent: 'center',
-    minHeight: 40,
   },
-  noteInput: {
-    padding: 0,
-    margin: 0,
-    fontFamily: fonts.displayMedium,
-    fontSize: 16,
-    lineHeight: 20,
+  scanBrandMark: {
+    backgroundColor: colors.bg,
+  },
+  scanBrandTitle: {
+    ...noTextCaret,
+    fontFamily: fonts.displayHeavy,
     color: colors.text,
-    ...(Platform.OS === 'web'
-      ? ({
-          backgroundColor: 'transparent',
-          outlineStyle: 'none',
-          colorScheme: 'dark',
-          WebkitAppearance: 'none',
-          appearance: 'none',
-        } as object)
-      : { backgroundColor: 'transparent' }),
+    letterSpacing: 0.2,
   },
-  notePlaceholder: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 0,
-    bottom: 0,
-    justifyContent: 'center',
-  },
-  notePlaceholderTitle: {
-    fontFamily: fonts.displayMedium,
-    fontSize: 16,
-    lineHeight: 20,
-    color: 'rgba(246,244,248,0.78)',
-  },
-  notePlaceholderSub: {
-    marginTop: 1,
-    fontFamily: fonts.body,
-    fontSize: 13,
-    lineHeight: 17,
-    color: 'rgba(246,244,248,0.52)',
+  scanBrandTitleAccent: {
+    color: colors.accent,
   },
   camera: { flex: 1, overflow: 'hidden' },
   cameraDenied: {
@@ -1974,6 +2386,15 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingHorizontal: spacing.lg,
   },
+  finderGuideOutlined: {
+    paddingVertical: 12,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.chip,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 122, 89, 0.45)',
+    backgroundColor: 'rgba(12, 11, 16, 0.55)',
+    maxWidth: '88%',
+  },
   finderGuideTitle: {
     fontFamily: fonts.displayHeavy,
     fontSize: 15,
@@ -2003,6 +2424,104 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.sm,
   },
+  modeToggle: {
+    flexDirection: 'row',
+    alignSelf: 'stretch',
+    width: '100%',
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.18)',
+  },
+  modeToggleItem: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modeToggleItemOn: {
+    backgroundColor: 'rgba(90, 42, 34, 0.72)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255, 122, 89, 0.28)',
+  },
+  modeToggleLabel: {
+    flexShrink: 1,
+    fontFamily: fonts.displayHeavy,
+    textTransform: 'uppercase',
+    includeFontPadding: false,
+  },
+  textModeBackdrop: {
+    // Match viewfinder dim: translucent dark over live camera, not solid colors.bg.
+    backgroundColor: 'rgba(12, 11, 16, 0.62)',
+  },
+  textModeHintWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    zIndex: 25,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  textModeHintChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    maxWidth: 292,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: radius.sm,
+    backgroundColor: 'rgba(255, 255, 255, 0.10)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.22)',
+    ...(Platform.OS === 'web'
+      ? ({
+          backdropFilter: 'blur(14px) saturate(1.2)',
+          WebkitBackdropFilter: 'blur(14px) saturate(1.2)',
+        } as object)
+      : {}),
+  },
+  textModeHintIcon: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 122, 89, 0.18)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255, 122, 89, 0.45)',
+  },
+  textModeHintText: {
+    flexShrink: 1,
+    fontFamily: fonts.body,
+    fontSize: 13,
+    lineHeight: 17,
+    color: 'rgba(246,244,248,0.88)',
+  },
+  continueAction: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  continueBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    paddingHorizontal: spacing.xl,
+    backgroundColor: colors.accent,
+    borderRadius: 13,
+    shadowColor: '#000',
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
+  },
+  continueBtnLabel: {
+    fontFamily: fonts.displayHeavy,
+    fontSize: 17,
+    letterSpacing: 0.2,
+    color: '#FFFFFF',
+  },
   skipFirstScanBtn: {
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
@@ -2013,6 +2532,26 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textAlign: 'center',
   },
+  barcodeAutoChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    flex: 1,
+    minHeight: 52,
+    paddingVertical: 12,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.chip,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 122, 89, 0.5)',
+    backgroundColor: 'rgba(12, 11, 16, 0.62)',
+  },
+  barcodeAutoChipText: {
+    fontFamily: fonts.displayMedium,
+    fontSize: 14,
+    color: colors.text,
+    flexShrink: 1,
+  },
   shutterRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
@@ -2021,9 +2560,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
   },
   sideAction: {
-    width: 72,
+    width: 64,
+    minWidth: 52,
+    maxWidth: 72,
+    flexShrink: 1,
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
   },
   sideActionLabel: {
     fontFamily: fonts.mono,
@@ -2125,53 +2667,6 @@ const styles = StyleSheet.create({
     aspectRatio: 1,
     backgroundColor: colors.surface,
     borderRadius: radius.md,
-  },
-  analyzingNotePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    width: '100%',
-    marginTop: spacing.md,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: radius.full,
-    backgroundColor: 'rgba(255,255,255,0.07)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.14)',
-    ...(Platform.OS === 'web'
-      ? ({
-          backdropFilter: 'blur(12px) saturate(1.15)',
-          WebkitBackdropFilter: 'blur(12px) saturate(1.15)',
-        } as object)
-      : {}),
-  },
-  analyzingNoteIcon: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255,122,89,0.12)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,122,89,0.28)',
-  },
-  analyzingNoteCopy: {
-    flex: 1,
-    minWidth: 0,
-    gap: 2,
-  },
-  analyzingNoteLabel: {
-    fontFamily: fonts.mono,
-    fontSize: 10,
-    letterSpacing: 1.4,
-    color: colors.textTertiary,
-    textTransform: 'uppercase',
-  },
-  analyzingNoteText: {
-    fontFamily: fonts.body,
-    fontSize: 13,
-    lineHeight: 17,
-    color: colors.textSecondary,
   },
   sweepLine: {
     position: 'absolute',
@@ -2440,40 +2935,112 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   resultActions: {
-    gap: spacing.sm,
+    gap: 10,
     marginTop: spacing.lg,
   },
   logItBtn: {
-    height: 54,
-    borderRadius: radius.button,
+    height: 52,
+    borderRadius: 13,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.22)',
     backgroundColor: colors.accent,
+    ...(Platform.OS === 'web'
+      ? ({
+          boxShadow:
+            '0 10px 28px rgba(255,122,89,0.34), 0 2px 0 rgba(255,255,255,0.18) inset, 0 -1px 0 rgba(0,0,0,0.18) inset',
+        } as object)
+      : {
+          shadowColor: '#FF7A59',
+          shadowOpacity: 0.36,
+          shadowRadius: 18,
+          shadowOffset: { width: 0, height: 8 },
+          elevation: 10,
+        }),
+  },
+  logItBtnPressed: {
+    opacity: 0.92,
+    transform: [{ scale: 0.985 }],
+  },
+  logItBtnDisabled: {
+    opacity: 0.5,
+  },
+  logItSheen: {
+    position: 'absolute',
+    top: 0,
+    left: 14,
+    right: 14,
+    height: StyleSheet.hairlineWidth * 2,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.42)',
+    opacity: 0.85,
+  },
+  logItInner: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: 10,
+    paddingHorizontal: spacing.lg,
   },
   logItBtnText: {
-    fontFamily: fonts.displayMedium,
+    ...noTextCaret,
+    fontFamily: fonts.displayHeavy,
     fontSize: 16,
+    lineHeight: 20,
     color: colors.onAccent,
-    letterSpacing: 0.2,
+    letterSpacing: 0.15,
   },
   retakeBtn: {
-    height: 54,
-    borderRadius: radius.button,
-    backgroundColor: 'transparent',
-    borderWidth: 1,
-    borderColor: colors.hairlineBright,
+    height: 50,
+    borderRadius: 13,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.16)',
+    ...(Platform.OS === 'web'
+      ? ({
+          backdropFilter: 'blur(22px) saturate(1.4)',
+          WebkitBackdropFilter: 'blur(22px) saturate(1.4)',
+          boxShadow: '0 8px 22px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.1)',
+        } as object)
+      : {
+          shadowColor: '#000',
+          shadowOpacity: 0.22,
+          shadowRadius: 12,
+          shadowOffset: { width: 0, height: 6 },
+          elevation: 4,
+        }),
+  },
+  retakeBtnPressed: {
+    opacity: 0.88,
+    transform: [{ scale: 0.985 }],
+  },
+  retakeSheen: {
+    position: 'absolute',
+    top: 0,
+    left: 14,
+    right: 14,
+    height: StyleSheet.hairlineWidth * 2,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.22)',
+    opacity: 0.65,
+  },
+  retakeInner: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: 10,
+    paddingHorizontal: spacing.lg,
   },
   retakeBtnText: {
+    ...noTextCaret,
     fontFamily: fonts.displayMedium,
     fontSize: 15,
+    lineHeight: 19,
     color: colors.text,
-    letterSpacing: 0.2,
+    letterSpacing: 0.15,
   },
   discardRoot: {
     ...StyleSheet.absoluteFill,
@@ -2485,11 +3052,11 @@ const styles = StyleSheet.create({
   },
   discardBackdrop: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(6, 5, 10, 0.55)',
+    backgroundColor: 'rgba(6, 5, 10, 0.4)',
     ...(Platform.OS === 'web'
       ? ({
-          backdropFilter: 'blur(22px) saturate(1.4)',
-          WebkitBackdropFilter: 'blur(22px) saturate(1.4)',
+          backdropFilter: 'blur(6px) saturate(1.15)',
+          WebkitBackdropFilter: 'blur(6px) saturate(1.15)',
         } as object)
       : null),
   },

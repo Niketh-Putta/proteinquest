@@ -319,7 +319,7 @@ function PodiumColumn({
 
 export default function LeagueTab() {
   const { profile, session } = useSession();
-  const { horizontalPad, contentMaxWidth, isNarrow } = useLayout();
+  const { horizontalPad, formMaxWidth, isNarrow } = useLayout();
   const titleSize = isNarrow ? 26 : 30;
   const bottomInset = useTabBarScrollInset();
   const [rows, setRows] = useState<LeaderboardRow[]>([]);
@@ -515,7 +515,7 @@ export default function LeagueTab() {
             styles.scroll,
             {
               paddingHorizontal: horizontalPad,
-              maxWidth: contentMaxWidth,
+              maxWidth: formMaxWidth,
               width: '100%',
               alignSelf: 'center',
               paddingBottom: bottomInset,
@@ -564,9 +564,11 @@ export default function LeagueTab() {
                 pressed && styles.invitePressed,
               ]}>
               <Ionicons name="person-add" size={14} color={colors.text} />
-              <Text style={[styles.inviteText, noTextCaret]} selectable={false}>
-                Invite Friends
-              </Text>
+              {!isNarrow ? (
+                <Text style={[styles.inviteText, noTextCaret]} selectable={false}>
+                  Invite Friends
+                </Text>
+              ) : null}
             </Pressable>
           </View>
           {inviteStatus ? <Text style={styles.inviteStatus}>{inviteStatus}</Text> : null}

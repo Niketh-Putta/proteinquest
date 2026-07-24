@@ -211,6 +211,13 @@ export function getDragonArt(dragonId: DragonId, stageIndex: number): ImageSourc
   return artCache[dragonId]![stageIndex];
 }
 
+/** Eager-load all stages for a dragon so Today/scan don't hitch on first paint. */
+export function warmDragonArt(dragonId: DragonId): void {
+  if (!artCache[dragonId]) {
+    artCache[dragonId] = DRAGON_ART_LOADERS[dragonId].map((load) => load());
+  }
+}
+
 function buildStages(id: DragonId): DragonStage[] {
   return STAGE_NAMES.map((name, index) => {
     const stage = {

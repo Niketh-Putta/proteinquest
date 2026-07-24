@@ -95,20 +95,21 @@ function formatPrice(price: string): { amount: string; period: string } {
   return { amount: m[1].trim(), period: period.startsWith('/') ? period : `/${period}` };
 }
 
-function GradientWord({ children }: { children: string }) {
+function GradientWord({ children, size = 40 }: { children: string; size?: number }) {
+  const typeStyle = { fontSize: size, lineHeight: Math.round(size * 1.15) };
   if (Platform.OS === 'web') {
     return (
-      <Text style={[styles.titleWord, styles.gradientWordWeb]}>{children}</Text>
+      <Text style={[styles.titleWord, typeStyle, styles.gradientWordWeb]}>{children}</Text>
     );
   }
-  return <Text style={[styles.titleWord, { color: ACCENT_SOFT }]}>{children}</Text>;
+  return <Text style={[styles.titleWord, typeStyle, { color: ACCENT_SOFT }]}>{children}</Text>;
 }
 
 export default function Paywall() {
   const { session, profile, saveProfile } = useSession();
-  const layout = useLayout();
-  const contentMaxWidth = Math.min(layout.contentMaxWidth, 520);
-  const { horizontalPad } = layout;
+  const { horizontalPad, formMaxWidth, isNarrow, isVeryNarrow, isTinyH } = useLayout();
+  const contentMaxWidth = formMaxWidth;
+  const titleSize = isVeryNarrow || isTinyH ? 32 : isNarrow ? 36 : 40;
   const [provider, setProvider] = useState<PaymentProvider>(() => getPaymentProvider());
   const [planId, setPlanId] = useState(provider.plans[1]?.id ?? 'pro_yearly');
   const [busy, setBusy] = useState(false);
@@ -305,20 +306,25 @@ export default function Paywall() {
               accessibilityLabel="Close">
               <Ionicons name="close" size={22} color="#E8E4F0" />
             </Pressable>
-            <View style={styles.brandRow}>
+            <View style={[styles.brandRow, { flexShrink: 1, minWidth: 0 }]}>
               <Ionicons name="diamond" size={11} color={ACCENT_SOFT} />
-              <Text style={styles.brand}>
+              <Text style={styles.brand} numberOfLines={1} ellipsizeMode="tail">
                 PROTEINQUEST <Text style={styles.brandPro}>PRO</Text>
               </Text>
             </View>
-            <View style={{ width: 22 }} />
+            <View style={{ width: 22, flexShrink: 0 }} />
           </View>
 
-          <Text style={styles.title}>
+          <Text
+            style={[
+              styles.title,
+              { fontSize: titleSize, lineHeight: Math.round(titleSize * 1.15) },
+            ]}
+            numberOfLines={isVeryNarrow ? 3 : 2}>
             Keep {dragonName} fed &{'\n'}
-            <GradientWord>glowing.</GradientWord>
+            <GradientWord size={titleSize}>glowing.</GradientWord>
           </Text>
-          <Text style={styles.subtitle}>
+          <Text style={[styles.subtitle, isNarrow && { fontSize: 13, lineHeight: 19 }]}>
             Pro unlocks smarter AI scans and unlimited feeds, so every meal keeps the bond alive.
           </Text>
 
@@ -486,7 +492,7 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     letterSpacing: -0.6,
     marginTop: 4,
-    maxWidth: 340,
+    maxWidth: '100%',
   },
   titleWord: {
     fontFamily: SERIF,
@@ -639,17 +645,19 @@ const styles = StyleSheet.create({
   planInnerSelected: {
     backgroundColor: 'rgba(28,16,18,0.95)',
   },
-  planLeft: { flex: 1, paddingRight: 8 },
+  planLeft: { flex: 1, minWidth: 0, paddingRight: 8 },
   planTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
     flexWrap: 'wrap',
+    minWidth: 0,
   },
   planTitle: {
     fontSize: 17,
     color: '#F6F4F8',
     fontFamily: fonts.displayMedium,
+    flexShrink: 1,
   },
   planTitleSelected: { color: ACCENT },
   bestValue: {

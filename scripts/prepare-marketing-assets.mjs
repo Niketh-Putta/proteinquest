@@ -34,6 +34,21 @@ async function resizePreview(srcRel, destRel, maxPx) {
   await sharp(src).resize(maxPx, maxPx, { fit: 'inside' }).png().toFile(dest);
 }
 
+async function resizeScreenshot(srcRel, destRel, maxWidth) {
+  const src = path.join(root, srcRel);
+  const dest = path.join(outDir, destRel);
+  ensureDir(path.dirname(dest));
+  await sharp(src).resize(maxWidth, null, { withoutEnlargement: true }).png().toFile(dest);
+}
+
+const STORE_SCREENSHOTS = [
+  { src: 'store/screenshots/iphone67/01.png', dest: 'screenshots/ios-01.png' },
+  { src: 'store/screenshots/iphone67/02.png', dest: 'screenshots/ios-02.png' },
+  { src: 'store/screenshots/iphone67/03.png', dest: 'screenshots/ios-03.png' },
+  { src: 'store/screenshots/iphone67/04.png', dest: 'screenshots/ios-04.png' },
+  { src: 'store/screenshots/iphone67/05.png', dest: 'screenshots/ios-05.png' },
+];
+
 function download(url, dest) {
   execFileSync('curl', ['-fsSL', url, '-o', dest], { stdio: 'pipe' });
 }
@@ -55,6 +70,10 @@ async function main() {
   download(PLAY_BADGE_URL, path.join(badgesDir, 'google-play.png'));
   download(APP_STORE_BADGE_URL, path.join(badgesDir, 'app-store.svg'));
 
+  for (const shot of STORE_SCREENSHOTS) {
+    await resizeScreenshot(shot.src, shot.dest, 540);
+  }
+
   const fontsDir = path.join(outDir, 'fonts');
   ensureDir(fontsDir);
   download(
@@ -75,7 +94,9 @@ async function main() {
     );
   }
 
-  console.log(`Prepared marketing/assets (${SHARE_PREVIEW} + legacy OG aliases)`);
+  console.log(
+    `Prepared marketing/assets (${SHARE_PREVIEW}, ${STORE_SCREENSHOTS.length} store screenshots)`,
+  );
 }
 
 await main();

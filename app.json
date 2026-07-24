@@ -84,9 +84,13 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "16c8d824-5395-4173-aa70-88218dcb54d5"
-      }
+        "projectId": "29f5edc0-8bc3-4b2d-998e-3f5cb44b0c48"
+      },
+      "supabaseUrl": "https://csxdkvpvcasuknhnprxp.supabase.co",
+      "supabaseKey": "sb_publishable_Zg6Jj70nqJcd7OGof5iP6w_9My7yS9F",
+      "revenueCatIosKey": "appl_KODNDDCOzElyVFNlBBZkYQZjtxH",
+      "revenueCatAndroidKey": "goog_pBfqlzoHuwkGyuMtFQGqArwkSfl"
     },
-    "owner": "nikethputta"
+    "owner": "nikethputtas-team"
   }
 }

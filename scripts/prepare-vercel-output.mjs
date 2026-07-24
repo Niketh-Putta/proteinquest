@@ -99,7 +99,7 @@ function main() {
     'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
     'Content-Security-Policy':
       "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; " +
-      "script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'",
+      "script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'",
   };
 
   const config = {
@@ -124,7 +124,7 @@ function main() {
 
   fs.writeFileSync(path.join(outputDir, 'config.json'), `${JSON.stringify(config, null, 2)}\n`);
   console.log(
-    'Prepared .vercel/output — marketing preview + stats dashboard + API (not aliased to proteinquest.app)',
+    'Prepared .vercel/output — marketing landing + stats dashboard + API',
   );
 }
 

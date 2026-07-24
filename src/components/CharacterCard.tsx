@@ -1,7 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { useEffect } from 'react';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -171,7 +172,13 @@ function CharacterCardInner({
 
         <View style={[styles.scene, { width: sceneW, height: sceneH }]}>
           <Animated.View style={[StyleSheet.absoluteFill, characterStyle]}>
-            <Image source={stage.art} style={styles.sceneArt} resizeMode="cover" />
+            <Image
+              source={stage.art}
+              style={styles.sceneArt}
+              contentFit="cover"
+              cachePolicy="memory-disk"
+              transition={0}
+            />
             {hunger >= 1 ? (
               <View
                 pointerEvents="none"
@@ -434,9 +441,10 @@ const styles = StyleSheet.create({
   },
   identity: {
     alignItems: 'center',
-    gap: 3,
-    marginTop: spacing.sm,
+    gap: 8,
+    marginTop: spacing.md,
     zIndex: 1,
+    paddingHorizontal: spacing.sm,
   },
   name: {
     fontFamily: fonts.displayHeavy,
@@ -446,9 +454,10 @@ const styles = StyleSheet.create({
   metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: 6,
     flexWrap: 'wrap',
     justifyContent: 'center',
+    marginTop: 2,
   },
   metaDot: {
     fontFamily: fonts.mono,
@@ -458,10 +467,10 @@ const styles = StyleSheet.create({
   hungerChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    marginTop: 2,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    gap: 5,
+    marginTop: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
     borderRadius: 999,
     borderWidth: StyleSheet.hairlineWidth,
   },
@@ -492,15 +501,16 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingHorizontal: spacing.md,
     fontStyle: 'italic',
+    lineHeight: 15,
   },
   feedCta: {
-    marginTop: 6,
+    marginTop: spacing.sm,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: 6,
     backgroundColor: colors.accent,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
     borderRadius: 999,
   },
   feedCtaText: {
@@ -516,7 +526,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    marginTop: spacing.sm,
+    marginTop: spacing.md,
     paddingHorizontal: spacing.sm,
     zIndex: 1,
   },
@@ -537,11 +547,11 @@ const styles = StyleSheet.create({
     color: colors.hairlineBright,
   },
   bars: {
-    width: '64%',
-    maxWidth: 200,
-    marginTop: spacing.sm,
+    width: '72%',
+    maxWidth: 240,
+    marginTop: spacing.md,
     zIndex: 1,
-    gap: 4,
+    gap: 6,
   },
   barHeader: {
     flexDirection: 'row',
@@ -556,7 +566,7 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   barTrack: {
-    height: 3,
+    height: 4,
     backgroundColor: colors.ringTrack,
     borderRadius: radius.full,
     overflow: 'hidden',
@@ -567,19 +577,22 @@ const styles = StyleSheet.create({
   },
   switcher: {
     width: '100%',
-    marginTop: spacing.md,
+    marginTop: spacing.lg,
     alignItems: 'center',
     zIndex: 1,
+    gap: spacing.sm,
+    paddingBottom: spacing.xs,
   },
   switcherRow: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'flex-end',
-    gap: spacing.md,
+    gap: spacing.lg,
   },
   switcherItem: {
     alignItems: 'center',
-    gap: 5,
+    gap: 8,
+    minWidth: 62,
   },
   dragonPod: {
     width: 44,
@@ -593,7 +606,6 @@ const styles = StyleSheet.create({
     height: 62,
     borderRadius: radius.md,
     borderWidth: 1.5,
-    marginBottom: 8,
     shadowOpacity: 0.55,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 4 },
@@ -635,6 +647,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
     color: colors.textTertiary,
     textTransform: 'uppercase',
+    textAlign: 'center',
   },
   lockedHint: {
     fontFamily: fonts.mono,

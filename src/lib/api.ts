@@ -111,6 +111,41 @@ export async function analyzeFoodPhoto(
   return sanitizeAnalysis(body.analysis);
 }
 
+/** Text-only meal estimate (no photo). Uses the same analyze-food edge function. */
+export async function analyzeFoodText(userNote: string): Promise<Analysis> {
+  const note = typeof userNote === 'string' ? userNote.trim().slice(0, 280) : '';
+  if (note.length < 2) {
+    throw new Error('Describe your meal in a few words first.');
+  }
+
+  const headers = await getAuthHeaders();
+  const url = `${SUPABASE_URL}/functions/v1/analyze-food`;
+  const payload = { text_only: true, user_note: note };
+
+  let res: Response;
+  try {
+    res = await postAnalyzeFood(url, headers, JSON.stringify(payload));
+  } catch (err) {
+    if (err instanceof Error) throw err;
+    throw new Error(friendlyAnalysisError('Network error'));
+  }
+
+  let body: { analysis?: Analysis; error?: string } | null = null;
+  try {
+    body = await res.json();
+  } catch {
+    throw new Error(friendlyAnalysisError(`Analysis server error (${res.status}).`));
+  }
+
+  if (!res.ok || body?.error) {
+    throw new Error(friendlyAnalysisError(body?.error ?? `Analysis failed (${res.status}).`));
+  }
+  if (!body?.analysis) {
+    throw new Error('No analysis returned. Please try again.');
+  }
+  return sanitizeAnalysis(body.analysis);
+}
+
 /** Coerce AI macros to finite numbers so the UI never shows blank / "...". */
 function sanitizeAnalysis(raw: Analysis): Analysis {
   const protein = Number(raw.total_protein_g);
@@ -120,12 +155,38 @@ function sanitizeAnalysis(raw: Analysis): Analysis {
   if (safeCalories <= 0) {
     safeCalories = Math.max(Math.round(safeProtein * 8), 50);
   }
+  const items = Array.isArray(raw.items) ? raw.items : [];
+  const proteinSum = items.reduce((s, i) => s + (Number(i.protein_g) || 0), 0);
+  const normalizedItems = items.map((item) => {
+    const protein_g = Number(item.protein_g);
+    const safeItemProtein = Number.isFinite(protein_g) && protein_g >= 0 ? protein_g : 0;
+    const rawCal = Number(item.calories_g);
+    let calories_g =
+      Number.isFinite(rawCal) && rawCal >= 0 ? Math.round(rawCal) : undefined;
+    if (calories_g == null) {
+      if (proteinSum > 0 && safeItemProtein > 0) {
+        calories_g = Math.max(0, Math.round(safeCalories * (safeItemProtein / proteinSum)));
+      } else if (items.length > 0) {
+        calories_g = Math.max(0, Math.round(safeCalories / items.length));
+      } else {
+        calories_g = 0;
+      }
+    }
+    const grams = Number(item.estimated_grams);
+    return {
+      ...item,
+      protein_g: safeItemProtein,
+      calories_g,
+      estimated_grams:
+        Number.isFinite(grams) && grams > 0 ? Math.round(grams) : item.estimated_grams,
+    };
+  });
   return {
     ...raw,
     total_protein_g: safeProtein,
     calories: safeCalories,
     food_name: raw.food_name?.trim() || 'Meal',
-    items: Array.isArray(raw.items) ? raw.items : [],
+    items: normalizedItems,
   };
 }
 
@@ -141,18 +202,60 @@ export async function uploadFoodPhoto(userId: string, imageBase64: string): Prom
   }
 }
 
+/** Signed URLs last 1h; cache in memory so Today thumbs don't re-sign on every focus. */
+const FOOD_PHOTO_URL_TTL_MS = 50 * 60 * 1000;
+const foodPhotoUrlCache = new Map<string, { url: string; expiresAt: number }>();
+const foodPhotoUrlInflight = new Map<string, Promise<string | null>>();
+
+/** Sync peek for already-signed paths (avoids thumb flash on remount). */
+export function peekFoodPhotoUrl(imagePath: string | null | undefined): string | null {
+  if (!imagePath) return null;
+  const hit = foodPhotoUrlCache.get(imagePath);
+  if (!hit) return null;
+  if (Date.now() >= hit.expiresAt) {
+    foodPhotoUrlCache.delete(imagePath);
+    return null;
+  }
+  return hit.url;
+}
+
 /** Signed URL for a private food-photos object (null if missing). */
 export async function getFoodPhotoUrl(imagePath: string | null | undefined): Promise<string | null> {
   if (!imagePath) return null;
-  try {
-    const { data, error } = await supabase.storage
-      .from('food-photos')
-      .createSignedUrl(imagePath, 60 * 60);
-    if (error || !data?.signedUrl) return null;
-    return data.signedUrl;
-  } catch {
-    return null;
-  }
+  const cached = peekFoodPhotoUrl(imagePath);
+  if (cached) return cached;
+
+  const inflight = foodPhotoUrlInflight.get(imagePath);
+  if (inflight) return inflight;
+
+  const request = (async () => {
+    try {
+      const { data, error } = await supabase.storage
+        .from('food-photos')
+        .createSignedUrl(imagePath, 60 * 60);
+      if (error || !data?.signedUrl) return null;
+      foodPhotoUrlCache.set(imagePath, {
+        url: data.signedUrl,
+        expiresAt: Date.now() + FOOD_PHOTO_URL_TTL_MS,
+      });
+      return data.signedUrl;
+    } catch {
+      return null;
+    } finally {
+      foodPhotoUrlInflight.delete(imagePath);
+    }
+  })();
+
+  foodPhotoUrlInflight.set(imagePath, request);
+  return request;
+}
+
+/** Warm signed URLs for a list of meal photos (Today list). */
+export async function prefetchFoodPhotoUrls(
+  imagePaths: Array<string | null | undefined>,
+): Promise<void> {
+  const unique = [...new Set(imagePaths.filter((p): p is string => !!p))];
+  await Promise.all(unique.map((path) => getFoodPhotoUrl(path)));
 }
 
 export async function fetchLogById(id: string): Promise<ProteinLog | null> {
@@ -175,19 +278,35 @@ export async function updateLog(
     items?: FoodItem[];
   },
 ): Promise<ProteinLog> {
+  const payload: Record<string, unknown> = {
+    food_name: updates.foodName,
+    protein_g: updates.proteinG,
+    calories: updates.calories,
+  };
+  if (updates.items) {
+    payload.items = updates.items.map((item) => ({
+      name: String(item.name || 'Ingredient'),
+      portion: String(item.portion || '1 serving'),
+      protein_g: Number(item.protein_g) || 0,
+      ...(item.calories_g != null && Number.isFinite(Number(item.calories_g))
+        ? { calories_g: Math.max(0, Math.round(Number(item.calories_g))) }
+        : {}),
+      ...(item.estimated_grams != null && Number.isFinite(Number(item.estimated_grams))
+        ? { estimated_grams: Math.max(0, Math.round(Number(item.estimated_grams))) }
+        : {}),
+      ...(item.confidence ? { confidence: item.confidence } : {}),
+    }));
+  }
+
   const { data, error } = await supabase
     .from('protein_logs')
-    .update({
-      food_name: updates.foodName,
-      protein_g: updates.proteinG,
-      calories: updates.calories,
-      ...(updates.items ? { items: updates.items } : {}),
-    })
+    .update(payload)
     .eq('id', id)
     .in('source', ['photo', 'manual'])
-    .select()
-    .single();
+    .select('*')
+    .maybeSingle();
   if (error) throw error;
+  if (!data) throw new Error('Meal update returned no row');
   return data as ProteinLog;
 }
 
@@ -241,6 +360,32 @@ export async function insertLog(params: {
     .single();
   if (error) throw error;
   return data as ProteinLog;
+}
+
+/** Patch image_path after a background upload (non-blocking save path). */
+export async function updateLogImagePath(id: string, imagePath: string): Promise<void> {
+  const { error } = await supabase
+    .from('protein_logs')
+    .update({ image_path: imagePath })
+    .eq('id', id);
+  if (error) throw error;
+}
+
+/** Lightweight today totals for Log it (avoids selecting full meal rows). */
+export async function fetchTodayMealSummary(
+  date = todayISODate(),
+): Promise<{ proteinSum: number; mealCount: number }> {
+  const { data, error } = await supabase
+    .from('protein_logs')
+    .select('protein_g')
+    .eq('logged_date', date)
+    .in('source', ['photo', 'manual']);
+  if (error) throw error;
+  const rows = data ?? [];
+  return {
+    proteinSum: rows.reduce((s, r) => s + Number(r.protein_g), 0),
+    mealCount: rows.length,
+  };
 }
 
 export async function fetchLogsForDate(date: string): Promise<ProteinLog[]> {

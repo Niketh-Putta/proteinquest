@@ -1,8 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   FlatList,
+  Modal,
   Platform,
   Pressable,
   RefreshControl,
@@ -17,6 +19,7 @@ import { CharacterCard } from '@/components/CharacterCard';
 import { DailyDragonPicker } from '@/components/DailyDragonPicker';
 import { FeedQuest } from '@/components/FeedQuest';
 import { FeedToast } from '@/components/FeedToast';
+import { GlassPanel } from '@/components/GlassPanel';
 import { PageCanvas } from '@/components/PageCanvas';
 import { ProgressRing } from '@/components/ProgressRing';
 import { TrainerRankCard } from '@/components/TrainerRankCard';
@@ -27,15 +30,19 @@ import {
   deleteLog,
   fetchLatestMealAt,
   fetchLogsForDate,
+  getFoodPhotoUrl,
+  peekFoodPhotoUrl,
+  prefetchFoodPhotoUrls,
 } from '@/lib/api';
+import { peekLocalMealPhoto } from '@/lib/local-meal-photo';
 import {
   applyDeleteLogToCharacter,
   displayDragonId,
   displayDragonName,
   dragonById,
   isDailyDragonLockedForToday,
+  warmDragonArt,
 } from '@/lib/character';
-import { confirmDestructive } from '@/lib/confirm';
 import { hungerFromLastMealAt, hungerVoice } from '@/lib/dragon-hunger';
 import { flexFill, flexScroll, useLayout, useTabBarScrollInset } from '@/lib/layout';
 import { needsFirstScan } from '@/lib/first-scan';
@@ -45,7 +52,74 @@ import { todayISODate } from '@/lib/protein';
 import { getRetention } from '@/lib/retention';
 import { useSession } from '@/lib/session';
 import type { ProteinLog } from '@/lib/types';
-import { colors, displayLH, fonts, pressableWeb, spacing, type } from '@/theme';
+import { colors, displayLH, fonts, pressableWeb, radius, spacing, type } from '@/theme';
+
+function LogMealThumb({
+  logId,
+  imagePath,
+}: {
+  logId: string;
+  imagePath: string | null;
+}) {
+  const [uri, setUri] = useState<string | null>(
+    () => peekLocalMealPhoto(logId) ?? peekFoodPhotoUrl(imagePath),
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    const local = peekLocalMealPhoto(logId);
+    if (local) setUri(local);
+
+    const cached = peekFoodPhotoUrl(imagePath);
+    if (cached) {
+      setUri(cached);
+      return;
+    }
+    if (!imagePath) return;
+    void getFoodPhotoUrl(imagePath).then((next) => {
+      if (!cancelled && next) setUri(next);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [logId, imagePath]);
+
+  return (
+    <View style={thumbStyles.wrap}>
+      {uri ? (
+        <Image
+          source={{ uri }}
+          style={thumbStyles.img}
+          contentFit="cover"
+          cachePolicy="memory-disk"
+          recyclingKey={imagePath ?? logId}
+          transition={0}
+          accessibilityIgnoresInvertColors
+        />
+      ) : (
+        <Ionicons name="restaurant-outline" size={22} color={colors.textTertiary} />
+      )}
+    </View>
+  );
+}
+
+const thumbStyles = StyleSheet.create({
+  wrap: {
+    width: 64,
+    height: 64,
+    borderRadius: radius.sm,
+    overflow: 'hidden',
+    backgroundColor: colors.surface2,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.hairlineBright,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  img: {
+    width: '100%',
+    height: '100%',
+  },
+});
 
 export default function TodayScreen() {
   const {
@@ -77,12 +151,14 @@ export default function TodayScreen() {
   const starveTrackedDay = useRef<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<ProteinLog | null>(null);
   const [scansLeft, setScansLeft] = useState<number | null>(null);
   /** Extra air below Dynamic Island so FREE / date never sit under the camera. */
   const headerTopPad = insets.top > 0 ? spacing.md : 0;
 
   const load = useCallback(async () => {
     try {
+      // Keep existing logs on screen while refreshing (no blank flash).
       if (isPro(profile)) {
         setScansLeft(null);
         const [logsData, latest, life] = await Promise.all([
@@ -93,23 +169,33 @@ export default function TodayScreen() {
         setLogs(logsData);
         setLastMealAt(latest);
         setLifetimeMeals(life);
-      } else {
-        const [logsData, used, latest, life] = await Promise.all([
-          fetchLogsForDate(todayISODate()),
-          countTodayPhotoScans(),
-          fetchLatestMealAt(),
-          countLifetimeMeals(),
-        ]);
-        setLogs(logsData);
-        setScansLeft(remainingFreeScans(used, profile, life));
-        setLastMealAt(latest);
-        setLifetimeMeals(life);
+        void prefetchFoodPhotoUrls(logsData.map((l) => l.image_path));
+        setNowMs(Date.now());
+        return logsData;
       }
+      const [logsData, used, latest, life] = await Promise.all([
+        fetchLogsForDate(todayISODate()),
+        countTodayPhotoScans(),
+        fetchLatestMealAt(),
+        countLifetimeMeals(),
+      ]);
+      setLogs(logsData);
+      setScansLeft(remainingFreeScans(used, profile, life));
+      setLastMealAt(latest);
+      setLifetimeMeals(life);
+      void prefetchFoodPhotoUrls(logsData.map((l) => l.image_path));
       setNowMs(Date.now());
+      return logsData;
     } catch (e) {
       console.error('Failed to load logs:', e);
+      return [] as ProteinLog[];
     }
   }, [profile?.is_premium, profile?.created_at]);
+
+  useEffect(() => {
+    if (!profile) return;
+    warmDragonArt(displayDragonId(profile, todayISODate()));
+  }, [profile?.id, profile?.daily_dragon_id]);
 
   useFocusEffect(
     useCallback(() => {
@@ -117,14 +203,12 @@ export default function TodayScreen() {
       void needsFirstScan().then((needs) => {
         if (active && needs) router.replace('/scan');
       });
-      void load().then(() => {
+      void load().then((dayLogs) => {
         if (!active || !profile) return;
         const name = displayDragonName(profile, displayDragonId(profile, todayISODate()));
-        // Schedule after load — cancel if meals already logged today.
-        void fetchLogsForDate(todayISODate()).then((dayLogs) => {
-          scheduleStreakAtRiskNudge(name, dayLogs.length > 0).catch(() => {});
-          if (dayLogs.length === 0) trackEvent('streak_at_risk_shown', { via: 'schedule' });
-        });
+        // Reuse the just-loaded logs — no second network round-trip.
+        void scheduleStreakAtRiskNudge(name, dayLogs.length > 0).catch(() => {});
+        if (dayLogs.length === 0) trackEvent('streak_at_risk_shown', { via: 'schedule' });
       });
       trackEvent('app_open', {});
       const tick = setInterval(() => setNowMs(Date.now()), 60_000);
@@ -221,22 +305,18 @@ export default function TodayScreen() {
     );
   }
 
-  async function confirmDelete(log: ProteinLog) {
-    const ok = await confirmDestructive(
-      "Didn't eat this?",
-      `Remove "${log.food_name}" (${Math.round(Number(log.protein_g))}g protein) from today's log.`,
-    );
-    if (ok) await handleDelete(log);
-  }
-
   async function handleDelete(log: ProteinLog) {
     if (deletingId) return;
     const previousLogs = logs;
+    const previousLastMealAt = lastMealAt;
+    const previousLifetime = lifetimeMeals;
     const remainingLogs = logs.filter((l) => l.id !== log.id);
     const todayTotalAfter = remainingLogs.reduce((s, l) => s + Number(l.protein_g), 0);
 
     setDeletingId(log.id);
+    setPendingDelete(null);
     setLogs(remainingLogs);
+    setLifetimeMeals((n) => Math.max(0, n - 1));
 
     try {
       await deleteLog(log.id);
@@ -249,9 +329,13 @@ export default function TodayScreen() {
         });
         await saveProfile(updates);
       }
+      const latest = await fetchLatestMealAt();
+      setLastMealAt(latest);
     } catch (e) {
       console.error('Failed to delete log:', e);
       setLogs(previousLogs);
+      setLastMealAt(previousLastMealAt);
+      setLifetimeMeals(previousLifetime);
       if (Platform.OS === 'web') {
         window.alert('Could not delete. Please try again.');
       }
@@ -430,59 +514,55 @@ export default function TodayScreen() {
       />
     ),
     renderItem: ({ item, index }: { item: ProteinLog; index: number }) => (
-      <Animated.View entering={FadeInDown.delay(60 * Math.min(index, 5)).duration(380)}>
-        <Pressable
-          onPress={() =>
-            router.push({ pathname: '/meal/[id]', params: { id: item.id } } as never)
-          }
-          accessibilityRole="button"
-          accessibilityLabel={`Open analysis for ${item.food_name}`}
-          style={({ pressed }) => [
-            styles.logRow,
-            index > 0 && styles.logRowBorder,
-            pressableWeb,
-            pressed && { opacity: 0.82 },
-          ]}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.logName} numberOfLines={1}>
-              {item.food_name}
-            </Text>
-            <Text style={styles.logTime}>
-              {new Date(item.created_at).toLocaleTimeString([], {
-                hour: '2-digit',
-                minute: '2-digit',
-              })}
-            </Text>
-          </View>
-          <Text style={styles.logProtein}>
-            {Math.round(Number(item.protein_g))}
-            <Text style={styles.logUnit}>g</Text>
-            {item.calories ? (
-              <Text style={styles.logCal}> ({Math.round(Number(item.calories))} cal)</Text>
-            ) : null}
-          </Text>
+      <View style={[styles.logItem, index > 0 && styles.logRowBorder]}>
+        <View style={styles.logRow}>
           <Pressable
-            onPress={(e) => {
-              e.stopPropagation?.();
-              confirmDelete(item);
-            }}
+            onPress={() =>
+              router.push({ pathname: '/meal/[id]', params: { id: item.id } } as never)
+            }
+            accessibilityRole="button"
+            accessibilityLabel={`Open analysis for ${item.food_name}`}
+            style={({ pressed }) => [
+              styles.logMain,
+              pressableWeb,
+              pressed && { opacity: 0.82 },
+            ]}>
+            <LogMealThumb logId={item.id} imagePath={item.image_path} />
+            <View style={styles.logCopy}>
+              <Text style={styles.logName} numberOfLines={2}>
+                {item.food_name}
+              </Text>
+              <Text style={styles.logTime}>
+                {new Date(item.created_at).toLocaleTimeString([], {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+              </Text>
+            </View>
+            <Text style={styles.logProtein}>
+              {Math.round(Number(item.protein_g))}
+              <Text style={styles.logUnit}>g</Text>
+              {item.calories ? (
+                <Text style={styles.logCal}> ({Math.round(Number(item.calories))} cal)</Text>
+              ) : null}
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => setPendingDelete(item)}
             disabled={deletingId === item.id}
             accessibilityLabel="Delete meal"
             accessibilityRole="button"
-            hitSlop={8}
+            hitSlop={10}
             style={({ pressed }) => [
-              styles.deleteBtn,
-              pressed && { opacity: 0.5 },
+              styles.deleteIconBtn,
+              pressableWeb,
+              pressed && { opacity: 0.55 },
               deletingId === item.id && { opacity: 0.35 },
             ]}>
-            <Ionicons
-              name={deletingId === item.id ? 'hourglass-outline' : 'trash-outline'}
-              size={16}
-              color={colors.textTertiary}
-            />
+            <Ionicons name="trash-outline" size={16} color={colors.textTertiary} />
           </Pressable>
-        </Pressable>
-      </Animated.View>
+        </View>
+      </View>
     ),
   };
 
@@ -490,6 +570,72 @@ export default function TodayScreen() {
     <PageCanvas>
       <SafeAreaView style={styles.safe} edges={['top']}>
         <FeedToast visible={!!toastMsg} message={toastMsg ?? ''} onHide={() => setToastMsg(null)} />
+        <Modal
+          visible={!!pendingDelete}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setPendingDelete(null)}>
+          <View style={styles.confirmRoot}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss"
+              style={styles.confirmBackdrop}
+              onPress={() => setPendingDelete(null)}
+            />
+            <View style={styles.confirmCardWrap} accessibilityViewIsModal>
+              <GlassPanel emphasized style={styles.confirmCard}>
+                <View pointerEvents="none" style={styles.confirmSheen} />
+                <Text style={styles.confirmTitle}>Delete this meal?</Text>
+                <Text style={styles.confirmBody}>
+                  Are you sure you want to delete
+                  {pendingDelete ? (
+                    <>
+                      {' '}
+                      <Text style={styles.confirmBodyEmphasis}>
+                        &quot;{pendingDelete.food_name}&quot;
+                      </Text>
+                      <Text style={styles.confirmBodyMeta}>
+                        {' '}
+                        ({Math.round(Number(pendingDelete.protein_g))}g protein)
+                      </Text>
+                    </>
+                  ) : (
+                    ' this meal'
+                  )}
+                  ? This cannot be undone.
+                </Text>
+                <View style={styles.confirmActions}>
+                  <Pressable
+                    onPress={() => setPendingDelete(null)}
+                    accessibilityRole="button"
+                    accessibilityLabel="No"
+                    style={({ pressed }) => [
+                      styles.confirmBtn,
+                      styles.confirmBtnNo,
+                      pressableWeb,
+                      pressed && { opacity: 0.85 },
+                    ]}>
+                    <Text style={styles.confirmBtnNoText}>No</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => {
+                      if (pendingDelete) void handleDelete(pendingDelete);
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel="Yes"
+                    style={({ pressed }) => [
+                      styles.confirmBtn,
+                      styles.confirmBtnYes,
+                      pressableWeb,
+                      pressed && { opacity: 0.9 },
+                    ]}>
+                    <Text style={styles.confirmBtnYesText}>Yes</Text>
+                  </Pressable>
+                </View>
+              </GlassPanel>
+            </View>
+          </View>
+        </Modal>
         {heroLayout === 'sidebar' ? (
           <View
             style={[
@@ -680,7 +826,7 @@ const styles = StyleSheet.create({
     fontSize: 9,
     letterSpacing: 2,
     color: colors.textTertiary,
-    marginBottom: spacing.sm,
+    marginBottom: spacing.md,
   },
   empty: {
     paddingVertical: spacing.lg,
@@ -708,27 +854,48 @@ const styles = StyleSheet.create({
     color: colors.onAccent,
     textTransform: 'uppercase',
   },
+  logItem: {
+    paddingTop: 14,
+    paddingBottom: 10,
+  },
   logRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 16,
+    minHeight: 72,
+    gap: spacing.sm,
+  },
+  logMain: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    minWidth: 0,
     gap: spacing.md,
   },
   logRowBorder: {
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.hairline,
   },
-  logName: { fontFamily: fonts.displayMedium, fontSize: 15, color: colors.text },
+  logCopy: {
+    flex: 1,
+    minWidth: 0,
+    gap: 4,
+    paddingVertical: 2,
+  },
+  logName: {
+    fontFamily: fonts.displayMedium,
+    fontSize: 16,
+    lineHeight: displayLH(16),
+    color: colors.text,
+  },
   logTime: {
     fontFamily: fonts.mono,
-    fontSize: 10,
+    fontSize: 11,
     color: colors.textTertiary,
-    marginTop: 3,
     letterSpacing: 0.3,
   },
   logProtein: {
     fontFamily: fonts.display,
-    fontSize: 20,
+    fontSize: 22,
     color: colors.text,
     fontVariant: ['tabular-nums'],
   },
@@ -740,10 +907,111 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
     fontVariant: ['tabular-nums'],
   },
-  deleteBtn: {
-    width: 36,
-    height: 36,
+  deleteIconBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  confirmRoot: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: spacing.lg,
+  },
+  confirmBackdrop: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: 'rgba(6, 5, 10, 0.55)',
+    ...(Platform.OS === 'web'
+      ? ({
+          backdropFilter: 'blur(22px) saturate(1.4)',
+          WebkitBackdropFilter: 'blur(22px) saturate(1.4)',
+        } as object)
+      : null),
+  },
+  confirmCardWrap: {
+    width: '100%',
+    maxWidth: 340,
+    ...(Platform.OS === 'web'
+      ? ({
+          boxShadow: '0 28px 64px rgba(0,0,0,0.55), 0 0 48px rgba(255,122,89,0.12)',
+        } as object)
+      : {
+          shadowColor: '#000',
+          shadowOpacity: 0.45,
+          shadowRadius: 28,
+          shadowOffset: { width: 0, height: 16 },
+          elevation: 20,
+        }),
+  },
+  confirmCard: {
+    position: 'relative',
+    padding: spacing.lg,
+    gap: spacing.md,
+    borderRadius: 14,
+    backgroundColor: 'rgba(22, 20, 30, 0.42)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.22)',
+    overflow: 'hidden',
+  },
+  confirmSheen: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(255,255,255,0.28)',
+  },
+  confirmTitle: {
+    fontFamily: fonts.displayHeavy,
+    fontSize: 18,
+    lineHeight: displayLH(18),
+    color: colors.text,
+    textAlign: 'center',
+  },
+  confirmBody: {
+    fontFamily: fonts.body,
+    fontSize: 14,
+    lineHeight: 21,
+    color: colors.textSecondary,
+    textAlign: 'center',
+  },
+  confirmBodyEmphasis: {
+    fontFamily: fonts.displayHeavy,
+    fontSize: 14,
+    color: colors.text,
+  },
+  confirmBodyMeta: {
+    fontFamily: fonts.body,
+    fontSize: 14,
+    color: colors.textTertiary,
+  },
+  confirmActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: spacing.xs,
+  },
+  confirmBtn: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  confirmBtnNo: {
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.14)',
+  },
+  confirmBtnYes: {
+    backgroundColor: colors.accent,
+  },
+  confirmBtnNoText: {
+    fontFamily: fonts.body,
+    fontSize: 15,
+    color: colors.textSecondary,
+  },
+  confirmBtnYesText: {
+    fontFamily: fonts.displayHeavy,
+    fontSize: 15,
+    color: '#1A0F0C',
   },
 });

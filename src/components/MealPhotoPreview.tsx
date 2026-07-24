@@ -11,6 +11,7 @@ interface Props {
   bordered?: boolean;
   /** Force a 1:1 square frame (meal scan photos). */
   square?: boolean;
+  borderRadius?: number;
 }
 
 export function MealPhotoPreview({
@@ -18,6 +19,7 @@ export function MealPhotoPreview({
   maxHeightRatio = 0.42,
   bordered = true,
   square = false,
+  borderRadius,
 }: Props) {
   const { height: screenH } = useWindowDimensions();
   const maxHeight = screenH * maxHeightRatio;
@@ -25,12 +27,11 @@ export function MealPhotoPreview({
   const [aspect, setAspect] = useState(3 / 4);
 
   const frameAspect = square ? 1 : aspect;
-  const frameHeight = layoutWidth > 0
-    ? square
-      ? layoutWidth
-      : Math.min(layoutWidth / frameAspect, maxHeight)
-    : square
-      ? maxHeight
+  const frameHeight =
+    layoutWidth > 0
+      ? square
+        ? layoutWidth
+        : Math.min(layoutWidth / frameAspect, maxHeight)
       : maxHeight;
 
   function onLayout(e: LayoutChangeEvent) {
@@ -44,12 +45,18 @@ export function MealPhotoPreview({
       style={[
         styles.frame,
         bordered && styles.bordered,
-        layoutWidth > 0 && { height: frameHeight },
+        borderRadius != null && { borderRadius },
+        // Always set height so expo-image is not 0×0 (Safari shows "Load Error").
+        { height: frameHeight },
       ]}>
       <Image
         source={{ uri }}
         style={styles.image}
         contentFit={square ? 'cover' : 'contain'}
+        cachePolicy="memory-disk"
+        priority="high"
+        recyclingKey={uri.slice(0, 64)}
+        accessibilityLabel=""
         onLoad={(e) => {
           if (square) return;
           const { width, height } = e.source;

@@ -80,7 +80,7 @@ function FoodRow({
 }
 
 export default function ScanIngredientScreen() {
-  const { horizontalPad, contentMaxWidth, contentWidth } = useLayout();
+  const { horizontalPad, formMaxWidth, formWidth } = useLayout();
   const [query, setQuery] = useState('');
   const [recent, setRecent] = useState<CatalogFood[]>([]);
 
@@ -112,7 +112,7 @@ export default function ScanIngredientScreen() {
             styles.topBar,
             {
               paddingHorizontal: horizontalPad,
-              maxWidth: contentMaxWidth,
+              maxWidth: formMaxWidth,
               width: '100%',
               alignSelf: 'center',
             },
@@ -128,7 +128,13 @@ export default function ScanIngredientScreen() {
             accessibilityLabel="Back">
             <Ionicons name="chevron-back" size={22} color={colors.text} />
           </Pressable>
-          <Text style={styles.topTitle}>ADD INGREDIENT</Text>
+          <Text
+            style={[styles.topTitle, { flexShrink: 1, minWidth: 0, textAlign: 'center' }]}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.75}>
+            ADD INGREDIENT
+          </Text>
           <View style={styles.iconBtnSpacer} />
         </View>
 
@@ -139,8 +145,8 @@ export default function ScanIngredientScreen() {
             styles.scroll,
             {
               paddingHorizontal: horizontalPad,
-              maxWidth: contentMaxWidth,
-              width: contentWidth,
+              maxWidth: formMaxWidth,
+              width: formWidth,
               alignSelf: 'center',
             },
           ]}>

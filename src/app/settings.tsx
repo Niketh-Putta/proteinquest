@@ -58,7 +58,7 @@ function goHome() {
 
 export default function SettingsScreen({ embedded = false }: { embedded?: boolean }) {
   const { profile, session, saveProfile } = useSession();
-  const { contentMaxWidth, horizontalPad, isNarrow } = useLayout();
+  const { formMaxWidth, horizontalPad, isNarrow } = useLayout();
   const tabBarInset = useTabBarScrollInset();
   const [saving, setSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
@@ -241,7 +241,16 @@ export default function SettingsScreen({ embedded = false }: { embedded?: boolea
 
   return (
     <SafeAreaView style={styles.safe} edges={embedded ? ['top'] : ['top', 'bottom']}>
-      <View style={styles.topBar}>
+      <View
+        style={[
+          styles.topBar,
+          {
+            paddingHorizontal: horizontalPad,
+            maxWidth: formMaxWidth,
+            width: '100%',
+            alignSelf: 'center',
+          },
+        ]}>
         {embedded ? (
           <View style={styles.iconBtn} />
         ) : (
@@ -260,7 +269,7 @@ export default function SettingsScreen({ embedded = false }: { embedded?: boolea
             styles.scroll,
             {
               paddingHorizontal: horizontalPad,
-              maxWidth: contentMaxWidth,
+              maxWidth: formMaxWidth,
               width: '100%',
               alignSelf: 'center',
             },
@@ -516,7 +525,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },
   iconBtn: {

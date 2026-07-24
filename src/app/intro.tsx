@@ -274,16 +274,15 @@ function PhaseProgress({ index, total }: { index: number; total: number }) {
   );
 }
 
-/** Pinned CTA (~52) + gap so ScrollView content never sits under the button. */
-const FOOTER_CLEARANCE = 96;
-
 export default function IntroScreen() {
   const { saveProfile, loading: sessionLoading, session } = useSession();
-  const { horizontalPad, contentMaxWidth, height, width, isDesktop } = useLayout();
+  const { horizontalPad, formMaxWidth, height, width, isDesktop } = useLayout();
   const insets = useSafeAreaInsets();
   const isCompact = height < 700 || width < 390;
   const isTiny = height < 640 || width < 360;
   const footerGap = usePinnedFooterGap(isCompact);
+  /** Pinned CTA (~52) + footer pad so name field never sits under Continue. */
+  const footerClearance = (isTiny ? 96 : 112) + Math.max(footerGap - spacing.sm, 0);
   const phaseScrollRef = useRef<ScrollView>(null);
 
   const [phase, setPhase] = useState<Phase>('hero');
@@ -434,7 +433,7 @@ export default function IntroScreen() {
           <Pressable
             style={[
               styles.inner,
-              { paddingHorizontal: horizontalPad, maxWidth: contentMaxWidth },
+              { paddingHorizontal: horizontalPad, maxWidth: formMaxWidth },
             ]}
             onPress={() => {
               // Tap anywhere to skip straight to the settled title.
@@ -499,7 +498,7 @@ export default function IntroScreen() {
           <View
             style={[
               styles.inner,
-              { paddingHorizontal: horizontalPad, maxWidth: contentMaxWidth },
+              { paddingHorizontal: horizontalPad, maxWidth: formMaxWidth },
             ]}>
             <View style={styles.topBar}>
               <Pressable
@@ -520,7 +519,7 @@ export default function IntroScreen() {
               contentContainerStyle={[
                 styles.phaseScrollContent,
                 (phase === 'dragons' || phase === 'name') && styles.phaseScrollContentNamed,
-                { paddingBottom: FOOTER_CLEARANCE },
+                { paddingBottom: footerClearance },
               ]}
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="on-drag"

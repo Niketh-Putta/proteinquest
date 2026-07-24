@@ -1,5 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import { EXTRA_FOODS } from './food-catalog-extra';
+import { MORE_FOODS } from './food-catalog-more';
+
 /** Searchable food entries for Add Ingredient. Values are per default portion (qty 1). */
 export type CatalogFood = {
   name: string;
@@ -17,13 +20,41 @@ const MAX_RECENT = 12;
 
 export const COMMON_FOODS: CatalogFood[] = [
   { name: 'Egg', portion: '1 egg', protein_g: 6.3, calories_g: 72, estimated_grams: 50 },
-  { name: 'Chicken breast', portion: '1 serving', protein_g: 31, calories_g: 165, estimated_grams: 100 },
+  {
+    name: 'Chicken breast',
+    portion: '1 serving',
+    protein_g: 31,
+    calories_g: 165,
+    estimated_grams: 100,
+    aliases: ['chick breast', 'chickenbreast', 'chicken breast fillet'],
+  },
   { name: 'Rice', portion: '1 serving', protein_g: 2.7, calories_g: 130, estimated_grams: 100 },
-  { name: 'Paneer', portion: '1 serving', protein_g: 18, calories_g: 265, estimated_grams: 100 },
-  { name: 'Milk', portion: '1 cup', protein_g: 8, calories_g: 122, estimated_grams: 244 },
+  {
+    name: 'Paneer',
+    portion: '1 serving',
+    protein_g: 18,
+    calories_g: 265,
+    estimated_grams: 100,
+    aliases: ['indian cottage cheese', 'panir'],
+  },
+  {
+    name: 'Milk',
+    portion: '1 cup',
+    protein_g: 8,
+    calories_g: 122,
+    estimated_grams: 244,
+    aliases: ['cows milk', 'dairy milk drink'],
+  },
   { name: 'Banana', portion: '1 banana', protein_g: 1.3, calories_g: 105, estimated_grams: 118 },
   { name: 'Curd', portion: '1 serving', protein_g: 3.5, calories_g: 60, estimated_grams: 100 },
-  { name: 'Oats', portion: '1 serving', protein_g: 5, calories_g: 150, estimated_grams: 40 },
+  {
+    name: 'Oats',
+    portion: '1 serving',
+    protein_g: 5,
+    calories_g: 150,
+    estimated_grams: 40,
+    aliases: ['oatmeal', 'porridge oats', 'oat'],
+  },
   { name: 'Dal', portion: '1 bowl', protein_g: 9, calories_g: 120, estimated_grams: 150 },
 ];
 
@@ -173,17 +204,29 @@ export const FOOD_CATALOG: CatalogFood[] = [
   { name: 'Sushi', portion: '1 piece', protein_g: 1.7, calories_g: 33, estimated_grams: 25 },
   { name: 'Dumpling', portion: '1 dumpling', protein_g: 2, calories_g: 50, estimated_grams: 25 },
   { name: 'Momo', portion: '1 momo', protein_g: 1.6, calories_g: 44, estimated_grams: 24 },
+  ...EXTRA_FOODS,
+  ...MORE_FOODS,
 ];
 
 function normalize(s: string): string {
-  return s.trim().toLowerCase().replace(/\s+/g, ' ');
+  return s
+    .trim()
+    .toLowerCase()
+    .replace(/[-_/]/g, ' ')
+    .replace(/\s+/g, ' ');
+}
+
+function haystackFor(food: CatalogFood): string {
+  return [food.name, ...(food.aliases ?? [])].map(normalize).join(' · ');
 }
 
 function matchesQuery(food: CatalogFood, q: string): boolean {
   if (!q) return true;
-  const n = normalize(food.name);
-  if (n.includes(q)) return true;
-  return (food.aliases ?? []).some((a) => normalize(a).includes(q));
+  const hay = haystackFor(food);
+  if (hay.includes(q)) return true;
+  const tokens = q.split(' ').filter(Boolean);
+  if (tokens.length > 1 && tokens.every((t) => hay.includes(t))) return true;
+  return false;
 }
 
 /** Deduped catalog (COMMON entries appear once). */
@@ -210,7 +253,7 @@ export function searchCatalog(query: string): CatalogFood[] {
     if (normalize(food.name).startsWith(q)) starts.push(food);
     else contains.push(food);
   }
-  return [...starts, ...contains].slice(0, 60);
+  return [...starts, ...contains].slice(0, 80);
 }
 
 export async function loadRecentFoods(): Promise<CatalogFood[]> {

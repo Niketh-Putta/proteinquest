@@ -8,6 +8,8 @@ import { join } from 'node:path';
 
 const DOMAIN = 'proteinquest.app';
 const APEX_IP = '216.198.79.1';
+/** Vercel edge IP for subdomain A records (app.proteinquest.app). */
+const APP_IP = '76.76.21.21';
 const WWW_CNAME = '9e4289fc20e89ed6.vercel-dns-017.com';
 
 function loadEnvFile(path) {
@@ -56,10 +58,17 @@ async function main() {
 
   const aRecords = await getRecords('A');
   const apex = aRecords.filter((r) => r.name === '@' || r.name === '');
-  const otherA = aRecords.filter((r) => r.name !== '@' && r.name !== '');
+  const oldApp = aRecords.filter((r) => r.name === 'app');
+  const otherA = aRecords.filter(
+    (r) => r.name !== '@' && r.name !== '' && r.name !== 'app',
+  );
   const newApex = { data: APEX_IP, name: '@', ttl: 600 };
-  await putRecords('A', [...otherA, newApex]);
+  const newApp = { data: APP_IP, name: 'app', ttl: 600 };
+  await putRecords('A', [...otherA, newApex, newApp]);
   console.log(`A @ → ${APEX_IP} (was ${apex.map((r) => r.data).join(', ') || 'none'})`);
+  console.log(
+    `A app → ${APP_IP} (was ${oldApp.map((r) => r.data).join(', ') || 'none'})`,
+  );
 
   const cnameRecords = await getRecords('CNAME');
   const otherCname = cnameRecords.filter((r) => r.name !== 'www');
@@ -69,6 +78,7 @@ async function main() {
   console.log(`CNAME www → ${WWW_CNAME} (was ${oldWww?.data ?? 'none'})`);
 
   console.log('Done. DNS may take 5–15 minutes to propagate.');
+  console.log('Then: npx vercel alias set <deploy-url> app.proteinquest.app');
 }
 
 main().catch((err) => {

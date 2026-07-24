@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>ProteinQuest Stats</title>
+    <link rel="stylesheet" href="/fonts.css" />
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0c0b10;
+        --card: #15121a;
+        --text: #f5f5f7;
+        --muted: #9ca3af;
+        --accent: #ff7a59;
+        --line: rgba(255, 255, 255, 0.08);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: 'Sora', system-ui, sans-serif;
+        background: radial-gradient(circle at top, #1a1218 0%, var(--bg) 55%);
+        color: var(--text);
+        padding: 32px 20px 48px;
+      }
+      .wrap {
+        max-width: 720px;
+        margin: 0 auto;
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 1.5rem;
+        font-weight: 700;
+      }
+      .sub {
+        color: var(--muted);
+        margin: 0 0 28px;
+        font-size: 0.95rem;
+      }
+      .grid {
+        display: grid;
+        gap: 16px;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        padding: 22px 20px;
+      }
+      .label {
+        color: var(--muted);
+        font-size: 0.78rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        margin-bottom: 10px;
+      }
+      .value {
+        font-size: 2.4rem;
+        font-weight: 700;
+        line-height: 1;
+        color: var(--accent);
+      }
+      .hint,
+      .error,
+      .meta {
+        margin-top: 10px;
+        font-size: 0.82rem;
+        color: var(--muted);
+        line-height: 1.45;
+      }
+      .error {
+        color: #fca5a5;
+      }
+      .meta {
+        margin-top: 28px;
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap" id="app">
+      <h1>ProteinQuest stats</h1>
+      <p class="sub">Store download counts (private, not indexed).</p>
+      <p class="hint">Loading…</p>
+    </div>
+    <script src="/pqx-stats-k7m2n9.js" defer></script>
+  </body>
+</html>

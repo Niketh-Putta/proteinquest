@@ -6,7 +6,7 @@
     <title>ProteinQuest</title>
     <meta
       name="description"
-      content="Scan meals, track your daily protein goal, and evolve your dragon."
+      content="Download ProteinQuest — scan meals, track protein, and evolve your dragon."
     />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="ProteinQuest" />
@@ -14,7 +14,7 @@
     <meta property="og:title" content="ProteinQuest" />
     <meta
       property="og:description"
-      content="Scan meals, track your daily protein goal, and evolve your dragon."
+      content="Download ProteinQuest — scan meals, track protein, and evolve your dragon."
     />
     <meta
       property="og:image"
@@ -27,12 +27,11 @@
     <meta property="og:image:type" content="image/png" />
     <meta property="og:image:width" content="675" />
     <meta property="og:image:height" content="1200" />
-    <meta property="og:updated_time" content="2026-06-20T13:00:00Z" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="ProteinQuest" />
     <meta
       name="twitter:description"
-      content="Scan meals, track your daily protein goal, and evolve your dragon."
+      content="Download ProteinQuest — scan meals, track protein, and evolve your dragon."
     />
     <meta
       name="twitter:image"
@@ -49,73 +48,89 @@
   <body>
     <main class="landing">
       <header class="brand">
-        <img src="/assets/icon.png" width="28" height="28" alt="" />
+        <img src="/assets/icon.png" width="32" height="32" alt="" />
         <span>ProteinQuest</span>
       </header>
 
-      <div class="body">
-        <section class="hero">
-          <h1>Track protein.<br />Grow your dragon.</h1>
-          <p class="lead">
-            Snap a meal, hit your protein goal, and evolve your companion, powered by AI.
-          </p>
-
-          <div class="store-badges">
-            <a
-              class="store-badge store-badge--web"
-              href="https://dist-two-ashen-93.vercel.app"
-              aria-label="Open ProteinQuest web app"
-            >
-              <span class="store-badge__web-label">Open web app</span>
-            </a>
-            <a
-              class="store-badge store-badge--play"
-              data-store="play"
-              href="#"
-              aria-label="Get it on Google Play"
-            >
-              <img
-                src="/assets/badges/google-play.png"
-                width="646"
-                height="250"
-                alt="Get it on Google Play"
-              />
-            </a>
-            <a
-              class="store-badge store-badge--ios"
-              data-store="ios"
-              href="#"
-              aria-label="Download on the App Store"
-            >
-              <img
-                src="/assets/badges/app-store.svg"
-                width="120"
-                height="40"
-                alt="Download on the App Store"
-              />
-            </a>
+      <section
+        class="carousel"
+        id="screenshot-carousel"
+        aria-roledescription="carousel"
+        aria-label="App screenshots"
+        tabindex="0"
+      >
+        <div class="carousel__viewport">
+          <button
+            type="button"
+            class="carousel__btn carousel__btn--prev"
+            aria-label="Previous screenshot"
+          >
+            ‹
+          </button>
+          <div class="carousel__stage">
+            <div class="carousel__track">
+              <figure class="carousel__slide" aria-roledescription="slide">
+                <img src="/assets/screenshots/ios-01.png" width="540" height="1170" alt="Today screen" />
+              </figure>
+              <figure class="carousel__slide" aria-roledescription="slide">
+                <img src="/assets/screenshots/ios-02.png" width="540" height="1170" alt="Trends screen" />
+              </figure>
+              <figure class="carousel__slide" aria-roledescription="slide">
+                <img src="/assets/screenshots/ios-03.png" width="540" height="1170" alt="Intro screen" />
+              </figure>
+              <figure class="carousel__slide" aria-roledescription="slide">
+                <img src="/assets/screenshots/ios-04.png" width="540" height="1170" alt="Pro screen" />
+              </figure>
+              <figure class="carousel__slide" aria-roledescription="slide">
+                <img src="/assets/screenshots/ios-05.png" width="540" height="1170" alt="Scan screen" />
+              </figure>
+            </div>
           </div>
-        </section>
+          <button
+            type="button"
+            class="carousel__btn carousel__btn--next"
+            aria-label="Next screenshot"
+          >
+            ›
+          </button>
+        </div>
+        <div class="carousel__dots" role="tablist" aria-label="Choose screenshot"></div>
+      </section>
 
-        <figure class="preview">
+      <div class="store-badges">
+        <a
+          class="store-badge store-badge--play"
+          data-store="play"
+          href="#"
+          aria-label="Get it on Google Play"
+        >
           <img
-            class="preview__hero"
-            src="/assets/hero-promo.jpg"
-            width="576"
-            height="1024"
-            alt="ProteinQuest app showing daily protein goal with Ember the baby fire dragon"
-            loading="eager"
+            src="/assets/badges/google-play.png"
+            width="646"
+            height="250"
+            alt="Get it on Google Play"
           />
-        </figure>
+        </a>
+        <a
+          class="store-badge store-badge--ios"
+          data-store="ios"
+          href="#"
+          aria-label="Download on the App Store"
+        >
+          <img
+            src="/assets/badges/app-store.svg"
+            width="120"
+            height="40"
+            alt="Download on the App Store"
+          />
+        </a>
       </div>
 
       <footer class="footer">
         <nav aria-label="Legal">
           <a href="/privacy">Privacy</a>
           <a href="/terms">Terms</a>
-          <a href="mailto:niketh13putta@gmail.com">Contact</a>
         </nav>
-        <p>© 2026 ProteinQuest</p>
       </footer>
     </main>
 

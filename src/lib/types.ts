@@ -80,6 +80,8 @@ export interface FoodItem {
   /** Visual size estimate in grams - protein scales with this, not food type alone. */
   estimated_grams?: number;
   protein_g: number;
+  /** Per-item calories when available from analysis. */
+  calories_g?: number;
   confidence?: Confidence;
 }
 

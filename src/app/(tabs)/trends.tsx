@@ -6,7 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { PageCanvas } from '@/components/PageCanvas';
 import { fetchDailyTotals } from '@/lib/api';
 import { displayProgress, effectiveStreak } from '@/lib/character';
-import { useLayout } from '@/lib/layout';
+import { useLayout, useTabBarScrollInset } from '@/lib/layout';
 import { todayISODate } from '@/lib/protein';
 import { useSession } from '@/lib/session';
 import { colors, displayLH, fonts, spacing, type } from '@/theme';
@@ -15,7 +15,8 @@ const WINDOW = 7;
 
 export default function TrendsScreen() {
   const { profile } = useSession();
-  const { contentMaxWidth, horizontalPad, titleSize, typeScale, isDesktop } = useLayout();
+  const { formMaxWidth, horizontalPad, titleSize, typeScale, isDesktop, isNarrow } = useLayout();
+  const tabBarScrollInset = useTabBarScrollInset(isNarrow);
   const heroNumSize = Math.round(72 * typeScale);
   const plotHeight = isDesktop ? 200 : 168;
   const [totals, setTotals] = useState<Record<string, number>>({});
@@ -69,15 +70,20 @@ export default function TrendsScreen() {
           styles.scroll,
           {
             paddingHorizontal: horizontalPad,
-            maxWidth: contentMaxWidth,
+            maxWidth: formMaxWidth,
             width: '100%',
             alignSelf: 'center',
+            paddingBottom: tabBarScrollInset,
           },
         ]}
         showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
           <Text style={styles.eyebrow}>LAST {WINDOW} DAYS</Text>
-          <Text style={[styles.title, { fontSize: titleSize, lineHeight: displayLH(titleSize) }]}>
+          <Text
+            style={[styles.title, { fontSize: titleSize, lineHeight: displayLH(titleSize) }]}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.85}>
             Rhythm
           </Text>
         </View>
@@ -189,7 +195,7 @@ export default function TrendsScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
-  scroll: { paddingTop: spacing.lg, paddingBottom: 120 },
+  scroll: { paddingTop: spacing.lg },
   header: { marginBottom: spacing.xl },
   eyebrow: { ...type.eyebrow, marginBottom: 6 },
   title: { ...type.pageTitle },

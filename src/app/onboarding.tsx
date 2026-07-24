@@ -119,7 +119,7 @@ function StepProgress({ index }: { index: number }) {
 
 export default function Onboarding() {
   const { profile, saveProfile } = useSession();
-  const { horizontalPad, contentMaxWidth, isNarrow, width, height } = useLayout();
+  const { horizontalPad, formMaxWidth, isNarrow, width, height } = useLayout();
   const isCompact = height < 700 || width < 390;
   const footerGap = usePinnedFooterGap(isCompact);
   const [step, setStep] = useState<Step>('dragon');
@@ -180,7 +180,7 @@ export default function Onboarding() {
   // Centered content column for the scroll body.
   const columnStyle = {
     width: '100%' as const,
-    maxWidth: contentMaxWidth,
+    maxWidth: formMaxWidth,
     alignSelf: 'center' as const,
     paddingHorizontal: horizontalPad,
   };

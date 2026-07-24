@@ -8,10 +8,13 @@ interface Props {
   style?: ViewStyle;
   /** When true, children can use a two-column row on tablet/desktop. */
   wide?: boolean;
+  /** Phone-width column on tablet/iPad (forms, settings, lists). */
+  form?: boolean;
 }
 
-export function ScreenShell({ children, style, wide }: Props) {
-  const { contentMaxWidth, horizontalPad, isWide, columnGap } = useLayout();
+export function ScreenShell({ children, style, wide, form }: Props) {
+  const { contentMaxWidth, formMaxWidth, horizontalPad, isWide, columnGap } = useLayout();
+  const maxWidth = form ? formMaxWidth : contentMaxWidth;
 
   return (
     <View
@@ -19,7 +22,7 @@ export function ScreenShell({ children, style, wide }: Props) {
         styles.shell,
         {
           paddingHorizontal: horizontalPad,
-          maxWidth: contentMaxWidth,
+          maxWidth,
           width: '100%',
           alignSelf: 'center',
         },

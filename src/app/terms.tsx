@@ -40,7 +40,7 @@ function Bullet({ children }: { children: string }) {
 }
 
 export default function TermsScreen() {
-  const { contentMaxWidth, horizontalPad } = useLayout();
+  const { formMaxWidth, horizontalPad } = useLayout();
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
@@ -56,7 +56,7 @@ export default function TermsScreen() {
           styles.scroll,
           {
             paddingHorizontal: horizontalPad,
-            maxWidth: contentMaxWidth,
+            maxWidth: formMaxWidth,
             width: '100%',
             alignSelf: 'center',
           },

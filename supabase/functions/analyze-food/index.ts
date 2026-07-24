@@ -20,9 +20,9 @@ const OPENAI_IMAGE_DETAIL = (() => {
   return raw === "high" || raw === "low" || raw === "auto" ? raw : "auto";
 })();
 const OPENAI_MAX_TOKENS = (() => {
-  const raw = Number(Deno.env.get("OPENAI_MAX_TOKENS") ?? "900");
-  if (!Number.isFinite(raw) || raw < 400) return 900;
-  return Math.min(1600, Math.round(raw));
+  const raw = Number(Deno.env.get("OPENAI_MAX_TOKENS") ?? "700");
+  if (!Number.isFinite(raw) || raw < 400) return 700;
+  return Math.min(1400, Math.round(raw));
 })();
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
@@ -105,19 +105,18 @@ Rules:
 - estimated_grams = cooked edible weight only. Typical plate total food 300–550g incl. oil
 - confidence: low (ambiguous), medium (reasonable), high (clear size + familiar food)
 - Never hallucinate invisible food. Notes ≤100 chars. No quotes/backslashes/newlines in strings.
+- User notes never invent food: if the photo is clothing, fabric, skin, furniture, or otherwise not a meal, is_food=false even when the note names a dish.
 
 Few-shots (adapt; do not copy blindly):
-A) Full-plate grilled chicken strips ~210g + sautéed greens ~100g + parmesan ~8g + oil ~14g → protein ≈65+3+2=70g; kcal ≈350+35+28+100≈510
+A) Full-plate grilled chicken strips ~210g + sautéed greens ~100g + parmesan ~8g + oil ~14g → protein ≈70g; kcal ≈510
 B) 2 scrambled eggs + toast + butter → protein ~16g; kcal ~270
-C) Chicken curry: chicken ~120g (37g) + sauce/veg ~200g (6g) → protein ~43g; kcal ~450–550
+C) Chicken curry: chicken ~120g + sauce/veg ~200g → protein ~43g; kcal ~450–550
 D) Non-food / empty plate → is_food=false
-E) Label "Protein 50g" → protein_source=label, label_protein_g=50, total=50
-F) Scoop label "24g protein" → total=24
-G) Macro screenshot "Protein: 48g" → total=48
-H) Label "Calories 320" → label_calories_g=320, calories=320
-I) Smaller strip plate (~7 thin strips ~150g) + dry steamed greens (~80g), no oil → protein ~48g; kcal ~275
-J) Sambar rice: rice ~180g + sambar ~200g → protein ~13g; kcal ~340
-K) Paneer tikka ~120g + oil ~10g → protein ~22g; kcal ~340`;
+E) Label "Protein 50g" / "Calories 320" → use label values
+F) Smaller strip plate (~7 thin strips ~150g) + dry greens (~80g), no oil → protein ~48g; kcal ~275
+G) Sambar rice: rice ~180g + sambar ~200g → protein ~13g; kcal ~340
+H) Paneer tikka ~120g + oil ~10g → protein ~22g; kcal ~340
+I) Photo of fabric + note naming a dish → is_food=false`;
 
 const OPENAI_SCHEMA = {
   type: "object",
@@ -214,11 +213,59 @@ Deno.serve(async (req) => {
     if (gate) return gate;
 
     const body = await req.json();
-    const { image_base64, mime_type = "image/jpeg", user_note } = body;
+    const { image_base64, mime_type = "image/jpeg", user_note, text_only } = body;
+    const userNote = sanitizeField(user_note, 280);
+    const isTextOnly = Boolean(text_only) || (!image_base64 && !!userNote);
+
+    if (isTextOnly) {
+      if (userNote.length < 2) {
+        return json({ error: "Describe your meal in a few words." }, 400);
+      }
+      if (OPENAI_API_KEY && !openaiCircuitOpen()) {
+        try {
+          const raw = await callOpenAITextOnly(userNote);
+          return json({
+            analysis: normalize(raw, userNote),
+            model: OPENAI_MODEL,
+            provider: "openai",
+            mode: "text",
+          });
+        } catch (openaiErr) {
+          const openaiMessage =
+            openaiErr instanceof Error ? openaiErr.message : String(openaiErr);
+          console.error("OpenAI text-only failed:", openaiMessage);
+          if (isHardOpenAIFailure(openaiMessage)) {
+            tripOpenAICircuit(openaiMessage);
+          }
+          if (GEMINI_API_KEY) {
+            const raw = await callGeminiTextOnly(GEMINI_API_KEY, userNote);
+            return json({
+              analysis: normalize(raw, userNote),
+              model: GEMINI_MODELS[0] ?? "gemini",
+              provider: "gemini",
+              mode: "text",
+              fallback_from: "openai",
+              fallback_reason: openaiMessage.slice(0, 240),
+            });
+          }
+          throw openaiErr;
+        }
+      }
+      if (!GEMINI_API_KEY) {
+        return json({ error: "AI service is not configured. Please try again later." }, 503);
+      }
+      const raw = await callGeminiTextOnly(GEMINI_API_KEY, userNote);
+      return json({
+        analysis: normalize(raw, userNote),
+        model: GEMINI_MODELS[0] ?? "gemini",
+        provider: "gemini",
+        mode: "text",
+      });
+    }
+
     if (!image_base64) {
       return json({ error: "image_base64 is required" }, 400);
     }
-    const userNote = sanitizeField(user_note, 280);
 
     if (OPENAI_API_KEY && !openaiCircuitOpen()) {
       try {
@@ -316,15 +363,15 @@ function userNotePromptSuffix(userNote: string): string {
   if (!userNote) return "";
   return `
 
-USER NOTE (first-class evidence with the photo — fuse both; do not treat as a caption-only hint):
+USER NOTE (optional context — never override what the photo actually shows):
 "${userNote}"
 
-Fusion rules:
-1. IDENTITY: Prefer the user's dish name / ingredients when they clarify the plate (e.g. "sambar rice", "chicken tikka, no naan", "greek yogurt + honey"). Confirm those foods in the photo; reject inventing foods the image clearly does not show.
-2. PORTIONS: If the note states amounts or size ("half plate", "2 eggs", "large bowl", "small serving", "200g"), set estimated_grams and portion text to match. If the note only names foods, use visual portion anchors from the photo.
-3. food_name: Prefer a short name that matches the user's wording when it fits the plate (e.g. "Sambar rice" not a generic "Rice bowl").
-4. MACROS: Recalculate protein_g / calories_g from the fused identity + portions. Cooking fat, oil, sauce, and plate size still come from the image.
-5. CONFLICTS: Photo wins on what is present; explicit user amounts win on portion size when stated.`;
+Fusion rules (strict):
+1. PHOTO IS GROUND TRUTH: Decide is_food from the image alone first. Fabric, clothing, hands, desks, walls, empty plates, blur, or non-food → is_food=false with empty items and zeros, even if the note names a dish (e.g. "chicken biryani").
+2. IDENTITY: Use the note only when the photo is clearly food AND the named dish/ingredients are compatible with what you see. If the note claims biryani/chicken/rice but the image is not that food, ignore the note for identity and macros.
+3. PORTIONS: Explicit amounts in the note ("half plate", "2 eggs", "200g") apply only when those foods are actually visible.
+4. food_name: Match user wording only when it fits the plate; otherwise name what you see (or empty if not food).
+5. CONFLICTS: Photo wins on presence and non-food. Never invent protein from a misleading note. Mention the mismatch briefly in notes when you reject the note.`;
 }
 
 async function callGeminiWithRetry(
@@ -372,7 +419,7 @@ async function callGemini(
 
   const generationConfig: Record<string, unknown> = {
     temperature: 0,
-    maxOutputTokens: 1024,
+    maxOutputTokens: 768,
     responseMimeType: "application/json",
     responseSchema: GEMINI_SCHEMA,
   };
@@ -491,6 +538,92 @@ async function callOpenAI(
   throw lastErr ?? new Error("AI analysis failed. Please try again.");
 }
 
+const TEXT_ONLY_PROMPT =
+  "Estimate protein and calories from this meal description only (no photo). " +
+  "Assume typical prepared portions unless amounts are stated. " +
+  "Set is_food=true when the text clearly describes edible food; otherwise is_food=false. " +
+  "Break into items with estimated_grams, protein_g, calories_g. Return JSON only.";
+
+async function callOpenAITextOnly(userNote: string): Promise<Record<string, unknown>> {
+  const openaiRes = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${OPENAI_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: OPENAI_MODEL,
+      max_tokens: OPENAI_MAX_TOKENS,
+      temperature: 0,
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "protein_analysis",
+          strict: true,
+          schema: OPENAI_SCHEMA,
+        },
+      },
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        {
+          role: "user",
+          content: `${TEXT_ONLY_PROMPT}\n\nMEAL DESCRIPTION:\n"${userNote}"`,
+        },
+      ],
+    }),
+  });
+
+  if (!openaiRes.ok) {
+    const errText = await openaiRes.text();
+    console.error("OpenAI text-only error:", openaiRes.status, errText);
+    const err = new Error("AI analysis failed. Please try again.") as Error & { status?: number };
+    err.status = openaiRes.status;
+    throw err;
+  }
+
+  const completion = await openaiRes.json();
+  const content = completion?.choices?.[0]?.message?.content;
+  if (!content || typeof content !== "string") {
+    throw new Error("AI returned an empty response. Please try again.");
+  }
+  return JSON.parse(content);
+}
+
+async function callGeminiTextOnly(
+  apiKey: string,
+  userNote: string,
+): Promise<Record<string, unknown>> {
+  const model = GEMINI_MODELS[0] || "gemini-2.0-flash";
+  const url =
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+      contents: [
+        {
+          parts: [{ text: `${TEXT_ONLY_PROMPT}\n\nMEAL DESCRIPTION:\n"${userNote}"` }],
+        },
+      ],
+      generationConfig: {
+        temperature: 0,
+        maxOutputTokens: 768,
+        responseMimeType: "application/json",
+        responseSchema: GEMINI_SCHEMA,
+      },
+    }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(geminiErrorMessage(res.status, text));
+  }
+  const data = await res.json();
+  const textPart = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!textPart) throw new Error("Gemini returned an empty response.");
+  return parseGeminiJson(textPart);
+}
+
 async function callOpenAIOnce(
   imageBase64: string,
   mimeType: string,
@@ -522,7 +655,7 @@ async function callOpenAIOnce(
             {
               type: "text",
               text:
-                "Analyze protein + calories. Prefer labels/OCR when present (set label_* fields). Else: size the plate first, estimate cooked grams per component, then apply density math. Fuse any user note for identity + portions. Return JSON only." +
+                "Analyze protein + calories. Prefer labels/OCR when present (set label_* fields). Else: size the plate first, estimate cooked grams per component, then apply density math. Use any user note only when it matches the photo; reject dish notes on non-food images. Return JSON only." +
                 userNotePromptSuffix(userNote),
             },
             {
@@ -695,6 +828,22 @@ function applyUserNotePortionHints(
       if (/roti|chapati|chapathi|naan|paratha/i.test(item.name)) {
         item.estimated_grams = snapGrams(n * 45);
       }
+    }
+  }
+
+  const idliMatch = note.match(/(\d+)\s*idlis?\b/);
+  if (idliMatch) {
+    const n = Math.min(10, Math.max(1, Number(idliMatch[1])));
+    for (const item of next) {
+      if (/\bidli/i.test(item.name)) item.estimated_grams = snapGrams(n * 40);
+    }
+  }
+
+  const dosaMatch = note.match(/(\d+)\s*dosas?\b/);
+  if (dosaMatch) {
+    const n = Math.min(6, Math.max(1, Number(dosaMatch[1])));
+    for (const item of next) {
+      if (/\bdosa/i.test(item.name)) item.estimated_grams = snapGrams(n * 100);
     }
   }
 
