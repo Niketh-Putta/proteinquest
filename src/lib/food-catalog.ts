@@ -3,8 +3,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BRAND_FOODS } from './food-catalog-brands';
 import { EXTRA_FOODS } from './food-catalog-extra';
 import { MEAL_FOODS } from './food-catalog-meals';
+import { MEAL_FOODS_2 } from './food-catalog-meals-2';
 import { MEGA_FOODS } from './food-catalog-mega';
 import { MORE_FOODS } from './food-catalog-more';
+import { MORE_FOODS_2 } from './food-catalog-more-2';
+import { MORE_FOODS_3 } from './food-catalog-more-3';
+import { MORE_FOODS_4 } from './food-catalog-more-4';
+import { MORE_FOODS_5 } from './food-catalog-more-5';
 import { WORLD_FOODS } from './food-catalog-world';
 import { supabase } from './supabase';
 
@@ -321,9 +326,13 @@ export const FOOD_CATALOG: CatalogFood[] = [
   { name: 'Momo', portion: '1 momo', protein_g: 1.6, calories_g: 44, estimated_grams: 24 },
   ...EXTRA_FOODS,
   ...MORE_FOODS,
+  ...MORE_FOODS_2,
+  ...MORE_FOODS_3,
+  ...MORE_FOODS_4,
   ...WORLD_FOODS,
   ...BRAND_FOODS,
   ...MEAL_FOODS,
+  ...MEAL_FOODS_2,
   ...MEGA_FOODS,
 ];
 
