@@ -10,6 +10,7 @@ import { MORE_FOODS_2 } from './food-catalog-more-2';
 import { MORE_FOODS_3 } from './food-catalog-more-3';
 import { MORE_FOODS_4 } from './food-catalog-more-4';
 import { MORE_FOODS_5 } from './food-catalog-more-5';
+import { UNIQUE_FOODS } from './food-catalog-unique';
 import { WORLD_FOODS } from './food-catalog-world';
 import { supabase } from './supabase';
 
@@ -64,7 +65,7 @@ export const COMMON_FOODS: CatalogFood[] = [
     protein_g: 18,
     calories_g: 265,
     estimated_grams: 100,
-    aliases: ['indian cottage cheese', 'panir'],
+    aliases: ['indian cottage cheese', 'panir', 'panner'],
   },
   {
     name: 'Milk',
@@ -330,6 +331,7 @@ export const FOOD_CATALOG: CatalogFood[] = [
   ...MORE_FOODS_3,
   ...MORE_FOODS_4,
   ...MORE_FOODS_5,
+  ...UNIQUE_FOODS,
   ...WORLD_FOODS,
   ...BRAND_FOODS,
   ...MEAL_FOODS,
@@ -371,10 +373,22 @@ const SEARCH_SYNONYMS: Record<string, string[]> = {
   yogurt: ['yoghurt', 'skyr', 'greek yogurt'],
   yoghurt: ['yogurt', 'skyr'],
   skyr: ['yogurt', 'yoghurt'],
-  chicken: ['chick', 'poultry', 'chicken breast'],
+  chicken: ['chick', 'poultry', 'chicken breast', 'chiken'],
   chick: ['chicken'],
+  chiken: ['chicken'],
   'chicken breast': ['chicken', 'breast'],
-  paneer: ['indian cottage cheese', 'panir'],
+  paneer: ['indian cottage cheese', 'panir', 'panner'],
+  panir: ['paneer', 'panner'],
+  panner: ['paneer', 'panir'],
+  biryani: ['biriyani', 'briyani', 'biriani'],
+  biriyani: ['biryani', 'briyani'],
+  briyani: ['biryani', 'biriyani'],
+  gongura: ['gonogra', 'gonogrra', 'gongoura'],
+  gonogra: ['gongura', 'gonogrra'],
+  gonogrra: ['gongura', 'gonogra'],
+  prawns: ['prawn', 'shrimp', 'shrimps'],
+  prawn: ['prawns', 'shrimp'],
+  shrimp: ['prawn', 'prawns', 'shrimps'],
   curd: ['yogurt', 'dahi'],
   dahi: ['curd', 'yogurt'],
   dal: ['daal', 'lentil', 'dahl'],
@@ -409,65 +423,63 @@ function editDistance(a: string, b: string): number {
   if (a === b) return 0;
   if (!a.length) return b.length;
   if (!b.length) return a.length;
+  // Early exit when length gap already exceeds a typical typo budget.
+  if (Math.abs(a.length - b.length) > 2) return 3;
   const prev = new Array<number>(b.length + 1);
   const cur = new Array<number>(b.length + 1);
   for (let j = 0; j <= b.length; j++) prev[j] = j;
   for (let i = 1; i <= a.length; i++) {
     cur[0] = i;
+    let rowMin = cur[0];
     for (let j = 1; j <= b.length; j++) {
       const cost = a[i - 1] === b[j - 1] ? 0 : 1;
       cur[j] = Math.min(cur[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost);
+      if (cur[j]! < rowMin) rowMin = cur[j]!;
     }
+    if (rowMin > 2) return 3;
     for (let j = 0; j <= b.length; j++) prev[j] = cur[j]!;
   }
   return prev[b.length]!;
 }
 
+/** Cheap phonetic-ish fold (ph/f, ck/k, iy→y). */
+function foldPhonetic(s: string): string {
+  return s.replace(/ph/g, 'f').replace(/ck/g, 'k').replace(/iy/g, 'y').replace(/ey/g, 'y');
+}
+
+function typoBudget(len: number): number {
+  if (len < 4) return 0;
+  return len >= 7 ? 2 : 1;
+}
+
 const SYNONYM_KEYS = Object.keys(SEARCH_SYNONYMS);
+const SYNONYM_KEYS_SORTED = [...SYNONYM_KEYS].sort((a, b) => b.length - a.length);
+/** Single-word synonym keys for cheap typo expansion (no spaces). */
+const SYNONYM_WORD_KEYS = SYNONYM_KEYS.filter((k) => !k.includes(' '));
 
-function expandToken(token: string): string[] {
-  const t = token.trim();
-  if (!t) return [];
-  const out = new Set<string>([t]);
-  const syns = SEARCH_SYNONYMS[t];
-  if (syns) for (const s of syns) out.add(s);
-  // Light stemming: eggs→egg, bars→bar, scoops→scoop
-  if (t.length > 3 && t.endsWith('ies')) out.add(`${t.slice(0, -3)}y`);
-  if (t.length > 3 && t.endsWith('es')) out.add(t.slice(0, -2));
-  if (t.length > 3 && t.endsWith('s') && !t.endsWith('ss')) out.add(t.slice(0, -1));
-  // Typo tolerance against known synonym keys (optium → optimum).
-  if (t.length >= 5) {
-    const maxDist = t.length >= 7 ? 2 : 1;
-    for (const key of SYNONYM_KEYS) {
-      if (key.includes(' ')) continue;
-      if (Math.abs(key.length - t.length) > maxDist) continue;
-      if (editDistance(t, key) <= maxDist) {
-        out.add(key);
-        // Skip tiny aliases (on/mp/pb) from typo path so "optium" ≠ "beans on toast".
-        for (const s of SEARCH_SYNONYMS[key] ?? []) {
-          if (s.length > 2) out.add(s);
-        }
-      }
-    }
-  }
-  return [...out];
-}
+const RESULT_CAP = 72;
+const EXACT_CAP = 56;
+const SIMILAR_CAP = 24;
+const FUZZY_MIN_QUERY_LEN = 3;
+const FUZZY_CANDIDATE_CAP = 700;
 
-/** Expand a full query into alternate phrasings + tokens. */
-function expandQuery(q: string): { phrases: string[]; tokens: string[][] } {
-  const phrases = new Set<string>([q]);
-  // Multi-word synonym keys (longest first).
-  const keys = Object.keys(SEARCH_SYNONYMS).sort((a, b) => b.length - a.length);
-  for (const key of keys) {
-    if (!q.includes(key)) continue;
-    for (const alt of SEARCH_SYNONYMS[key] ?? []) {
-      phrases.add(normalize(q.split(key).join(alt)));
-    }
-  }
-  const rawTokens = q.split(' ').filter(Boolean);
-  const tokens = rawTokens.map(expandToken);
-  return { phrases: [...phrases], tokens };
-}
+export type CatalogSearchBuckets = {
+  exact: CatalogFood[];
+  similar: CatalogFood[];
+};
+
+type IndexedFood = {
+  food: CatalogFood;
+  name: string;
+  hay: string;
+  words: string[];
+  wordSet: Set<string>;
+  /** First letter of each word; used to skip fuzzy work. */
+  prefixChars: string;
+};
+
+let indexedList: IndexedFood[] | null = null;
+let indexedRemoteRef: CatalogFood[] | null = null;
 
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -478,64 +490,279 @@ function hasWord(hay: string, needle: string): boolean {
   if (!needle) return true;
   const parts = needle.split(/\s+/).filter(Boolean);
   if (parts.length === 0) return true;
+  if (parts.length === 1) {
+    // Fast path used only when wordSet is unavailable.
+    const pattern = `(?:^|[^a-z0-9])${escapeRegExp(parts[0]!)}(?:[^a-z0-9]|$)`;
+    return new RegExp(pattern).test(hay);
+  }
   const pattern = parts.map(escapeRegExp).join('\\s+');
   return new RegExp(`(?:^|[^a-z0-9])${pattern}(?:[^a-z0-9]|$)`).test(hay);
 }
 
-function haystackFor(food: CatalogFood): string {
-  const parts = [food.name, ...(food.aliases ?? [])];
-  // Auto brand/food expansions baked into the searchable text.
-  const auto: string[] = [];
-  const nameN = normalize(food.name);
-  for (const [key, syns] of Object.entries(SEARCH_SYNONYMS)) {
-    if (hasWord(nameN, key) || syns.some((s) => hasWord(nameN, s))) {
-      auto.push(key, ...syns);
-    }
-  }
-  return [...parts, ...auto].map(normalize).join(' · ');
+function hasWordInSet(wordSet: Set<string>, needle: string): boolean {
+  if (!needle) return true;
+  if (!needle.includes(' ')) return wordSet.has(needle);
+  return false;
 }
 
-function tokenInHay(token: string, hay: string): boolean {
-  if (!token) return true;
-  if (hasWord(hay, token)) return true;
-  // Prefix match on a haystack word (e.g. "opti" → "optimum").
-  if (token.length >= 3) {
-    const words = hay.split(/[^a-z0-9]+/);
-    if (words.some((w) => w.startsWith(token) || (token.startsWith(w) && w.length >= 3))) {
-      return true;
+function buildIndexedFood(food: CatalogFood): IndexedFood {
+  const name = normalize(food.name);
+  const parts = [food.name, ...(food.aliases ?? [])];
+  const auto: string[] = [];
+  const nameWords = new Set(name.split(' ').filter(Boolean));
+  for (const [key, syns] of Object.entries(SEARCH_SYNONYMS)) {
+    const keyParts = key.split(' ');
+    // Tiny keys (on/mp/pb) must not expand every "beans on toast" into Optimum Nutrition.
+    if (key.length <= 2 && keyParts.length === 1) {
+      if (name !== key && !name.startsWith(`${key} `)) continue;
     }
+    const keyHit = keyParts.length === 1 ? nameWords.has(key) : hasWord(name, key);
+    const synHit = syns.some((s) => {
+      if (s.length <= 2) return name === s || name.startsWith(`${s} `);
+      const sp = s.split(' ');
+      return sp.length === 1 ? nameWords.has(s) : hasWord(name, s);
+    });
+    if (keyHit || synHit) auto.push(key, ...syns);
+  }
+  const hay = [...parts, ...auto].map(normalize).join(' · ');
+  const words = hay.split(/[^a-z0-9]+/).filter(Boolean);
+  const wordSet = new Set(words);
+  const prefixChars = [...new Set(words.map((w) => w[0]!).filter(Boolean))].join('');
+  return { food, name, hay, words, wordSet, prefixChars };
+}
+
+function getIndexedFoods(): IndexedFood[] {
+  if (indexedList && indexedRemoteRef === remoteFoods) return indexedList;
+  const foods = allCatalogFoods();
+  indexedList = foods.map(buildIndexedFood);
+  indexedRemoteRef = remoteFoods;
+  return indexedList;
+}
+
+/** Synonyms + light stemming only (no edit-distance). */
+function expandTokenExact(token: string): string[] {
+  const t = token.trim();
+  if (!t) return [];
+  const out = new Set<string>([t]);
+  const folded = foldPhonetic(t);
+  if (folded !== t) out.add(folded);
+  const syns = SEARCH_SYNONYMS[t];
+  if (syns) for (const s of syns) out.add(s);
+  if (t.length > 3 && t.endsWith('ies')) out.add(`${t.slice(0, -3)}y`);
+  if (t.length > 3 && t.endsWith('es')) out.add(t.slice(0, -2));
+  if (t.length > 3 && t.endsWith('s') && !t.endsWith('ss')) out.add(t.slice(0, -1));
+  return [...out];
+}
+
+/** Typo tolerance against known synonym keys (optium → optimum). */
+function expandTokenFuzzyKeys(token: string): string[] {
+  const t = token.trim();
+  if (t.length < 4) return [];
+  const out = new Set<string>();
+  const folded = foldPhonetic(t);
+  const maxDist = typoBudget(t.length);
+  for (const key of SYNONYM_WORD_KEYS) {
+    if (Math.abs(key.length - t.length) > maxDist) continue;
+    if (editDistance(t, key) <= maxDist || editDistance(folded, foldPhonetic(key)) <= maxDist) {
+      out.add(key);
+      for (const s of SEARCH_SYNONYMS[key] ?? []) {
+        if (s.length > 2) out.add(s);
+      }
+    }
+  }
+  return [...out];
+}
+
+function expandQuery(q: string): { phrases: string[]; tokens: string[]; tokenAlts: string[][] } {
+  const phrases = new Set<string>([q]);
+  for (const key of SYNONYM_KEYS_SORTED) {
+    if (!q.includes(key)) continue;
+    for (const alt of SEARCH_SYNONYMS[key] ?? []) {
+      phrases.add(normalize(q.split(key).join(alt)));
+    }
+  }
+  const tokens = q.split(' ').filter(Boolean);
+  const tokenAlts = tokens.map(expandTokenExact);
+  return { phrases: [...phrases], tokens, tokenAlts };
+}
+
+/**
+ * Exact-bucket score (no edit-distance).
+ * 100 exact name, 95 prefix, 85 name substring, 80 word phrase, 72 hay substring,
+ * 50+ token coverage.
+ */
+function scoreExact(entry: IndexedFood, phrases: string[], tokenAlts: string[][]): number {
+  const { name, hay, words, wordSet } = entry;
+  let best = 0;
+
+  for (const phrase of phrases) {
+    if (!phrase) continue;
+    if (name === phrase) best = Math.max(best, 100);
+    else if (name.startsWith(phrase)) best = Math.max(best, 95);
+    else if (name.includes(phrase)) best = Math.max(best, 85);
+    else if (
+      (!phrase.includes(' ') && wordSet.has(phrase)) ||
+      (phrase.includes(' ') && hasWord(hay, phrase))
+    ) {
+      best = Math.max(best, 80);
+    } else if (hay.includes(phrase)) best = Math.max(best, 72);
+  }
+
+  if (tokenAlts.length === 0) return best;
+
+  let allHit = true;
+  let coverage = 0;
+  for (const alts of tokenAlts) {
+    let quality = 0;
+    for (const t of alts) {
+      if (!t) continue;
+      if ((!t.includes(' ') && wordSet.has(t)) || (t.includes(' ') && hasWord(hay, t))) {
+        quality = 3;
+        break;
+      }
+      if (t.length >= 3) {
+        for (const w of words) {
+          if (w.startsWith(t) || (t.startsWith(w) && w.length >= 3)) {
+            quality = Math.max(quality, 2);
+            break;
+          }
+        }
+      }
+      if (quality >= 2) break;
+    }
+    if (quality < 2) {
+      allHit = false;
+      break;
+    }
+    coverage += alts.some((t) => hasWordInSet(wordSet, t) || name.includes(t)) ? 2 : 1;
+  }
+  if (allHit) best = Math.max(best, 50 + coverage * 8);
+  return best;
+}
+
+/** Best edit-distance quality for one token against indexed words (1 = hit, 0 = miss). */
+function fuzzyTokenHit(token: string, words: string[]): { hit: boolean; dist: number } {
+  const budget = typoBudget(token.length);
+  if (budget <= 0) return { hit: false, dist: 99 };
+  const foldedTok = foldPhonetic(token);
+  const first = token[0];
+  let bestDist = 99;
+  for (const w of words) {
+    if (w.length < 4) continue;
+    // Same first letter (or phonetic) before paying for Levenshtein.
+    if (w[0] !== first && foldPhonetic(w)[0] !== foldedTok[0]) continue;
+    if (Math.abs(w.length - token.length) > budget) continue;
+    const d = editDistance(token, w);
+    if (d < bestDist) bestDist = d;
+    if (d <= budget) return { hit: true, dist: d };
+    const fd = editDistance(foldedTok, foldPhonetic(w));
+    if (fd < bestDist) bestDist = fd;
+    if (fd <= budget) return { hit: true, dist: fd };
+  }
+  return { hit: false, dist: bestDist };
+}
+
+/**
+ * Fuzzy-bucket score. Lower edit distance ranks higher.
+ * Returns 0 if not all tokens can be explained via fuzzy/synonym typo.
+ * Tokens matched only via fuzzy synonym keys or edit-distance count as fuzzy.
+ */
+function scoreFuzzy(
+  entry: IndexedFood,
+  tokens: string[],
+  tokenAlts: string[][],
+  fuzzyKeyAlts: string[][],
+): number {
+  const { words, wordSet, hay } = entry;
+  let exactish = 0;
+  let fuzzyCount = 0;
+  let distPenalty = 0;
+
+  for (let i = 0; i < tokens.length; i++) {
+    const alts = tokenAlts[i] ?? [];
+    const fuzzyAlts = fuzzyKeyAlts[i] ?? [];
+    let quality = 0;
+    let dist = 99;
+
+    // Exact/synonym/prefix first (same as exact bucket).
+    for (const t of alts) {
+      if (!t) continue;
+      if ((!t.includes(' ') && wordSet.has(t)) || (t.includes(' ') && hasWord(hay, t))) {
+        quality = 3;
+        dist = 0;
+        break;
+      }
+      if (t.length >= 3) {
+        for (const w of words) {
+          if (w.startsWith(t) || (t.startsWith(w) && w.length >= 3)) {
+            quality = Math.max(quality, 2);
+            dist = 0;
+            break;
+          }
+        }
+      }
+      if (quality >= 2) break;
+    }
+
+    // Synonym-key typos (optium → optimum) count as fuzzy, not exact.
+    if (quality < 2) {
+      for (const t of fuzzyAlts) {
+        if (!t) continue;
+        if ((!t.includes(' ') && wordSet.has(t)) || (t.includes(' ') && hasWord(hay, t))) {
+          quality = 1;
+          dist = 1;
+          break;
+        }
+      }
+    }
+
+    // Direct edit-distance against food words.
+    if (quality < 2) {
+      const fuzzy = fuzzyTokenHit(tokens[i]!, words);
+      if (!fuzzy.hit) return 0;
+      quality = 1;
+      dist = fuzzy.dist;
+    }
+
+    if (quality >= 2) exactish += 1;
+    else {
+      fuzzyCount += 1;
+      distPenalty += dist;
+    }
+  }
+
+  if (fuzzyCount === 0) return 0; // pure exact belongs in exact bucket
+  let score = 40 + exactish * 8 + fuzzyCount * 2 - distPenalty * 6;
+  // Prefer foods whose leading name token shares the query prefix (Chicken > BBQ chicken pizza).
+  const nameToks = entry.name.split(' ');
+  for (const tok of tokens) {
+    if (tok.length < 3) continue;
+    const prefix = tok.slice(0, 3);
+    let boosted = false;
+    for (let ni = 0; ni < nameToks.length; ni++) {
+      const nt = nameToks[ni]!;
+      if (nt.length < 3) continue;
+      if (!nt.startsWith(prefix) && !tok.startsWith(nt.slice(0, 3))) continue;
+      score += ni === 0 ? 14 : 5;
+      boosted = true;
+      break;
+    }
+    if (!boosted) continue;
+  }
+  return Math.max(1, score);
+}
+
+function sharesPrefixChar(entry: IndexedFood, tokens: string[]): boolean {
+  for (const t of tokens) {
+    const c = t[0];
+    if (c && entry.prefixChars.includes(c)) return true;
   }
   return false;
 }
 
-function scoreMatch(food: CatalogFood, q: string): number {
-  if (!q) return 1;
-  const name = normalize(food.name);
-  const hay = haystackFor(food);
-  const { phrases, tokens } = expandQuery(q);
-
-  let best = 0;
-  for (const phrase of phrases) {
-    if (!phrase) continue;
-    if (name === phrase) best = Math.max(best, 100);
-    else if (name.startsWith(phrase)) best = Math.max(best, 90);
-    else if (hasWord(hay, phrase)) best = Math.max(best, 75);
-  }
-
-  // All query tokens must match (via synonyms / prefix).
-  if (tokens.length > 0 && tokens.every((alts) => alts.some((t) => tokenInHay(t, hay)))) {
-    const coverage = tokens.reduce((s, alts) => {
-      if (alts.some((t) => hasWord(name, t))) return s + 2;
-      return s + 1;
-    }, 0);
-    best = Math.max(best, 40 + coverage * 8);
-  }
-
-  return best;
-}
-
-function matchesQuery(food: CatalogFood, q: string): boolean {
-  return scoreMatch(food, q) > 0;
+function sortRanked(a: { score: number; name: string }, b: { score: number; name: string }): number {
+  if (b.score !== a.score) return b.score - a.score;
+  return a.name.localeCompare(b.name);
 }
 
 function rowToFood(row: RemoteFoodRow): CatalogFood | null {
@@ -655,21 +882,77 @@ export function commonCatalogFoods(): CatalogFood[] {
   return [...byName.values()];
 }
 
-export function searchCatalog(query: string): CatalogFood[] {
+/** Phase A only: exact / prefix / substring / synonym (no edit-distance). */
+export function searchCatalogExact(query: string): CatalogFood[] {
   const q = normalize(query);
-  const all = allCatalogFoods();
-  if (!q) return all.slice(0, 100);
-  const ranked: { food: CatalogFood; score: number }[] = [];
-  for (const food of all) {
-    const score = scoreMatch(food, q);
-    if (score <= 0) continue;
-    ranked.push({ food, score });
+  const index = getIndexedFoods();
+  if (!q) {
+    return index.slice(0, RESULT_CAP).map((e) => e.food);
   }
-  ranked.sort((a, b) => {
-    if (b.score !== a.score) return b.score - a.score;
-    return a.food.name.localeCompare(b.food.name);
-  });
-  return ranked.map((r) => r.food).slice(0, 100);
+
+  const { phrases, tokenAlts } = expandQuery(q);
+  const exactHits: { food: CatalogFood; score: number; name: string }[] = [];
+
+  for (const entry of index) {
+    const score = scoreExact(entry, phrases, tokenAlts);
+    if (score <= 0) continue;
+    exactHits.push({ food: entry.food, score, name: entry.name });
+  }
+  exactHits.sort(sortRanked);
+  return exactHits.slice(0, EXACT_CAP).map((r) => r.food);
+}
+
+/**
+ * Phase B only: fuzzy typos when query length >= 3.
+ * Pass exact names to exclude (from searchCatalogExact).
+ */
+export function searchCatalogSimilar(
+  query: string,
+  exact: CatalogFood[] = [],
+): CatalogFood[] {
+  const q = normalize(query);
+  if (!q || q.length < FUZZY_MIN_QUERY_LEN) return [];
+  if (exact.length >= EXACT_CAP) return [];
+
+  const index = getIndexedFoods();
+  const { tokens, tokenAlts } = expandQuery(q);
+  const exactNames = new Set(exact.map((f) => normalize(f.name)));
+  const fuzzyKeyAlts = tokens.map(expandTokenFuzzyKeys);
+  const similarHits: { food: CatalogFood; score: number; name: string }[] = [];
+  let candidatesChecked = 0;
+
+  for (const entry of index) {
+    if (exactNames.has(entry.name)) continue;
+    if (!sharesPrefixChar(entry, tokens)) continue;
+    candidatesChecked += 1;
+    if (candidatesChecked > FUZZY_CANDIDATE_CAP && similarHits.length >= SIMILAR_CAP) break;
+    const score = scoreFuzzy(entry, tokens, tokenAlts, fuzzyKeyAlts);
+    if (score <= 0) continue;
+    similarHits.push({ food: entry.food, score, name: entry.name });
+  }
+  similarHits.sort(sortRanked);
+  const similarCap = Math.min(SIMILAR_CAP, RESULT_CAP - exact.length);
+  return similarHits.slice(0, similarCap).map((r) => r.food);
+}
+
+/**
+ * Two-phase search:
+ * A) exact / prefix / substring / synonym tokens (instant, no edit-distance)
+ * B) fuzzy typos only when query length >= 3, capped candidates
+ *
+ * Ranking within exact: name startsWith > all tokens as words > substring.
+ * Similar bucket ordered by edit-distance likelihood.
+ */
+export function searchCatalogGrouped(query: string): CatalogSearchBuckets {
+  const exact = searchCatalogExact(query);
+  const similar = searchCatalogSimilar(query, exact);
+  return { exact, similar };
+}
+
+/** Flat list: exact matches first, then similar. Cap ~72. */
+export function searchCatalog(query: string): CatalogFood[] {
+  const { exact, similar } = searchCatalogGrouped(query);
+  return [...exact, ...similar].slice(0, RESULT_CAP);
 }
 
 export async function loadRecentFoods(): Promise<CatalogFood[]> {
