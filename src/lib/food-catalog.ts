@@ -329,6 +329,7 @@ export const FOOD_CATALOG: CatalogFood[] = [
   ...MORE_FOODS_2,
   ...MORE_FOODS_3,
   ...MORE_FOODS_4,
+  ...MORE_FOODS_5,
   ...WORLD_FOODS,
   ...BRAND_FOODS,
   ...MEAL_FOODS,
