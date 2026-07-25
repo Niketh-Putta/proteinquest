@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "ProteinQuest",
+    "name": "ProteinQuest - Protein Tracker",
     "slug": "proteinquest",
     "version": "1.0.20",
     "orientation": "portrait",
@@ -10,12 +10,13 @@
     "backgroundColor": "#0C0B10",
     "ios": {
       "bundleIdentifier": "com.proteinquest.app",
-      "buildNumber": "44",
+      "buildNumber": "45",
       "supportsTablet": true,
       "entitlements": {
         "aps-environment": "production"
       },
       "infoPlist": {
+        "CFBundleDisplayName": "ProteinQuest - Protein Tracker",
         "NSCameraUsageDescription": "ProteinQuest uses the camera to photograph your meals and estimate their protein content.",
         "NSPhotoLibraryUsageDescription": "ProteinQuest uses your photo library so you can analyze meals you've already photographed.",
         "NSUserNotificationsUsageDescription": "ProteinQuest sends friendly reminders to log meals and feed your dragon.",
@@ -36,7 +37,7 @@
         "android.permission.RECORD_AUDIO",
         "android.permission.POST_NOTIFICATIONS"
       ],
-      "versionCode": 112
+      "versionCode": 113
     },
     "web": {
       "output": "single",
