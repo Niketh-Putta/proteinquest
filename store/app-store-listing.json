@@ -7,7 +7,7 @@
   "secondaryCategory": "Food & Drink",
   "subtitle": "AI protein tracker & meal scan",
   "promotionalText": "AI meal scanning, daily protein goals, and a dragon that evolves when you hit your target.",
-  "description": "ProteinQuest turns hitting your protein goal into a daily game you actually want to play.\n\nSnap any meal with your camera. AI estimates the protein in seconds — no manual logging, no barcode hunting, no guesswork. Set your personalized daily target once, then build the habit one scan at a time.\n\nHOW IT WORKS\n• Scan meals with your camera or photo library\n• Get instant AI protein estimates for each dish\n• Track your progress toward one clear daily goal\n• Review your food log and trends over time\n\nYOUR DAILY DRAGON\nEvery morning, pick Ember, Frost, or Moss — your dragon for the day. Hit your protein goal to earn XP and evolve through five forms. Streaks, levels, and unlocks keep you coming back without feeling like a chore.\n\nPROTEINQUEST PRO\nFree includes unlimited AI scans for 2 days, then 1 free scan per day. Upgrade to Pro for unlimited scans and full trends history.\n\nWeekly: $4.99/week\nYearly: $2.49/mo ($29.99/year, best value)\n\nSubscriptions auto-renew unless cancelled at least 24 hours before the end of the current period. Manage in Settings → Apple ID → Subscriptions.\n\nTerms of Use: https://www.apple.com/legal/internet-services/itunes/dev/stdeula/\nPrivacy Policy: https://proteinquest.app/privacy\n\nBUILT FOR REAL LIFE\nWhether you're bulking, cutting, or just trying to eat enough protein, ProteinQuest focuses on the one number that matters most.\n\nProteinQuest provides nutritional estimates for informational purposes only. It is not medical advice.",
+  "description": "ProteinQuest turns hitting your protein goal into a daily game you actually want to play.\n\nSnap any meal with your camera. AI estimates the protein in seconds \u2014 no manual logging, no barcode hunting, no guesswork. Set your personalized daily target once, then build the habit one scan at a time.\n\nHOW IT WORKS\n\u2022 Scan meals with your camera or photo library\n\u2022 Get instant AI protein estimates for each dish\n\u2022 Track your progress toward one clear daily goal\n\u2022 Review your food log and trends over time\n\nYOUR DAILY DRAGON\nEvery morning, pick Ember, Frost, or Moss \u2014 your dragon for the day. Hit your protein goal to earn XP and evolve through five forms. Streaks, levels, and unlocks keep you coming back without feeling like a chore.\n\nPROTEINQUEST PRO\nFree includes unlimited AI scans for 2 days, then 1 free scan per day. Upgrade to Pro for unlimited scans and full trends history.\n\nWeekly: $9.99/week\nYearly: $4.99/mo ($59.99/year, best value)\n\nSubscriptions auto-renew unless cancelled at least 24 hours before the end of the current period. Manage in Settings \u2192 Apple ID \u2192 Subscriptions.\n\nTerms of Use: https://www.apple.com/legal/internet-services/itunes/dev/stdeula/\nPrivacy Policy: https://proteinquest.app/privacy\n\nBUILT FOR REAL LIFE\nWhether you're bulking, cutting, or just trying to eat enough protein, ProteinQuest focuses on the one number that matters most.\n\nProteinQuest provides nutritional estimates for informational purposes only. It is not medical advice.",
   "keywords": "proteinquest,proteintracker,fitness,nutrition,macro,gym,muscle,food,calorie,bulking,diet,dragon,log",
   "keywordsNote": "99/100 chars. Brand terms + ASO; no words duplicated from name (ProteinQuest) or subtitle.",
   "privacyPolicyUrl": "https://proteinquest.app/privacy",
@@ -24,7 +24,7 @@
     "profanityOrCrudeHumor": "None",
     "matureOrSuggestiveThemes": "None",
     "horrorOrFearThemes": "None",
-    "medicalOrTreatmentInformation": "None — nutritional estimates only, with in-app disclaimer that it is not medical advice",
+    "medicalOrTreatmentInformation": "None \u2014 nutritional estimates only, with in-app disclaimer that it is not medical advice",
     "alcoholTobaccoOrDrugUse": "None",
     "simulatedGambling": "None",
     "sexualContentOrNudity": "None",
@@ -33,7 +33,7 @@
     "madeForKids": false
   },
   "appPrivacy": {
-    "dataUsedToTrackYou": "None — no cross-app tracking, no ads, no App Tracking Transparency prompt needed",
+    "dataUsedToTrackYou": "None \u2014 no cross-app tracking, no ads, no App Tracking Transparency prompt needed",
     "dataLinkedToYou": [
       {
         "category": "Identifiers",
@@ -78,7 +78,7 @@
       "Financial info (payments handled entirely by Apple)"
     ]
   },
-  "reviewNotes": "Sign-in is anonymous and automatic on first launch — no demo account or credentials are needed. Free tier: 2-day unlimited trial, then 1 free AI scan per day; Pro unlocks unlimited scans. The Pro paywall is reachable from the Today tab or via upgrade prompts. Camera/photo access is requested only when scanning a meal. Restore Purchases and Terms of Use/Privacy Policy links are on the paywall screen.",
+  "reviewNotes": "Sign-in is anonymous and automatic on first launch \u2014 no demo account or credentials are needed. Free tier: 2-day unlimited trial, then 1 free AI scan per day; Pro unlocks unlimited scans. The Pro paywall is reachable from the Today tab or via upgrade prompts. Camera/photo access is requested only when scanning a meal. Restore Purchases and Terms of Use/Privacy Policy links are on the paywall screen.",
   "screenshots": {
     "iphone69": {
       "requiredSize": "1290x2796 (also accepts 1320x2868)",
@@ -86,7 +86,7 @@
       "notes": "Latest approved iPhone App Store preview set."
     },
     "ipad13": {
-      "requiredSize": "2064x2752 or 2048x2732 — required because supportsTablet is true in app.json",
+      "requiredSize": "2064x2752 or 2048x2732 \u2014 required because supportsTablet is true in app.json",
       "directory": "store/screenshots/ipad13",
       "notes": "Reuses the latest iPhone preview content, contained on the app background with no new composition."
     },
@@ -101,7 +101,7 @@
       "productId": "pro_weekly",
       "type": "auto-renewable subscription",
       "subscriptionGroup": "ProteinQuest Pro",
-      "priceUsd": "4.99",
+      "priceUsd": "9.99",
       "period": "1 week",
       "referenceName": "ProteinQuest Pro Weekly",
       "displayName": "ProteinQuest Pro Weekly",
@@ -111,7 +111,7 @@
       "productId": "pro_yearly",
       "type": "auto-renewable subscription",
       "subscriptionGroup": "ProteinQuest Pro",
-      "priceUsd": "29.99",
+      "priceUsd": "59.99",
       "period": "1 year",
       "referenceName": "ProteinQuest Pro Yearly",
       "displayName": "ProteinQuest Pro Yearly",
@@ -119,11 +119,11 @@
     }
   ],
   "appStoreConnectChecklist": [
-    "Enroll in Apple Developer Program first ($99/yr, can take 24-48h) — critical path",
+    "Enroll in Apple Developer Program first ($99/yr, can take 24-48h) \u2014 critical path",
     "Run `eas init` then `eas build --platform ios --profile production` (EAS registers the bundle ID and manages certs)",
     "Create app in App Store Connect: name ProteinQuest, bundle ID com.proteinquest.app, SKU proteinquest-ios-001",
     "Copy the numeric Apple App ID into eas.json submit.production.ios.ascAppId (plus appleId and appleTeamId)",
-    "Create subscription group 'ProteinQuest Pro' with pro_weekly ($4.99/wk) and pro_yearly ($29.99/yr)",
+    "Create subscription group 'ProteinQuest Pro' with pro_weekly ($9.99/wk) and pro_yearly ($59.99/yr)",
     "In RevenueCat: add iOS app for com.proteinquest.app, upload In-App Purchase key, copy the appl_ public SDK key into EXPO_PUBLIC_REVENUECAT_IOS_KEY (must be set at build time)",
     "Upload screenshots from store/screenshots/iphone67, store/screenshots/ipad13, and store/screenshots/mac",
     "Fill App Information, pricing (Free), and paste listing fields from this file",

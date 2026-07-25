@@ -454,7 +454,7 @@ export default function SettingsScreen({ embedded = false }: { embedded?: boolea
                     <View style={styles.upgradeCopy}>
                       <Text style={styles.upgradeTitle}>Upgrade to Pro</Text>
                       <Text style={styles.upgradeHint}>
-                        Unlimited scans · from $2.49/mo, billed annually
+                        Unlimited scans · from $4.99/mo, billed annually
                       </Text>
                     </View>
                     <Ionicons name="chevron-forward" size={18} color={colors.onAccent} />

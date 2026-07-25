@@ -38,14 +38,14 @@ export const PLANS: PaymentPlan[] = [
   {
     id: 'pro_weekly',
     title: 'Weekly',
-    price: '$4.99/wk',
-    caption: 'Flexible. Cancel anytime.',
+    price: '$9.99/wk',
+    caption: 'Full Pro access. Cancel anytime.',
   },
   {
     id: 'pro_yearly',
     title: 'Yearly',
-    price: '$2.49/mo',
-    caption: 'Billed as $29.99 annually · Save ~88% vs weekly',
+    price: '$4.99/mo',
+    caption: 'Billed as $59.99 annually',
   },
 ];
 

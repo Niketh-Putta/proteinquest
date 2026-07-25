@@ -5,7 +5,7 @@
   "privacyPolicyUrl": "https://proteinquest.app/privacy",
   "contactEmail": "niketh13putta@gmail.com",
   "shortDescription": "Snap meals, track protein, evolve your dragon. AI-powered daily protein goals.",
-  "fullDescription": "ProteinQuest turns hitting your protein goal into a daily game you actually want to play.\n\nSnap any meal with your camera. AI estimates the protein in seconds — no manual logging, no barcode hunting, no guesswork. Set your personalized daily target once, then build the habit one scan at a time.\n\nHOW IT WORKS\n• Scan meals with your camera or photo library\n• Get instant AI protein estimates for each dish\n• Track your progress toward one clear daily goal\n• Review your food log and trends over time\n\nYOUR DAILY DRAGON\nEvery morning, pick Ember, Frost, or Moss — your dragon for the day. Hit your protein goal to earn XP and evolve through five forms. Streaks, levels, and unlocks keep you coming back without feeling like a chore.\n\nPROTEINQUEST PRO\nFree includes a 2-day unlimited scan trial, then 1 free scan per day. Pro unlocks unlimited scans and full trends.\n• Weekly: $4.99/week\n• Yearly: $2.49/mo ($29.99/year)\n\nBUILT FOR REAL LIFE\nWhether you're bulking, cutting, or just trying to eat enough protein, ProteinQuest focuses on the one number that matters most. Clean dark UI, fast scans, and honest estimates — designed for gym-goers, meal preppers, and anyone tired of complicated trackers.\n\nFEATURES\n• AI meal scanning from camera or gallery\n• Personalized protein goal based on your stats\n• Daily food log with protein and calorie estimates\n• Trends view to see consistency over time (Pro)\n• Dragon companion with XP, levels, and evolution\n• Anonymous sign-in — start tracking in seconds\n\nProteinQuest provides nutritional estimates for informational purposes only. It is not medical advice. Always consult a qualified professional for dietary or health decisions.\n\nDownload ProteinQuest and make your daily protein target the easiest win of your day.",
+  "fullDescription": "ProteinQuest turns hitting your protein goal into a daily game you actually want to play.\n\nSnap any meal with your camera. AI estimates the protein in seconds \u2014 no manual logging, no barcode hunting, no guesswork. Set your personalized daily target once, then build the habit one scan at a time.\n\nHOW IT WORKS\n\u2022 Scan meals with your camera or photo library\n\u2022 Get instant AI protein estimates for each dish\n\u2022 Track your progress toward one clear daily goal\n\u2022 Review your food log and trends over time\n\nYOUR DAILY DRAGON\nEvery morning, pick Ember, Frost, or Moss \u2014 your dragon for the day. Hit your protein goal to earn XP and evolve through five forms. Streaks, levels, and unlocks keep you coming back without feeling like a chore.\n\nPROTEINQUEST PRO\nFree includes a 2-day unlimited scan trial, then 1 free scan per day. Pro unlocks unlimited scans and full trends.\n\u2022 Weekly: $9.99/week\n\u2022 Yearly: $4.99/mo ($59.99/year)\n\nBUILT FOR REAL LIFE\nWhether you're bulking, cutting, or just trying to eat enough protein, ProteinQuest focuses on the one number that matters most. Clean dark UI, fast scans, and honest estimates \u2014 designed for gym-goers, meal preppers, and anyone tired of complicated trackers.\n\nFEATURES\n\u2022 AI meal scanning from camera or gallery\n\u2022 Personalized protein goal based on your stats\n\u2022 Daily food log with protein and calorie estimates\n\u2022 Trends view to see consistency over time (Pro)\n\u2022 Dragon companion with XP, levels, and evolution\n\u2022 Anonymous sign-in \u2014 start tracking in seconds\n\nProteinQuest provides nutritional estimates for informational purposes only. It is not medical advice. Always consult a qualified professional for dietary or health decisions.\n\nDownload ProteinQuest and make your daily protein target the easiest win of your day.",
   "tags": [
     "protein tracker",
     "meal scanner",
@@ -21,10 +21,10 @@
       "violence": "None",
       "sexualContent": "None",
       "language": "None",
-      "controlledSubstances": "None — app tracks nutrition only; no promotion of drugs or alcohol",
-      "userGeneratedContent": "None shared publicly — meal logs are private to the user",
+      "controlledSubstances": "None \u2014 app tracks nutrition only; no promotion of drugs or alcohol",
+      "userGeneratedContent": "None shared publicly \u2014 meal logs are private to the user",
       "locationSharing": "No location collected",
-      "personalInfoCollection": "Yes — anonymous account, profile stats, meal logs, optional meal photos",
+      "personalInfoCollection": "Yes \u2014 anonymous account, profile stats, meal logs, optional meal photos",
       "healthAppDisclaimer": "Nutritional estimates only; not a medical device",
       "targetAudience": "General audience / 13+ recommended",
       "expectedRating": "Everyone or Teen (IARC typically rates nutrition trackers Everyone)"
@@ -69,7 +69,7 @@
     "Upload AAB from: eas build --platform android --profile production",
     "Create internal testing track first, then promote to production",
     "Fill in target countries, pricing (free app + subscriptions), and app access declarations",
-    "Create subscriptions pro_weekly ($4.99/week US) and pro_yearly ($29.99/year) — see store/google-play-subscriptions.json",
+    "Create subscriptions pro_weekly ($9.99/week US) and pro_yearly ($59.99/year) \u2014 see store/google-play-subscriptions.json",
     "Set terms URL https://proteinquest.app/terms and privacy URL in store listing",
     "Link products in RevenueCat (see store/revenuecat-setup.json)",
     "Submit for review: npm run play-store:submit (needs store/google-play-service-account.json)"

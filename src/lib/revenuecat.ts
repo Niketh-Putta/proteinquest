@@ -216,15 +216,15 @@ export async function getRevenueCatPlans(): Promise<RevenueCatPlan[]> {
     {
       id: REVENUECAT_PRODUCT_IDS.weekly,
       title: 'Weekly',
-      price: '$4.99/wk',
-      caption: 'Flexible. Cancel anytime.',
+      price: '$9.99/wk',
+      caption: 'Full Pro access. Cancel anytime.',
       packageIdentifier: '$rc_weekly',
     },
     {
       id: REVENUECAT_PRODUCT_IDS.yearly,
       title: 'Yearly',
-      price: '$2.49/mo',
-      caption: 'Billed as $29.99 annually · Save ~88% vs weekly',
+      price: '$4.99/mo',
+      caption: 'Billed as $59.99 annually',
       packageIdentifier: '$rc_annual',
     },
   ];
@@ -256,10 +256,10 @@ export async function getRevenueCatPlans(): Promise<RevenueCatPlan[]> {
       mapped.push({
         id: isYearly ? REVENUECAT_PRODUCT_IDS.yearly : REVENUECAT_PRODUCT_IDS.weekly,
         title: isYearly ? 'Yearly' : 'Weekly',
-        price: isYearly ? '$2.49/mo' : '$4.99/wk',
+        price: isYearly ? '$4.99/mo' : '$9.99/wk',
         caption: isYearly
-          ? 'Billed as $29.99 annually · Save ~88% vs weekly'
-          : 'Flexible. Cancel anytime.',
+          ? 'Billed as $59.99 annually'
+          : 'Full Pro access. Cancel anytime.',
         packageIdentifier: pkg.identifier,
       });
     }

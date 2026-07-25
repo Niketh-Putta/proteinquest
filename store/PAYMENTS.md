@@ -74,8 +74,8 @@ flowchart TB
 
 | Plan | Plan ID | iOS product | Android product | RC package | Price (USD) |
 |------|---------|-------------|-----------------|------------|-------------|
-| Weekly | `pro_weekly` | `pro_weekly` | `pro_weekly` (base plan `weekly`) | `$rc_weekly` | $4.99/wk |
-| Yearly | `pro_yearly` | `pro_yearly` | `pro_yearly` (base plan `yearly`) | `$rc_annual` | $2.49/mo ($29.99/yr) |
+| Weekly | `pro_weekly` | `pro_weekly` | `pro_weekly` (base plan `weekly`) | `$rc_weekly` | $9.99/wk |
+| Yearly | `pro_yearly` | `pro_yearly` | `pro_yearly` (base plan `yearly`) | `$rc_annual` | $4.99/mo ($59.99/yr) |
 
 Entitlement identifier: **`pro`**
 
@@ -231,7 +231,7 @@ RevenueCat error: *None of the products registered in the RevenueCat dashboard c
 
 **Root cause:** StoreKit cannot load `pro_weekly` / `pro_yearly` from ASC. Code IDs are correct (`com.proteinquest.app`, entitlement `pro`, offering `default`). iOS builds bake in `EXPO_PUBLIC_REVENUECAT_IOS_KEY` (CI syncs it to EAS production).
 
-**Most common live blocker:** **Paid Apps Agreement** is not **Active** (status `New` or `Pending User Info`). Complete Business → banking (wait for Processing), US tax form W-8BEN, then sign Paid Apps. Until Active, StoreKit returns no prices and the paywall shows fallback $4.99/$29.99 with Subscribe disabled.
+**Most common live blocker:** **Paid Apps Agreement** is not **Active** (status `New` or `Pending User Info`). Complete Business → banking (wait for Processing), US tax form W-8BEN, then sign Paid Apps. Until Active, StoreKit returns no prices and the paywall shows fallback $9.99/$59.99 with Subscribe disabled.
 
 **ITMS-90062 (duplicate version):** Uploading the same `CFBundleShortVersionString` as an already-approved release fails. Bump `expo.version` in `app.json` before each new App Store binary. CI runs `node scripts/validate-ios-version.mjs --strict` to catch this pre-build.
 
