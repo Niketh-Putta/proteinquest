@@ -6,6 +6,13 @@ import {
   caloriesFromDensity,
 } from "../_shared/calorie-density.ts";
 import {
+  CUISINE_FEW_SHOTS,
+  CUISINE_IDENTIFY_RULES,
+  GEMINI_USER_ANALYZE_RETRY_TEXT,
+  GEMINI_USER_ANALYZE_TEXT,
+  OPENAI_USER_ANALYZE_TEXT,
+} from "../_shared/cuisine-prompt.ts";
+import {
   lookupProteinDensity,
   proteinFromDensity,
 } from "../_shared/protein-density.ts";
@@ -71,38 +78,44 @@ const corsHeaders = {
 
 const SYSTEM_PROMPT = `You are an expert sports nutritionist who estimates PROTEIN and CALORIES from food photos.
 Be precise and realistic. Prefer mid-range portions. Do NOT systematically undercount calories OR inflate protein grams.
-Models often underestimate grams on crowded plates — correct for that bias.
+Models often underestimate grams on crowded plates - correct for that bias.
+You are also a strong multi-cuisine dish identifier. Prefer exact cultural dish names over generic labels (curry, stir fry, rice bowl).
 
 WORK IN 6 STEPS (reason internally, output final JSON only):
-0. LABEL / TEXT DETECTION (FIRST — highest priority):
+0. LABEL / TEXT DETECTION (FIRST - highest priority):
    - Read nutrition facts, packaging, barcodes, macro-app screenshots, menus with macros.
    - OCR numbers near Protein/PRO/P: and Calories/Energy/kcal/Cal.
    - Distinguish per serving vs per container vs per 100g. Match the amount shown.
    - If explicit protein grams are clear → protein_source="label", label_protein_g=that value, total_protein_g=that value. Do NOT override with visual math.
    - If explicit calories are clear → label_calories_g and calories use that value. Label wins.
    - When no label: label_protein_g=null, label_calories_g=null, protein_source="visual".
-1. IDENTIFY every visible edible component (skip if step 0 is authoritative). Name specific dishes when clear (sambar rice, paneer tikka, biryani). Note cooking method. Infer cooking fat when greens look glossy/sautéed or meat looks oil-brushed.
+1. IDENTIFY every visible edible component (skip if step 0 is authoritative):
+${CUISINE_IDENTIFY_RULES}
+   - Note cooking method. Infer cooking fat when greens look glossy/sautéed or meat/seafood looks oil-brushed.
 2. SIZE THE PLATE FIRST (critical for accuracy):
    - Infer reference objects: dinner plate ~26cm, bowl diameter, fork ~19cm, palm ~10cm, takeout box.
    - Estimate each component's area/height, then convert to cooked edible grams BEFORE macros.
 3. ESTIMATE PORTION (visual/mixed only) with anchors:
-   - Typical chicken breast meal: 140–200g cooked. Use 200–250g ONLY when the plate is clearly piled with thick strips/breast covering most of the plate.
-   - Strip chicken: count strips × 25–35g (thick/wide). Thin strips ≈20–25g. Do not invent hidden chicken under greens.
-   - Egg ~50g (~6g protein); deck-of-cards meat ~85g; fist rice/pasta ~150–180g cooked; half-plate rice ~120–150g
-   - Sambar/dal ladle ~150–220g; roti/chapati ~40–50g each; idli ~40g each; dosa ~80–120g
-   - Paneer cube pile: count cubes × 15–20g; typical tikka serving 100–140g
-   - Greens bed under protein: 80–120g typical (share plate space — do not full-plate each item)
+   - Typical chicken breast meal: 140-200g cooked. Use 200-250g ONLY when the plate is clearly piled with thick strips/breast covering most of the plate.
+   - Strip chicken: count strips × 25-35g (thick/wide). Thin strips ≈20-25g. Do not invent hidden chicken under greens.
+   - Prawns/shrimp: count pieces × 12-20g peeled cooked (large tiger ~20-25g; small ~8-12g). Bowl curry often 100-160g prawn meat.
+   - Egg ~50g (~6g protein); deck-of-cards meat ~85g; fist rice/pasta ~150-180g cooked; half-plate rice ~120-150g
+   - Sambar/dal ladle ~150-220g; roti/chapati ~40-50g each; idli ~40g each; dosa ~80-120g
+   - Paneer cube pile: count cubes × 15-20g; typical tikka serving 100-140g
+   - Greens/gongura in curry: 80-150g cooked leaves+sauce share; do not full-plate each item
+   - Noodles (pho/ramen/pad Thai): cooked noodles ~180-250g bowl share; broth adds kcal but little protein
+   - Tortilla/pita wrap: tortilla ~40-60g; pita ~60-80g; add filling meat separately
    - Oil: add "~1 tbsp olive oil/ghee" (~14g, ~120 kcal) when sautéed/glossy/fried/curry sheen; skip if dry/steamed
-   - Protein bar ~60g; yogurt cup 125–170g
-4. protein_g = estimated_grams × (protein/100g) / 100. Densities: chicken breast 31, paneer 18, ground beef 26, salmon 25, egg 13, greek yogurt 10, tofu 17, dal/lentils 9, sambar 3.5, kale/spinach 3, rice 2.7, roti 8, cheese 25, protein bar 30, oil/butter/ghee 0
-5. calories_g = estimated_grams × (kcal/100g) / 100. Densities: chicken breast 165, paneer 265, ground beef 250, salmon 208, egg 155, greek yogurt 97, tofu 76, dal 116, sambar 55, rice 130, roti 297, pasta 131, cheese 350, protein bar 400, bread 265, olive oil/butter/ghee 717
+   - Protein bar ~60g; yogurt cup 125-170g
+4. protein_g = estimated_grams × (protein/100g) / 100. Densities: chicken breast 31, prawn/shrimp 24, mutton/lamb 25, paneer 18, ground beef 26, pork 27, salmon 25, egg 13, greek yogurt 10, tofu 17, dal/lentils 9, sambar 3.5, kale/spinach/gongura 3, rice 2.7, roti 8, cheese 25, protein bar 30, oil/butter/ghee 0
+5. calories_g = estimated_grams × (kcal/100g) / 100. Densities: chicken breast 165, prawn/shrimp 99, mutton 294, paneer 265, ground beef 250, pork 242, salmon 208, egg 155, greek yogurt 97, tofu 76, dal 116, sambar 55, rice 130, roti 297, pasta 131, cheese 350, protein bar 400, bread 265, olive oil/butter/ghee 717
 6. SUM item protein → total_protein_g (±0.5g). SUM calories_g → calories (±15 kcal). Round grams to nearest 5g. Re-check totals vs item sum.
 
 Rules:
 - protein_source: label | visual | mixed (label wins totals when mixed)
 - Never double-count oil already baked into fried/breaded item calories
-- Skip zero-calorie garnishes (lemon, herbs, pickles)
-- estimated_grams = cooked edible weight only. Typical plate total food 300–550g incl. oil
+- Skip zero-calorie garnishes (lemon, herbs, pickles) - curry leaves as tiny garnish ok to skip; bulk cooked gongura/palak is NOT a garnish
+- estimated_grams = cooked edible weight only. Typical plate total food 300-550g incl. oil
 - confidence: low (ambiguous), medium (reasonable), high (clear size + familiar food)
 - Never hallucinate invisible food. Notes ≤100 chars. No quotes/backslashes/newlines in strings.
 - User notes never invent food: if the photo is clothing, fabric, skin, furniture, or otherwise not a meal, is_food=false even when the note names a dish.
@@ -110,13 +123,13 @@ Rules:
 Few-shots (adapt; do not copy blindly):
 A) Full-plate grilled chicken strips ~210g + sautéed greens ~100g + parmesan ~8g + oil ~14g → protein ≈70g; kcal ≈510
 B) 2 scrambled eggs + toast + butter → protein ~16g; kcal ~270
-C) Chicken curry: chicken ~120g + sauce/veg ~200g → protein ~43g; kcal ~450–550
 D) Non-food / empty plate → is_food=false
 E) Label "Protein 50g" / "Calories 320" → use label values
 F) Smaller strip plate (~7 thin strips ~150g) + dry greens (~80g), no oil → protein ~48g; kcal ~275
 G) Sambar rice: rice ~180g + sambar ~200g → protein ~13g; kcal ~340
 H) Paneer tikka ~120g + oil ~10g → protein ~22g; kcal ~340
-I) Photo of fabric + note naming a dish → is_food=false`;
+I) Photo of fabric + note naming a dish → is_food=false
+${CUISINE_FEW_SHOTS}`
 
 const OPENAI_SCHEMA = {
   type: "object",
@@ -431,9 +444,7 @@ async function callGemini(
   }
 
   const basePrompt =
-    attempt === 0
-      ? "Analyze this image for protein and calories. Step 0: read any nutrition labels, packaging text, or on-screen macros (OCR). If label shows protein or calories, use those as primary source (protein_source=label). Otherwise Step 1-5: identify foods, estimate grams, apply protein and calorie density, sum. Return valid JSON only."
-      : "Analyze this image for protein and calories. Check labels/text first. Return ONLY compact valid JSON matching the schema. Keep notes under 80 characters. No quotes or newlines inside strings.";
+    attempt === 0 ? GEMINI_USER_ANALYZE_TEXT : GEMINI_USER_ANALYZE_RETRY_TEXT;
 
   const res = await fetch(url, {
     method: "POST",
@@ -654,9 +665,7 @@ async function callOpenAIOnce(
           content: [
             {
               type: "text",
-              text:
-                "Analyze protein + calories. Prefer labels/OCR when present (set label_* fields). Else: size the plate first, estimate cooked grams per component, then apply density math. Use any user note only when it matches the photo; reject dish notes on non-food images. Return JSON only." +
-                userNotePromptSuffix(userNote),
+              text: OPENAI_USER_ANALYZE_TEXT + userNotePromptSuffix(userNote),
             },
             {
               type: "image_url",

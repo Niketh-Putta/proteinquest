@@ -21,6 +21,10 @@ const files = [
     path: 'supabase/functions/_shared/protein-density.ts',
   },
   {
+    name: 'functions/_shared/cuisine-prompt.ts',
+    path: 'supabase/functions/_shared/cuisine-prompt.ts',
+  },
+  {
     name: 'functions/_shared/scan-entitlement.ts',
     path: 'supabase/functions/_shared/scan-entitlement.ts',
   },
