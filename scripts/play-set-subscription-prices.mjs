@@ -86,7 +86,7 @@ async function main() {
   console.log('Play — set US subscription prices\n');
 
   for (const t of TARGETS) {
-    const get = await api(token, 'GET', `/subscriptions/${t.productId}`);
+    const get = await api(token, 'GET', `/monetization/subscriptions/${t.productId}`);
     if (!get.ok) {
       console.error(`✗ GET ${t.productId}`, get.status, JSON.stringify(get.json));
       continue;
@@ -102,6 +102,9 @@ async function main() {
 
     const regions = plan.regionalConfigs ?? [];
     let us = regions.find((r) => r.regionCode === 'US');
+    const before = us?.price
+      ? `${us.price.units || 0}.${String(us.price.nanos || 0).padStart(9, '0').slice(0, 2)}`
+      : 'missing';
     if (!us) {
       us = { regionCode: 'US', newSubscriberAvailability: true };
       regions.push(us);
@@ -109,12 +112,13 @@ async function main() {
     us.price = money(t.price);
     us.newSubscriberAvailability = true;
     plan.regionalConfigs = regions;
+    console.log(`  ${t.productId}/${t.basePlanId} US was $${before} → $${t.price}`);
 
     // Keep GB if present; do not wipe other regions.
     const patch = await api(
       token,
       'PATCH',
-      `/subscriptions/${encodeURIComponent(t.productId)}?updateMask=basePlans&regionsVersion.version=2022/01`,
+      `/monetization/subscriptions/${encodeURIComponent(t.productId)}?updateMask=basePlans`,
       { packageName: PACKAGE, productId: t.productId, basePlans: plans },
     );
     if (patch.ok) {

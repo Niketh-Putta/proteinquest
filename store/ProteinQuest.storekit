@@ -17,7 +17,7 @@
       "subscriptions": [
         {
           "adGroupDisplayName": "ProteinQuest Pro Weekly",
-          "displayPrice": "4.99",
+          "displayPrice": "9.99",
           "familyShareable": false,
           "groupNumber": 1,
           "internalID": "6781793893",
@@ -35,7 +35,7 @@
         },
         {
           "adGroupDisplayName": "ProteinQuest Pro Yearly",
-          "displayPrice": "29.99",
+          "displayPrice": "59.99",
           "familyShareable": false,
           "groupNumber": 2,
           "internalID": "6781793936",

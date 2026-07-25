@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -18,7 +18,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { GlassPanel } from '@/components/GlassPanel';
 import { trackEvent } from '@/lib/analytics';
 import { APP_STORE_URL, PLAY_STORE_URL } from '@/lib/app-update';
-import { displayDragonId, displayDragonName } from '@/lib/character';
 import { useContentColumn, useLayout } from '@/lib/layout';
 import {
   getNativePaymentProvider,
@@ -26,7 +25,6 @@ import {
   type PaymentPlan,
   type PaymentProvider,
 } from '@/lib/payments';
-import { todayISODate } from '@/lib/protein';
 import { SITE_URL } from '@/lib/site';
 import { useSession } from '@/lib/session';
 import { colors, fonts, layout, pressableWeb, radius, spacing } from '@/theme';
@@ -46,24 +44,24 @@ const SERIF = Platform.select({
 
 const PERKS = [
   {
-    icon: 'sparkles' as const,
-    title: 'Smarter AI scanning',
-    text: 'More intelligent plate & label reads. Sharper protein and calorie estimates.',
+    icon: 'nutrition' as const,
+    title: 'Hit protein without thinking',
+    text: 'Snap the plate. Get the number. Stay on goal without logging gymnastics.',
   },
   {
     icon: 'infinite' as const,
-    title: 'Unlimited feeds',
-    text: 'Scan every meal. Keep your dragon bright, never locked out mid-day.',
+    title: 'Unlimited AI scans',
+    text: 'Every meal, every day. Built for busy people who pay for results.',
   },
   {
-    icon: 'snow' as const,
-    title: 'Streak freeze',
-    text: 'One weekly save so a busy day doesn’t abandon your bond.',
+    icon: 'sparkles' as const,
+    title: 'Smarter estimates',
+    text: 'Sharper plate and label reads. Protein and calories you can trust.',
   },
   {
-    icon: 'flash' as const,
-    title: 'Priority analysis',
-    text: 'Faster turnaround when you’re logging on the go.',
+    icon: 'flame' as const,
+    title: 'Dragon + leagues',
+    text: 'Optional game layer so the habit sticks when willpower dips.',
   },
 ];
 
@@ -96,7 +94,7 @@ function GradientWord({ children, size = 40 }: { children: string; size?: number
 }
 
 export default function Paywall() {
-  const { session, profile, saveProfile } = useSession();
+  const { session, saveProfile } = useSession();
   const { isNarrow, isVeryNarrow, isTinyH } = useLayout();
   const column = useContentColumn('form');
   const titleSize = isVeryNarrow || isTinyH ? 32 : isNarrow ? 36 : 40;
@@ -105,11 +103,6 @@ export default function Paywall() {
   const [busy, setBusy] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [loadingPlans, setLoadingPlans] = useState(!IS_WEB);
-
-  const dragonName = useMemo(() => {
-    if (!profile) return 'your dragon';
-    return displayDragonName(profile, displayDragonId(profile, todayISODate()));
-  }, [profile]);
 
   /** Native IAP only; web laptop cannot run App Store / Play Billing. */
   const canPurchase =
@@ -139,7 +132,7 @@ export default function Paywall() {
   async function grantPremium() {
     await saveProfile({ is_premium: true, paywall_dismissed: true });
     trackEvent('paywall_purchase', { plan_id: planId });
-    Alert.alert('Welcome to Pro', `Smarter AI + unlimited feeds for ${dragonName}.`);
+    Alert.alert('Welcome to Pro', 'Protein on autopilot. Unlimited AI scans are unlocked.');
     goBack();
   }
 
@@ -298,11 +291,12 @@ export default function Paywall() {
               { fontSize: titleSize, lineHeight: Math.round(titleSize * 1.15) },
             ]}
             numberOfLines={isVeryNarrow ? 3 : 2}>
-            Keep {dragonName} fed &{'\n'}
-            <GradientWord size={titleSize}>glowing.</GradientWord>
+            Hit protein{'\n'}
+            <GradientWord size={titleSize}>without thinking.</GradientWord>
           </Text>
           <Text style={[styles.subtitle, isNarrow && { fontSize: 13, lineHeight: 19 }]}>
-            Pro unlocks smarter AI scans and unlimited feeds, so every meal keeps the bond alive.
+            The protein habit for busy people who pay for results. Unlimited AI scans, then dragon
+            and league if you want the game layer.
           </Text>
 
           <GlassPanel style={styles.perksCard}>
