@@ -453,10 +453,9 @@ export default function SettingsScreen({ embedded = false }: { embedded?: boolea
                     </View>
                     <View style={styles.upgradeCopy}>
                       <Text style={styles.upgradeTitle}>Upgrade to Pro</Text>
-                      <Text style={styles.upgradeHint}>Unlimited scans and full access</Text>
-                    </View>
-                    <View style={styles.upgradeBadge} accessibilityLabel="Only 3 discount spots left">
-                      <Text style={styles.upgradeBadgeText}>only 3{'\n'}discount{'\n'}spots left</Text>
+                      <Text style={styles.upgradeHint}>
+                        Unlimited scans · from $2.49/mo, billed annually
+                      </Text>
                     </View>
                     <Ionicons name="chevron-forward" size={18} color={colors.onAccent} />
                   </LinearGradient>
@@ -945,27 +944,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     letterSpacing: 0.15,
     color: colors.onAccent,
-  },
-  upgradeBadge: {
-    flexShrink: 0,
-    maxWidth: 96,
-    backgroundColor: 'rgba(12, 11, 16, 0.32)',
-    borderRadius: radius.md,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255, 249, 247, 0.28)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  upgradeBadgeText: {
-    fontFamily: fonts.monoBold,
-    fontSize: 10,
-    letterSpacing: 0.4,
-    lineHeight: 13,
-    color: colors.onAccent,
-    textAlign: 'center',
-    textTransform: 'uppercase',
   },
   upgradeHint: {
     fontFamily: fonts.body,

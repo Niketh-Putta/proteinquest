@@ -67,16 +67,6 @@ const PERKS = [
   },
 ];
 
-/** Visual “was” price for founding FOMO. Charge is still the live plan.price. */
-function displayWasPrice(amount: string, yearly: boolean): string | null {
-  const m = amount.match(/^([^\d]*)([\d]+(?:[.,]\d+)?)/);
-  if (!m) return null;
-  const n = parseFloat(m[2].replace(',', '.'));
-  if (!Number.isFinite(n) || n <= 0) return null;
-  const was = yearly ? '74.99' : '12.99';
-  return `${m[1]}${was}`;
-}
-
 const PRIVACY_URL = `${SITE_URL}/privacy`;
 const TERMS_URL =
   Platform.OS === 'ios'
@@ -206,7 +196,6 @@ export default function Paywall() {
     const selected = planId === plan.id;
     const yearly = /year/i.test(plan.id) || /year/i.test(plan.title);
     const { amount, period } = formatPrice(plan.price);
-    const was = displayWasPrice(amount, yearly);
 
     return (
       <Pressable
@@ -230,9 +219,6 @@ export default function Paywall() {
                 <Text style={[styles.planTitle, selected && styles.planTitleSelected]}>
                   {plan.title}
                 </Text>
-                <View style={styles.discountPill}>
-                  <Text style={styles.discountPillText}>DISCOUNT PRICE</Text>
-                </View>
                 {yearly ? (
                   <View style={styles.bestValue}>
                     <Text style={styles.bestValueText}>BEST VALUE</Text>
@@ -246,7 +232,6 @@ export default function Paywall() {
             </View>
             <View style={styles.planRight}>
               <View style={styles.priceCol}>
-                {was ? <Text style={styles.wasPrice}>{was}</Text> : null}
                 <View style={styles.priceRow}>
                   <Text style={[styles.planAmount, selected && styles.planAmountSelected]}>
                     {amount}
@@ -319,26 +304,6 @@ export default function Paywall() {
           <Text style={[styles.subtitle, isNarrow && { fontSize: 13, lineHeight: 19 }]}>
             Pro unlocks smarter AI scans and unlimited feeds, so every meal keeps the bond alive.
           </Text>
-
-          <View style={styles.scarcityBanner}>
-            <Text style={styles.scarcityHeadline}>Only 3 discount spots left</Text>
-            <Text style={styles.scarcitySub}>
-              First 10 trainers get these discounted prices. After that, full price returns.
-            </Text>
-            <View style={styles.spotsMeter}>
-              <View style={[styles.spotsSeg, styles.spotsSegTaken]} />
-              <View style={[styles.spotsSeg, styles.spotsSegTaken]} />
-              <View style={[styles.spotsSeg, styles.spotsSegTaken]} />
-              <View style={[styles.spotsSeg, styles.spotsSegTaken]} />
-              <View style={[styles.spotsSeg, styles.spotsSegTaken]} />
-              <View style={[styles.spotsSeg, styles.spotsSegTaken]} />
-              <View style={[styles.spotsSeg, styles.spotsSegTaken]} />
-              <View style={[styles.spotsSeg, styles.spotsSegOpen]} />
-              <View style={[styles.spotsSeg, styles.spotsSegOpen]} />
-              <View style={[styles.spotsSeg, styles.spotsSegOpen]} />
-            </View>
-            <Text style={styles.scarcityMeta}>7 claimed · 3 remaining</Text>
-          </View>
 
           <GlassPanel style={styles.perksCard}>
             {PERKS.map((p, i) => (
@@ -509,64 +474,6 @@ const styles = StyleSheet.create({
     fontFamily: fonts.body,
     maxWidth: 360,
   },
-  scarcityBanner: {
-    marginTop: spacing.md + 2,
-    paddingVertical: layout.cardPad,
-    paddingHorizontal: layout.cardPad,
-    borderRadius: radius.md,
-    backgroundColor: 'rgba(255,122,89,0.16)',
-    borderWidth: 1.5,
-    borderColor: ACCENT,
-    gap: spacing.sm,
-  },
-  scarcityHeadline: {
-    fontFamily: fonts.displayMedium,
-    fontSize: 22,
-    lineHeight: 26,
-    color: '#FFE8DE',
-    letterSpacing: -0.3,
-  },
-  scarcitySub: {
-    fontFamily: fonts.body,
-    fontSize: 14,
-    lineHeight: 20,
-    color: '#F0E6EC',
-  },
-  spotsMeter: {
-    flexDirection: 'row',
-    gap: 4,
-    marginTop: 4,
-  },
-  spotsSeg: {
-    flex: 1,
-    height: 8,
-    borderRadius: 3,
-  },
-  spotsSegTaken: {
-    backgroundColor: ACCENT,
-  },
-  spotsSegOpen: {
-    backgroundColor: 'rgba(255,255,255,0.22)',
-  },
-  scarcityMeta: {
-    fontFamily: fonts.monoBold,
-    fontSize: 11,
-    letterSpacing: 0.8,
-    color: ACCENT_SOFT,
-    textTransform: 'uppercase',
-  },
-  discountPill: {
-    backgroundColor: ACCENT,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 999,
-  },
-  discountPillText: {
-    fontFamily: fonts.monoBold,
-    fontSize: 8,
-    letterSpacing: 0.5,
-    color: colors.onAccent,
-  },
   perksCard: {
     marginTop: 16,
     paddingVertical: 6,
@@ -682,13 +589,6 @@ const styles = StyleSheet.create({
   priceRow: {
     flexDirection: 'row',
     alignItems: 'baseline',
-  },
-  wasPrice: {
-    fontSize: 12,
-    color: MUTED,
-    fontFamily: fonts.body,
-    textDecorationLine: 'line-through',
-    opacity: 0.85,
   },
   planAmount: {
     fontSize: 17,

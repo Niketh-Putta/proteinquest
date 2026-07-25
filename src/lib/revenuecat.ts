@@ -216,15 +216,15 @@ export async function getRevenueCatPlans(): Promise<RevenueCatPlan[]> {
     {
       id: REVENUECAT_PRODUCT_IDS.weekly,
       title: 'Weekly',
-      price: '\u00A36.99/wk',
-      caption: 'Flexible. Cancel anytime',
+      price: '$4.99/wk',
+      caption: 'Flexible. Cancel anytime.',
       packageIdentifier: '$rc_weekly',
     },
     {
       id: REVENUECAT_PRODUCT_IDS.yearly,
       title: 'Yearly',
-      price: '\u00A329.99/yr',
-      caption: 'Save 92% vs weekly',
+      price: '$2.49/mo',
+      caption: 'Billed as $29.99 annually · Save ~88% vs weekly',
       packageIdentifier: '$rc_annual',
     },
   ];
@@ -252,11 +252,14 @@ export async function getRevenueCatPlans(): Promise<RevenueCatPlan[]> {
       if (!isYearly && !isWeekly) continue;
       if (!pkg.product.priceString?.trim()) continue;
 
+      // Marketing UI copy in USD; Apple/Google still show localized store price at purchase.
       mapped.push({
         id: isYearly ? REVENUECAT_PRODUCT_IDS.yearly : REVENUECAT_PRODUCT_IDS.weekly,
         title: isYearly ? 'Yearly' : 'Weekly',
-        price: pkg.product.priceString,
-        caption: isYearly ? 'Save 92% vs weekly' : 'Flexible. Cancel anytime',
+        price: isYearly ? '$2.49/mo' : '$4.99/wk',
+        caption: isYearly
+          ? 'Billed as $29.99 annually · Save ~88% vs weekly'
+          : 'Flexible. Cancel anytime.',
         packageIdentifier: pkg.identifier,
       });
     }
