@@ -8,8 +8,12 @@ export const DEFAULT_PAYWALL_CONFIG = {
   freeDailyScans: 1,
   habitGraceDays: 2,
   grandfatherFreeDailyScans: 1,
-  /** Inclusive local YYYY-MM-DD; null = promo off. */
-  promoUnlimitedUntil: null as string | null,
+  /**
+   * Inclusive local YYYY-MM-DD; null = promo off.
+   * Weekend promo: free unlimited scans through end of 2026-07-27 local
+   * (auto-expires via todayISODate() comparison; remote row is source of truth).
+   */
+  promoUnlimitedUntil: '2026-07-27' as string | null,
 } as const;
 
 export type PaywallConfig = {

@@ -1154,11 +1154,18 @@ async function enforcePhotoScanLimit(req: Request): Promise<Response | null> {
   }
 
   const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-  const { data: profile } = await admin
-    .from("profiles")
-    .select("is_premium, created_at")
-    .eq("id", userId)
-    .maybeSingle();
+  const [{ data: profile }, { data: paywallCfg }] = await Promise.all([
+    admin
+      .from("profiles")
+      .select("is_premium, created_at")
+      .eq("id", userId)
+      .maybeSingle(),
+    admin
+      .from("app_paywall_config")
+      .select("promo_unlimited_until")
+      .eq("id", 1)
+      .maybeSingle(),
+  ]);
 
   const { count: lifetimeMeals } = await admin
     .from("protein_logs")
@@ -1182,6 +1189,7 @@ async function enforcePhotoScanLimit(req: Request): Promise<Response | null> {
     createdAt: profile?.created_at ?? null,
     scansUsedToday: count ?? 0,
     lifetimeMeals: lifetimeMeals ?? 0,
+    promoUnlimitedUntil: paywallCfg?.promo_unlimited_until ?? null,
   });
 
   if (!decision.allowed) {
