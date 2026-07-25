@@ -1,6 +1,6 @@
 {
   "packageName": "com.proteinquest.app",
-  "currency": "GBP",
+  "currency": "USD",
   "subscriptions": [
     {
       "productId": "pro_weekly",
@@ -15,7 +15,7 @@
         {
           "basePlanId": "weekly",
           "billingPeriod": "P1W",
-          "price": "6.99",
+          "price": "4.99",
           "renewalType": "AUTO_RENEWING",
           "gracePeriodDays": 3,
           "accountHoldDays": 30
@@ -59,7 +59,7 @@
   },
   "reviewNotes": {
     "licenseTesters": "Add Google account emails under Setup → License testing before sandbox purchases.",
-    "testInstructions": "Open app → complete onboarding → paywall shows Weekly £6.99 and Yearly £29.99. Use license tester account to purchase. Free tier: 2-day unlimited trial, then 1 free scan/day (soft paywall); Pro for unlimited.",
+    "testInstructions": "Open app → complete onboarding → paywall shows Weekly $4.99 and Yearly $2.49/mo ($29.99 annually). Use license tester account to purchase. Free tier: 2-day unlimited trial, then 1 free scan/day (soft paywall); Pro for unlimited.",
     "privacyPolicyUrl": "https://proteinquest.app/privacy",
     "termsUrl": "https://proteinquest.app/terms"
   }

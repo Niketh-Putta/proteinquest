@@ -98,7 +98,7 @@ When enrollment is Active, run in order:
 
   1. App Store Connect → create app "ProteinQuest" (com.proteinquest.app)
   2. Monetization → Subscriptions → group "ProteinQuest Pro":
-       pro_weekly £6.99/wk, pro_yearly £29.99/yr
+       pro_weekly $4.99/wk, pro_yearly $29.99/yr
   3. Users and Access → Integrations → In-App Purchase → generate P8 key
   4. RevenueCat → add iOS app, upload P8, copy appl_ key → .env
   5. node scripts/sync-revenuecat-keys.mjs

@@ -11,7 +11,7 @@
   "products": {
     "weekly": {
       "planId": "pro_weekly",
-      "priceGbp": "6.99",
+      "priceUsd": "4.99",
       "billingPeriod": "1 week",
       "appStoreConnect": {
         "productId": "pro_weekly",
@@ -35,7 +35,7 @@
     },
     "yearly": {
       "planId": "pro_yearly",
-      "priceGbp": "29.99",
+      "priceUsd": "29.99",
       "billingPeriod": "1 year",
       "appStoreConnect": {
         "productId": "pro_yearly",
