@@ -26,6 +26,7 @@ import Animated, {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { GlassPanel } from '@/components/GlassPanel';
+import { ModalMotionLayer } from '@/components/ModalMotionLayer';
 import { PageCanvas } from '@/components/PageCanvas';
 import { useContentColumn } from '@/lib/layout';
 import {
@@ -49,7 +50,7 @@ import {
   resolveAdjustQuantityMode,
   setPendingIngredientEdit,
 } from '@/lib/scan-ingredient-edit';
-import { colors, displayLH, fonts, pressableWeb, spacing } from '@/theme';
+import { colors, displayLH, fonts, pressableWeb, radius, spacing } from '@/theme';
 
 /** 0 → 15 in quarter steps (0.25, 0.5, 0.75, …). */
 const QUANTITIES = Array.from({ length: 61 }, (_, i) => i * 0.25);
@@ -181,6 +182,7 @@ export default function ScanAdjustScreen() {
   const name = paramString(params.name, 'Food');
   const initialPortion = paramString(params.portion, '1 serving');
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const mode = useMemo(
     () => resolveAdjustQuantityMode(name, initialPortion),
     [name, initialPortion],
@@ -685,7 +687,10 @@ export default function ScanAdjustScreen() {
           <View style={[styles.topBarSide, styles.topBarSideRight]}>
             {!isAdd ? (
               <Pressable
-                onPress={() => setDeleteOpen(true)}
+                onPress={() => {
+                  setDeleteModalVisible(true);
+                  setDeleteOpen(true);
+                }}
                 hitSlop={10}
                 style={({ pressed }) => [
                   styles.backBtn,
@@ -1000,39 +1005,54 @@ export default function ScanAdjustScreen() {
         </ScrollView>
 
         <Modal
-          visible={deleteOpen}
+          visible={deleteModalVisible}
           transparent
-          animationType="fade"
+          animationType="none"
           onRequestClose={() => setDeleteOpen(false)}>
           <View style={styles.confirmRoot}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Dismiss"
-              style={styles.confirmBackdrop}
-              onPress={() => setDeleteOpen(false)}
-            />
-            <View style={styles.confirmCardWrap}>
-              <GlassPanel emphasized style={styles.confirmCard}>
+            <ModalMotionLayer
+              visible={deleteOpen}
+              onExited={() => setDeleteModalVisible(false)}
+              cardStyle={styles.confirmCardWrap}
+              backdrop={
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Dismiss"
+                style={styles.confirmBackdrop}
+                onPress={() => setDeleteOpen(false)}
+              />
+              }>
+              <GlassPanel modal style={styles.confirmCard}>
                 <View pointerEvents="none" style={styles.confirmSheen} />
                 <Text style={styles.confirmTitle}>Remove &quot;{name}&quot; from this meal?</Text>
                 <View style={styles.confirmActions}>
                   <Pressable
                     onPress={() => setDeleteOpen(false)}
-                    style={[styles.confirmBtn, styles.confirmCancel, pressableWeb]}
+                    style={({ pressed }) => [
+                      styles.confirmBtn,
+                      styles.confirmCancel,
+                      pressableWeb,
+                      pressed && { opacity: 0.85 },
+                    ]}
                     accessibilityRole="button"
                     accessibilityLabel="Cancel">
                     <Text style={styles.confirmCancelText}>Cancel</Text>
                   </Pressable>
                   <Pressable
                     onPress={confirmDelete}
-                    style={[styles.confirmBtn, styles.confirmDelete, pressableWeb]}
+                    style={({ pressed }) => [
+                      styles.confirmBtn,
+                      styles.confirmDelete,
+                      pressableWeb,
+                      pressed && { opacity: 0.9 },
+                    ]}
                     accessibilityRole="button"
                     accessibilityLabel="Delete">
                     <Text style={styles.confirmDeleteText}>Delete</Text>
                   </Pressable>
                 </View>
               </GlassPanel>
-            </View>
+            </ModalMotionLayer>
           </View>
         </Modal>
       </SafeAreaView>
@@ -1508,21 +1528,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
   },
   confirmBackdrop: {
-    ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(6, 5, 10, 0.4)',
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(6, 5, 10, 0.55)',
     ...(Platform.OS === 'web'
       ? ({
-          backdropFilter: 'blur(6px) saturate(1.15)',
-          WebkitBackdropFilter: 'blur(6px) saturate(1.15)',
+          backdropFilter: 'blur(22px) saturate(1.4)',
+          WebkitBackdropFilter: 'blur(22px) saturate(1.4)',
         } as object)
       : null),
   },
   confirmCardWrap: {
     width: '100%',
     maxWidth: 340,
+    borderRadius: radius.lg,
+    overflow: 'hidden',
     ...(Platform.OS === 'web'
       ? ({
-          boxShadow: '0 28px 64px rgba(0,0,0,0.55), 0 0 48px rgba(255,122,89,0.12)',
+          boxShadow: '0 28px 64px rgba(0,0,0,0.55)',
         } as object)
       : {
           shadowColor: '#000',
@@ -1536,10 +1558,7 @@ const styles = StyleSheet.create({
     position: 'relative',
     padding: spacing.lg,
     gap: spacing.md,
-    borderRadius: 14,
-    backgroundColor: 'rgba(22, 20, 30, 0.42)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.22)',
+    borderRadius: radius.lg,
     overflow: 'hidden',
   },
   confirmSheen: {
@@ -1564,7 +1583,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 12,
-    borderRadius: 12,
+    borderRadius: radius.sm,
   },
   confirmCancel: {
     backgroundColor: 'rgba(255,255,255,0.08)',

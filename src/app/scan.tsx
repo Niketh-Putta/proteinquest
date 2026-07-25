@@ -33,6 +33,7 @@ import Svg, { Defs, Mask, Rect } from 'react-native-svg';
 import { Button } from '@/components/Button';
 import { Celebration } from '@/components/Celebration';
 import { GlassPanel } from '@/components/GlassPanel';
+import { ModalMotionLayer } from '@/components/ModalMotionLayer';
 import { MealPhotoPreview } from '@/components/MealPhotoPreview';
 import { trackEvent } from '@/lib/analytics';
 import {
@@ -2253,19 +2254,23 @@ export default function ScanScreen() {
         </ScrollView>
       )}
 
-      {discardOpen ? (
-        <View
-          style={styles.discardRoot}
-          accessibilityViewIsModal
-          importantForAccessibility="yes">
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Dismiss"
-            style={styles.discardBackdrop}
-            onPress={cancelDiscard}
-          />
-          <View style={styles.discardCardWrap}>
-            <GlassPanel emphasized style={styles.discardCard}>
+      <View
+        style={styles.discardRoot}
+        pointerEvents={discardOpen ? 'auto' : 'none'}
+        accessibilityViewIsModal={discardOpen}
+        importantForAccessibility={discardOpen ? 'yes' : 'no-hide-descendants'}>
+        <ModalMotionLayer
+          visible={discardOpen}
+          cardStyle={styles.discardCardWrap}
+          backdrop={
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss"
+              style={styles.discardBackdrop}
+              onPress={cancelDiscard}
+            />
+          }>
+            <GlassPanel modal style={styles.discardCard}>
               <View style={styles.discardSheen} pointerEvents="none" />
               <Text style={styles.discardTitle}>Save this scan?</Text>
               <Text style={styles.discardBody}>
@@ -2296,9 +2301,8 @@ export default function ScanScreen() {
                 </Pressable>
               </View>
             </GlassPanel>
-          </View>
-        </View>
-      ) : null}
+        </ModalMotionLayer>
+      </View>
 
       {profile ? (
         <Celebration
@@ -3291,6 +3295,8 @@ const styles = StyleSheet.create({
   discardCardWrap: {
     width: '100%',
     maxWidth: 380,
+    borderRadius: radius.lg,
+    overflow: 'hidden',
     ...shadowCard,
     boxShadow: '0 28px 64px rgba(0,0,0,0.55), 0 0 48px rgba(255,122,89,0.12)',
     elevation: 20,
@@ -3301,9 +3307,6 @@ const styles = StyleSheet.create({
     paddingTop: spacing.lg,
     paddingBottom: spacing.md,
     borderRadius: radius.lg,
-    backgroundColor: 'rgba(22, 20, 30, 0.42)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.22)',
     overflow: 'hidden',
   },
   discardSheen: {

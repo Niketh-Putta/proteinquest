@@ -20,6 +20,7 @@ import { DailyDragonPicker } from '@/components/DailyDragonPicker';
 import { FeedQuest } from '@/components/FeedQuest';
 import { FeedToast } from '@/components/FeedToast';
 import { GlassPanel } from '@/components/GlassPanel';
+import { ModalMotionLayer } from '@/components/ModalMotionLayer';
 import { PageCanvas } from '@/components/PageCanvas';
 import { ProgressRing } from '@/components/ProgressRing';
 import { TrainerRankCard } from '@/components/TrainerRankCard';
@@ -167,6 +168,7 @@ export default function TodayScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<ProteinLog | null>(null);
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [scansLeft, setScansLeft] = useState<number | null>(null);
   /** Extra air below Dynamic Island so FREE / date never sit under the camera. */
   const headerTopPad = insets.top > 0 ? spacing.md : 0;
@@ -793,7 +795,10 @@ export default function TodayScreen() {
             </Text>
           </Pressable>
           <Pressable
-            onPress={() => setPendingDelete(item)}
+            onPress={() => {
+              setDeleteModalVisible(true);
+              setPendingDelete(item);
+            }}
             disabled={deletingId === item.id}
             accessibilityLabel="Delete meal"
             accessibilityRole="button"
@@ -816,19 +821,25 @@ export default function TodayScreen() {
       <SafeAreaView style={styles.safe} edges={['top']}>
         <FeedToast visible={!!toastMsg} message={toastMsg ?? ''} onHide={() => setToastMsg(null)} />
         <Modal
-          visible={!!pendingDelete}
+          visible={deleteModalVisible}
           transparent
-          animationType="fade"
+          animationType="none"
           onRequestClose={() => setPendingDelete(null)}>
           <View style={styles.confirmRoot}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Dismiss"
-              style={styles.confirmBackdrop}
-              onPress={() => setPendingDelete(null)}
-            />
-            <View style={styles.confirmCardWrap} accessibilityViewIsModal>
-              <GlassPanel emphasized style={styles.confirmCard}>
+            <ModalMotionLayer
+              visible={!!pendingDelete}
+              onExited={() => setDeleteModalVisible(false)}
+              cardStyle={styles.confirmCardWrap}
+              accessibilityViewIsModal
+              backdrop={
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Dismiss"
+                style={styles.confirmBackdrop}
+                onPress={() => setPendingDelete(null)}
+              />
+              }>
+              <GlassPanel modal style={styles.confirmCard}>
                 <View pointerEvents="none" style={styles.confirmSheen} />
                 <Text style={styles.confirmTitle}>Delete this meal?</Text>
                 <Text style={styles.confirmBody}>
@@ -878,7 +889,7 @@ export default function TodayScreen() {
                   </Pressable>
                 </View>
               </GlassPanel>
-            </View>
+            </ModalMotionLayer>
           </View>
         </Modal>
         {heroLayout === 'sidebar' ? (
@@ -1199,7 +1210,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
   },
   confirmBackdrop: {
-    ...StyleSheet.absoluteFill,
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(6, 5, 10, 0.55)',
     ...(Platform.OS === 'web'
       ? ({
@@ -1211,9 +1222,11 @@ const styles = StyleSheet.create({
   confirmCardWrap: {
     width: '100%',
     maxWidth: 340,
+    borderRadius: radius.lg,
+    overflow: 'hidden',
     ...(Platform.OS === 'web'
       ? ({
-          boxShadow: '0 28px 64px rgba(0,0,0,0.55), 0 0 48px rgba(255,122,89,0.12)',
+          boxShadow: '0 28px 64px rgba(0,0,0,0.55)',
         } as object)
       : {
           shadowColor: '#000',
@@ -1227,10 +1240,8 @@ const styles = StyleSheet.create({
     position: 'relative',
     padding: spacing.lg,
     gap: spacing.md,
-    borderRadius: 14,
-    backgroundColor: 'rgba(22, 20, 30, 0.42)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.22)',
+    // Match GlassPanel radius so shaded fill follows the outer corners.
+    borderRadius: radius.lg,
     overflow: 'hidden',
   },
   confirmSheen: {
@@ -1273,7 +1284,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 12,
-    borderRadius: 12,
+    borderRadius: radius.sm,
   },
   confirmBtnNo: {
     backgroundColor: 'rgba(255,255,255,0.08)',

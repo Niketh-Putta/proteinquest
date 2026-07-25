@@ -1,7 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useDeferredValue, useEffect, useMemo, useState, startTransition } from 'react';
 import {
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -18,6 +19,7 @@ import {
   allCatalogFoods,
   commonCatalogFoods,
   type CatalogFood,
+  filterRecentCatalogFoods,
   loadRecentFoods,
   pushRecentFood,
   refreshRemoteFoodCatalog,
@@ -87,6 +89,7 @@ const BROWSE_PAGE = 100;
 export default function ScanIngredientScreen() {
   const column = useContentColumn('form');
   const [query, setQuery] = useState('');
+  const deferredQuery = useDeferredValue(query);
   const [recent, setRecent] = useState<CatalogFood[]>([]);
   const [browseLimit, setBrowseLimit] = useState(BROWSE_PAGE);
   const [catalogTick, setCatalogTick] = useState(0);
@@ -107,30 +110,42 @@ export default function ScanIngredientScreen() {
     }, []),
   );
 
-  const searching = query.trim().length > 0;
-  const [exactResults, setExactResults] = useState<CatalogFood[]>([]);
+  const trimmedQuery = query.trim();
+  const deferredTrimmed = deferredQuery.trim();
+  const searching = trimmedQuery.length > 0;
+  const searchPending = searching && deferredTrimmed !== trimmedQuery;
+
+  /** Recent list is tiny — filter on every keystroke for instant feedback. */
+  const recentMatches = useMemo(
+    () => (searching ? filterRecentCatalogFoods(recent, trimmedQuery) : []),
+    [searching, recent, trimmedQuery],
+  );
+
+  const exactResults = useMemo(() => {
+    if (!deferredTrimmed) return [];
+    return searchCatalogExact(deferredTrimmed);
+  }, [deferredTrimmed, catalogTick]);
+
   const [similarResults, setSimilarResults] = useState<CatalogFood[]>([]);
 
-  // Exact hits sync on every keystroke; fuzzy similar deferred so typing never blocks.
   useEffect(() => {
-    if (!query.trim()) {
-      setExactResults([]);
+    if (!deferredTrimmed) {
       setSimilarResults([]);
       return;
     }
-    const exact = searchCatalogExact(query);
-    setExactResults(exact);
-    setSimilarResults([]);
     let cancelled = false;
-    const t = setTimeout(() => {
+    const timer = setTimeout(() => {
       if (cancelled) return;
-      setSimilarResults(searchCatalogSimilar(query, exact));
+      startTransition(() => {
+        if (cancelled) return;
+        setSimilarResults(searchCatalogSimilar(deferredTrimmed, exactResults));
+      });
     }, 0);
     return () => {
       cancelled = true;
-      clearTimeout(t);
+      clearTimeout(timer);
     };
-  }, [query, catalogTick]);
+  }, [deferredTrimmed, exactResults, catalogTick]);
 
   const commonBase = useMemo(() => commonCatalogFoods(), [catalogTick]);
 
@@ -139,8 +154,9 @@ export default function ScanIngredientScreen() {
     return commonBase.filter((f) => !recentNames.has(f.name.toLowerCase()));
   }, [recent, commonBase]);
 
-  /** Full catalogue browse under COMMON so users can keep scrolling. */
+  /** Full catalogue browse under COMMON so users can keep scrolling. Skip while searching. */
   const browseMore = useMemo(() => {
+    if (searching) return [] as CatalogFood[];
     const skip = new Set([
       ...recent.map((r) => r.name.toLowerCase()),
       ...commonBase.map((f) => f.name.toLowerCase()),
@@ -148,7 +164,7 @@ export default function ScanIngredientScreen() {
     return allCatalogFoods()
       .filter((f) => !skip.has(f.name.toLowerCase()))
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [recent, commonBase, catalogTick]);
+  }, [searching, recent, commonBase, catalogTick]);
 
   const browseVisible = browseMore.slice(0, browseLimit);
   const browseRemaining = Math.max(0, browseMore.length - browseLimit);
@@ -160,41 +176,46 @@ export default function ScanIngredientScreen() {
   return (
     <PageCanvas>
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-        <View style={[styles.topBar, column]}>
-          <Pressable
-            onPress={() => {
-              if (router.canGoBack()) router.back();
-              else router.replace('/scan');
-            }}
-            hitSlop={12}
-            style={({ pressed }) => [styles.iconBtn, pressableWeb, pressed && { opacity: 0.7 }]}
-            accessibilityRole="button"
-            accessibilityLabel="Back">
-            <Ionicons name="chevron-back" size={22} color={colors.text} />
-          </Pressable>
-          <Text
-            style={[styles.topTitle, { flexShrink: 1, minWidth: 0, textAlign: 'center' }]}
-            numberOfLines={1}
-            adjustsFontSizeToFit
-            minimumFontScale={0.75}>
-            ADD INGREDIENT
-          </Text>
-          <View style={styles.iconBtnSpacer} />
-        </View>
+        <View style={[styles.page, column]}>
+          <View style={styles.topBar}>
+            <Pressable
+              onPress={() => {
+                if (router.canGoBack()) router.back();
+                else router.replace('/scan');
+              }}
+              hitSlop={12}
+              style={({ pressed }) => [styles.iconBtn, pressableWeb, pressed && { opacity: 0.7 }]}
+              accessibilityRole="button"
+              accessibilityLabel="Back">
+              <Ionicons name="chevron-back" size={22} color={colors.text} />
+            </Pressable>
+            <Text
+              style={[styles.topTitle, { flexShrink: 1, minWidth: 0, textAlign: 'center' }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.75}>
+              ADD INGREDIENT
+            </Text>
+            <View style={styles.iconBtnSpacer} />
+          </View>
 
-        <ScrollView
-          showsVerticalScrollIndicator
-          keyboardShouldPersistTaps="handled"
-          contentContainerStyle={[styles.scroll, column]}
-          scrollEventThrottle={160}
-          onScroll={(e) => {
-            if (searching || browseRemaining <= 0) return;
-            const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
-            if (layoutMeasurement.height + contentOffset.y >= contentSize.height - 480) {
-              loadMoreBrowse();
-            }
-          }}>
+          <ScrollView
+            showsVerticalScrollIndicator
+            keyboardShouldPersistTaps="handled"
+            style={styles.scrollView}
+            contentContainerStyle={styles.scroll}
+            scrollEventThrottle={160}
+            onScroll={(e) => {
+              if (searching || browseRemaining <= 0) return;
+              const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
+              if (layoutMeasurement.height + contentOffset.y >= contentSize.height - 480) {
+                loadMoreBrowse();
+              }
+            }}>
           <Animated.View entering={FadeIn.duration(240)} style={styles.searchWrap}>
+            <View style={styles.searchIcon} pointerEvents="none">
+              <Ionicons name="search" size={18} color={colors.textTertiary} />
+            </View>
             <TextInput
               style={[styles.searchInput, textInputWeb]}
               value={query}
@@ -208,14 +229,32 @@ export default function ScanIngredientScreen() {
               clearButtonMode="while-editing"
               accessibilityLabel="Search food"
             />
-            <View style={styles.searchIcon} pointerEvents="none">
-              <Ionicons name="search" size={18} color={colors.textTertiary} />
-            </View>
           </Animated.View>
 
           {searching ? (
             <Animated.View entering={FadeInDown.duration(280)} style={styles.searchResults}>
-              {exactResults.length === 0 && similarResults.length === 0 ? (
+              {searchPending && exactResults.length === 0 && similarResults.length === 0 ? (
+                <Text style={styles.searchPending}>Searching…</Text>
+              ) : null}
+              {recentMatches.length > 0 ? (
+                <>
+                  <SectionLabel label="RECENT" />
+                  <GlassPanel style={styles.listCard}>
+                    {recentMatches.map((food, i) => (
+                      <FoodRow
+                        key={`rm-${food.name}`}
+                        food={food}
+                        icon="time-outline"
+                        isLast={i === recentMatches.length - 1}
+                      />
+                    ))}
+                  </GlassPanel>
+                </>
+              ) : null}
+              {exactResults.length === 0 &&
+              similarResults.length === 0 &&
+              recentMatches.length === 0 &&
+              !searchPending ? (
                 <>
                   <SectionLabel label="RESULTS" />
                   <GlassPanel style={styles.listCard}>
@@ -309,7 +348,8 @@ export default function ScanIngredientScreen() {
               </Animated.View>
             </>
           )}
-        </ScrollView>
+          </ScrollView>
+        </View>
       </SafeAreaView>
     </PageCanvas>
   );
@@ -317,6 +357,15 @@ export default function ScanIngredientScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
+  page: {
+    flex: 1,
+    width: '100%',
+    alignSelf: 'center',
+  },
+  scrollView: {
+    flex: 1,
+    width: '100%',
+  },
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -344,13 +393,19 @@ const styles = StyleSheet.create({
   scroll: {
     paddingBottom: layout.scrollBottomPad,
     gap: spacing.md,
+    flexGrow: 1,
   },
   searchResults: {
     gap: spacing.md,
+    width: '100%',
   },
   searchWrap: {
-    position: 'relative',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    width: '100%',
     height: 52,
+    paddingHorizontal: spacing.md,
     borderRadius: radius.md,
     backgroundColor: 'rgba(255,255,255,0.06)',
     borderWidth: 1,
@@ -358,20 +413,46 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   searchIcon: {
-    position: 'absolute',
-    left: spacing.md,
-    top: 0,
-    bottom: 0,
+    marginRight: 10,
+    width: 20,
+    height: 52,
+    alignItems: 'center',
     justifyContent: 'center',
   },
   searchInput: {
-    ...StyleSheet.absoluteFillObject,
+    flex: 1,
+    minWidth: 0,
+    alignSelf: 'stretch',
     fontFamily: fonts.body,
     fontSize: 16,
     color: colors.text,
-    paddingLeft: spacing.md + 18 + 10,
-    paddingRight: spacing.md,
-    paddingVertical: 0,
+    paddingHorizontal: 0,
+    margin: 0,
+    // Match row height so placeholder/caret stay vertically centered (esp. web).
+    ...(Platform.OS === 'web'
+      ? ({
+          height: '100%',
+          lineHeight: 52,
+          paddingTop: 0,
+          paddingBottom: 0,
+          display: 'flex',
+          alignItems: 'center',
+        } as object)
+      : {
+          height: 52,
+          lineHeight: 52,
+          paddingVertical: 0,
+          textAlignVertical: 'center' as const,
+          ...(Platform.OS === 'android' ? { includeFontPadding: false } : null),
+        }),
+  },
+  searchPending: {
+    fontFamily: fonts.mono,
+    fontSize: 11,
+    letterSpacing: 1.2,
+    color: colors.textTertiary,
+    textAlign: 'center',
+    paddingVertical: 4,
   },
   sectionLabelRow: {
     flexDirection: 'row',
@@ -392,6 +473,7 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   listCard: {
+    width: '100%',
     paddingVertical: 4,
     paddingHorizontal: spacing.sm,
     overflow: 'hidden',

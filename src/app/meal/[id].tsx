@@ -1,10 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Keyboard,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -16,6 +17,8 @@ import {
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { GlassPanel } from '@/components/GlassPanel';
+import { ModalMotionLayer } from '@/components/ModalMotionLayer';
 import { MealPhotoPreview } from '@/components/MealPhotoPreview';
 import { PageCanvas } from '@/components/PageCanvas';
 import { fetchLogById, getFoodPhotoUrl, updateLog } from '@/lib/api';
@@ -52,6 +55,34 @@ import {
 
 function asItems(raw: ProteinLog['items']): FoodItem[] {
   return Array.isArray(raw) ? raw : [];
+}
+
+function baselineProteinStr(log: ProteinLog): string {
+  return String(Math.round(Number(log.protein_g) || 0));
+}
+
+function baselineCalorieStr(log: ProteinLog): string {
+  const calories =
+    log.calories != null && Number(log.calories) > 0 ? Number(log.calories) : 0;
+  return calories > 0 ? String(Math.round(calories)) : '';
+}
+
+function itemsSignature(items: FoodItem[]): string {
+  return JSON.stringify(
+    items.map((item) => ({
+      name: item.name,
+      portion: item.portion ?? '',
+      protein_g: Number(item.protein_g) || 0,
+      calories_g:
+        typeof item.calories_g === 'number' && Number.isFinite(item.calories_g)
+          ? item.calories_g
+          : null,
+      estimated_grams:
+        typeof item.estimated_grams === 'number' && Number.isFinite(item.estimated_grams)
+          ? item.estimated_grams
+          : null,
+    })),
+  );
 }
 
 function formatMealMeta(createdAt: string | null | undefined): string {
@@ -98,6 +129,8 @@ export default function MealDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [saveConfirmOpen, setSaveConfirmOpen] = useState(false);
+  const [saveConfirmModalVisible, setSaveConfirmModalVisible] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -197,11 +230,25 @@ export default function MealDetailScreen() {
     }, [applyIngredientEdit]),
   );
 
+  const isDirty = useMemo(() => {
+    if (!log) return false;
+    if ((foodName.trim() || 'Meal') !== (log.food_name.trim() || 'Meal')) return true;
+    if (proteinOverride.trim() !== baselineProteinStr(log)) return true;
+    if (calorieOverride.trim() !== baselineCalorieStr(log)) return true;
+    return itemsSignature(items) !== itemsSignature(asItems(log.items));
+  }, [log, foodName, items, proteinOverride, calorieOverride]);
+
+  const leave = useCallback(() => {
+    if (router.canGoBack()) router.back();
+    else router.replace('/(tabs)/today');
+  }, []);
+
   async function handleSave() {
     if (!log || saving) return;
     const proteinEntered = parseNutritionNumber(proteinOverride);
     if (proteinEntered == null || proteinEntered < 0) {
       setError('Enter the protein amount in grams.');
+      setSaveConfirmOpen(false);
       return;
     }
     const proteinClamp = clampProteinOverride(proteinEntered, anchorProtein);
@@ -215,6 +262,7 @@ export default function MealDetailScreen() {
     const caloriesParsed = calorieRaw.length > 0 ? parseNutritionNumber(calorieRaw) : null;
     if (calorieRaw.length > 0 && caloriesParsed == null) {
       setError('Enter calories as a number.');
+      setSaveConfirmOpen(false);
       return;
     }
     const caloriesEntered =
@@ -239,8 +287,7 @@ export default function MealDetailScreen() {
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       // Prefer back so Today stays mounted (keeps thumbs/dragon warm).
-      if (router.canGoBack()) router.back();
-      else router.replace('/(tabs)/today');
+      leave();
     } catch (e) {
       const msg =
         e instanceof Error && e.message ? e.message : 'Could not save changes. Try again.';
@@ -250,11 +297,80 @@ export default function MealDetailScreen() {
     }
   }
 
-  const close = () => (router.canGoBack() ? router.back() : router.replace('/(tabs)/today'));
+  const requestClose = useCallback(() => {
+    if (saving) return;
+    if (isDirty) {
+      setSaveConfirmModalVisible(true);
+      setSaveConfirmOpen(true);
+      return;
+    }
+    leave();
+  }, [isDirty, leave, saving]);
 
   return (
     <PageCanvas>
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+        <Modal
+          visible={saveConfirmModalVisible}
+          transparent
+          animationType="none"
+          onRequestClose={() => setSaveConfirmOpen(false)}>
+          <View style={styles.confirmRoot}>
+            <ModalMotionLayer
+              visible={saveConfirmOpen}
+              onExited={() => setSaveConfirmModalVisible(false)}
+              cardStyle={styles.confirmCardWrap}
+              accessibilityViewIsModal
+              backdrop={
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Dismiss"
+                style={styles.confirmBackdrop}
+                onPress={() => setSaveConfirmOpen(false)}
+              />
+              }>
+              <GlassPanel modal style={styles.confirmCard}>
+                <View pointerEvents="none" style={styles.confirmSheen} />
+                <Text style={styles.confirmTitle}>Do you want to save these changes?</Text>
+                <View style={styles.confirmActions}>
+                  <Pressable
+                    onPress={() => {
+                      setSaveConfirmOpen(false);
+                      leave();
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel="Don't save"
+                    style={({ pressed }) => [
+                      styles.confirmBtn,
+                      styles.confirmBtnDiscard,
+                      pressableWeb,
+                      pressed && { opacity: 0.85 },
+                    ]}>
+                    <Text style={styles.confirmBtnDiscardText}>Don&apos;t save</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => {
+                      setSaveConfirmOpen(false);
+                      void handleSave();
+                    }}
+                    disabled={saving}
+                    accessibilityRole="button"
+                    accessibilityLabel="Save"
+                    style={({ pressed }) => [
+                      styles.confirmBtn,
+                      styles.confirmBtnSave,
+                      pressableWeb,
+                      saving && styles.confirmBtnDisabled,
+                      pressed && !saving && { opacity: 0.9 },
+                    ]}>
+                    <Text style={styles.confirmBtnSaveText}>Save</Text>
+                  </Pressable>
+                </View>
+              </GlassPanel>
+            </ModalMotionLayer>
+          </View>
+        </Modal>
+
         <View
           style={[
             styles.topBar,
@@ -262,7 +378,7 @@ export default function MealDetailScreen() {
             { paddingLeft: headerPadLeft, paddingRight: headerPadRight },
           ]}>
           <Pressable
-            onPress={close}
+            onPress={requestClose}
             hitSlop={12}
             style={({ pressed }) => [styles.iconBtn, pressableWeb, pressed && { opacity: 0.7 }]}
             accessibilityRole="button"
@@ -821,5 +937,92 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: colors.onAccent,
     letterSpacing: 0.2,
+  },
+  confirmRoot: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.lg,
+  },
+  confirmBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(6, 5, 10, 0.55)',
+    ...(Platform.OS === 'web'
+      ? ({
+          backdropFilter: 'blur(22px) saturate(1.4)',
+          WebkitBackdropFilter: 'blur(22px) saturate(1.4)',
+        } as object)
+      : null),
+  },
+  confirmCardWrap: {
+    width: '100%',
+    maxWidth: 340,
+    borderRadius: radius.lg,
+    overflow: 'hidden',
+    ...(Platform.OS === 'web'
+      ? ({
+          boxShadow: '0 28px 64px rgba(0,0,0,0.55)',
+        } as object)
+      : {
+          shadowColor: '#000',
+          shadowOpacity: 0.45,
+          shadowRadius: 28,
+          shadowOffset: { width: 0, height: 16 },
+          elevation: 20,
+        }),
+  },
+  confirmCard: {
+    position: 'relative',
+    padding: spacing.lg,
+    gap: spacing.md,
+    // Let GlassPanel own radius/fill/border so corners match the shaded fill.
+    borderRadius: radius.lg,
+    overflow: 'hidden',
+  },
+  confirmSheen: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(255,255,255,0.28)',
+  },
+  confirmTitle: {
+    fontFamily: fonts.displayHeavy,
+    fontSize: 18,
+    lineHeight: displayLH(18),
+    color: colors.text,
+    textAlign: 'center',
+  },
+  confirmActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: spacing.xs,
+  },
+  confirmBtn: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: radius.sm,
+  },
+  confirmBtnDiscard: {
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.14)',
+  },
+  confirmBtnSave: {
+    backgroundColor: colors.accent,
+  },
+  confirmBtnDisabled: {
+    opacity: 0.5,
+  },
+  confirmBtnDiscardText: {
+    fontFamily: fonts.body,
+    fontSize: 15,
+    color: colors.textSecondary,
+  },
+  confirmBtnSaveText: {
+    fontFamily: fonts.displayHeavy,
+    fontSize: 15,
+    color: '#1A0F0C',
   },
 });

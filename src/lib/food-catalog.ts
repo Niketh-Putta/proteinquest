@@ -480,6 +480,8 @@ type IndexedFood = {
 
 let indexedList: IndexedFood[] | null = null;
 let indexedRemoteRef: CatalogFood[] | null = null;
+/** First 2 chars of food name → entries (speeds prefix search). */
+let namePrefix2: Map<string, IndexedFood[]> | null = null;
 
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -534,9 +536,66 @@ function buildIndexedFood(food: CatalogFood): IndexedFood {
 function getIndexedFoods(): IndexedFood[] {
   if (indexedList && indexedRemoteRef === remoteFoods) return indexedList;
   const foods = allCatalogFoods();
-  indexedList = foods.map(buildIndexedFood);
+  const next = foods.map(buildIndexedFood);
+  const prefix2 = new Map<string, IndexedFood[]>();
+  for (const entry of next) {
+    const key = entry.name.slice(0, 2);
+    if (!key) continue;
+    const bucket = prefix2.get(key);
+    if (bucket) bucket.push(entry);
+    else prefix2.set(key, [entry]);
+  }
+  indexedList = next;
+  namePrefix2 = prefix2;
   indexedRemoteRef = remoteFoods;
   return indexedList;
+}
+
+/** Cheap gate before scoreExact — skips edit-distance-free scoring work. */
+function mightMatchExact(entry: IndexedFood, q: string, tokens: string[]): boolean {
+  if (!q) return true;
+  if (entry.name.startsWith(q)) return true;
+  if (q.length >= 3 && entry.hay.includes(q)) return true;
+  for (const t of tokens) {
+    if (!t) continue;
+    if (t.length >= 2) {
+      if (!entry.prefixChars.includes(t[0]!)) continue;
+      for (const w of entry.words) {
+        if (w.startsWith(t) || (t.length >= 3 && w.includes(t))) return true;
+      }
+    }
+    if (t.length >= 3 && entry.hay.includes(t)) return true;
+  }
+  return false;
+}
+
+/** Single-token prefix bucket union (falls back to full index). */
+function exactSearchCandidates(q: string, tokens: string[], index: IndexedFood[]): IndexedFood[] {
+  if (tokens.length !== 1) return index;
+  const t = tokens[0]!;
+  if (t.length < 2) return index;
+  const prefix2 = namePrefix2;
+  if (!prefix2) return index;
+  const key = t.slice(0, 2);
+  const bucket = prefix2.get(key);
+  if (!bucket?.length) return index;
+  // Prefix bucket can miss mid-name word matches — widen when bucket is small.
+  if (bucket.length >= 80) return bucket;
+  const seen = new Set<string>();
+  const out: IndexedFood[] = [];
+  const add = (entry: IndexedFood) => {
+    if (seen.has(entry.name)) return;
+    seen.add(entry.name);
+    out.push(entry);
+  };
+  for (const entry of bucket) add(entry);
+  if (out.length < EXACT_CAP) {
+    for (const entry of index) {
+      if (mightMatchExact(entry, q, tokens)) add(entry);
+      if (out.length >= EXACT_CAP * 3) break;
+    }
+  }
+  return out.length ? out : index;
 }
 
 /** Synonyms + light stemming only (no edit-distance). */
@@ -890,16 +949,34 @@ export function searchCatalogExact(query: string): CatalogFood[] {
     return index.slice(0, RESULT_CAP).map((e) => e.food);
   }
 
-  const { phrases, tokenAlts } = expandQuery(q);
+  const { phrases, tokens, tokenAlts } = expandQuery(q);
+  const candidates = exactSearchCandidates(q, tokens, index);
   const exactHits: { food: CatalogFood; score: number; name: string }[] = [];
 
-  for (const entry of index) {
+  for (const entry of candidates) {
+    if (!mightMatchExact(entry, q, tokens)) continue;
     const score = scoreExact(entry, phrases, tokenAlts);
     if (score <= 0) continue;
     exactHits.push({ food: entry.food, score, name: entry.name });
   }
   exactHits.sort(sortRanked);
   return exactHits.slice(0, EXACT_CAP).map((r) => r.food);
+}
+
+/** Instant filter for the small recent-foods list (no full catalog scan). */
+export function filterRecentCatalogFoods(foods: CatalogFood[], query: string): CatalogFood[] {
+  const q = normalize(query);
+  if (!q) return [];
+  const out: CatalogFood[] = [];
+  for (const food of foods) {
+    const name = normalize(food.name);
+    if (name.includes(q) || name.startsWith(q)) {
+      out.push(food);
+      continue;
+    }
+    if (food.aliases?.some((a) => normalize(a).includes(q))) out.push(food);
+  }
+  return out;
 }
 
 /**

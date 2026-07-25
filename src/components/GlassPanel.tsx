@@ -8,6 +8,10 @@ interface Props {
   style?: StyleProp<ViewStyle>;
   /** Stronger glass for selected / hero cards. */
   emphasized?: boolean;
+  /** Confirm/delete overlays — slightly less translucent than emphasized. */
+  modal?: boolean;
+  /** Solid surface without web backdrop-filter (smooth modal animations). */
+  solid?: boolean;
 }
 
 function canUseNativeGlass(): boolean {
@@ -25,16 +29,30 @@ function canUseNativeGlass(): boolean {
  * Cross-platform glass panel: real Liquid Glass on supported iOS,
  * translucent frosted surface everywhere else (incl. web backdrop-filter).
  */
-export function GlassPanel({ children, style, emphasized = false }: Props) {
+export function GlassPanel({
+  children,
+  style,
+  emphasized = false,
+  modal = false,
+  solid = false,
+}: Props) {
+  const hero = modal || emphasized;
+
   if (canUseNativeGlass()) {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { GlassView } = require('expo-glass-effect') as typeof import('expo-glass-effect');
     return (
       <GlassView
         style={[styles.base, style]}
-        glassEffectStyle={emphasized ? 'clear' : 'regular'}
-        tintColor={emphasized ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.08)'}
-        isInteractive={emphasized}>
+        glassEffectStyle={hero ? 'clear' : 'regular'}
+        tintColor={
+          modal
+            ? 'rgba(255,255,255,0.16)'
+            : emphasized
+              ? 'rgba(255,255,255,0.12)'
+              : 'rgba(255,255,255,0.08)'
+        }
+        isInteractive={hero}>
         {children}
       </GlassView>
     );
@@ -45,8 +63,9 @@ export function GlassPanel({ children, style, emphasized = false }: Props) {
       style={[
         styles.base,
         styles.fallback,
-        emphasized && styles.fallbackEmphasized,
-        emphasized ? webBlurEmphasized : webBlurStyle,
+        modal && styles.fallbackModal,
+        emphasized && !modal && styles.fallbackEmphasized,
+        modal && !solid ? webBlurModal : emphasized ? webBlurEmphasized : webBlurStyle,
         style,
       ]}>
       {children}
@@ -70,10 +89,24 @@ const webBlurEmphasized: ViewStyle | null =
       } as ViewStyle)
     : null;
 
+const webBlurModal: ViewStyle | null =
+  Platform.OS === 'web'
+    ? ({
+        backdropFilter: 'blur(27px) saturate(1.4)',
+        WebkitBackdropFilter: 'blur(27px) saturate(1.4)',
+      } as ViewStyle)
+    : null;
+
 const styles = StyleSheet.create({
   base: {
     borderRadius: radius.lg,
     overflow: 'hidden',
+    // Helps web clip backdrop-filter to the rounded corners.
+    ...(Platform.OS === 'web'
+      ? ({
+          isolation: 'isolate',
+        } as ViewStyle)
+      : null),
   },
   fallback: {
     backgroundColor: 'rgba(255,255,255,0.06)',
@@ -82,6 +115,15 @@ const styles = StyleSheet.create({
   },
   fallbackEmphasized: {
     backgroundColor: 'rgba(28, 24, 36, 0.42)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.22)',
+    shadowColor: '#FF7A59',
+    shadowOpacity: 0.18,
+    shadowRadius: 28,
+    shadowOffset: { width: 0, height: 12 },
+  },
+  fallbackModal: {
+    backgroundColor: 'rgba(28, 24, 36, 0.60)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.22)',
     shadowColor: '#FF7A59',
