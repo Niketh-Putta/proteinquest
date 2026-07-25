@@ -4,6 +4,7 @@ import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Keyboard,
   Platform,
   Pressable,
   ScrollView,
@@ -78,6 +79,14 @@ export default function MealDetailScreen() {
   const stageMaxWidth = Math.min(formWidth, isDesktop ? 560 : isTablet ? 520 : 480);
 
   const foodNameRef = useRef<TextInput>(null);
+  const proteinInputRef = useRef<TextInput>(null);
+  const calorieInputRef = useRef<TextInput>(null);
+  const dismissMealKeyboard = useCallback(() => {
+    foodNameRef.current?.blur();
+    proteinInputRef.current?.blur();
+    calorieInputRef.current?.blur();
+    Keyboard.dismiss();
+  }, []);
   const [log, setLog] = useState<ProteinLog | null>(null);
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [foodName, setFoodName] = useState('');
@@ -284,7 +293,9 @@ export default function MealDetailScreen() {
         ) : (
           <ScrollView
             showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="always"
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+            onScrollBeginDrag={dismissMealKeyboard}
             contentContainerStyle={[
               styles.resultScroll,
               column,
@@ -299,7 +310,10 @@ export default function MealDetailScreen() {
                     maxWidth: Math.min(stageMaxWidth, isTablet || isDesktop ? 480 : 420),
                   },
                 ]}>
-                <View style={styles.resultPhotoShell}>
+                <Pressable
+                  onPress={dismissMealKeyboard}
+                  accessibilityRole="none"
+                  style={styles.resultPhotoShell}>
                   <MealPhotoPreview
                     uri={photoUri}
                     square
@@ -320,7 +334,7 @@ export default function MealDetailScreen() {
                       </Text>
                     </View>
                   ) : null}
-                </View>
+                </Pressable>
               </Animated.View>
             ) : null}
 
@@ -339,6 +353,8 @@ export default function MealDetailScreen() {
                   autoCorrect
                   maxLength={80}
                   returnKeyType="done"
+                  blurOnSubmit
+                  onSubmitEditing={dismissMealKeyboard}
                   accessibilityLabel="Edit food name"
                 />
                 <Pressable
@@ -349,16 +365,21 @@ export default function MealDetailScreen() {
                   <Ionicons name="pencil" size={18} color={colors.text} />
                 </Pressable>
               </View>
-              <Text style={styles.metaText}>{formatMealMeta(log.created_at)}</Text>
+              <Pressable onPress={dismissMealKeyboard} accessibilityRole="none">
+                <Text style={styles.metaText}>{formatMealMeta(log.created_at)}</Text>
+              </Pressable>
             </Animated.View>
 
             <Animated.View
               entering={FadeInDown.delay(160).duration(400)}
               style={styles.nutritionCard}>
               <View style={styles.nutritionCol}>
-                <Text style={styles.totalLabel}>TOTAL PROTEIN</Text>
+                <Pressable onPress={dismissMealKeyboard} accessibilityRole="none">
+                  <Text style={styles.totalLabel}>TOTAL PROTEIN</Text>
+                </Pressable>
                 <View style={styles.totalInputRow}>
                   <TextInput
+                    ref={proteinInputRef}
                     style={[
                       styles.totalInput,
                       textInputWeb,
@@ -370,19 +391,27 @@ export default function MealDetailScreen() {
                     onChangeText={(t) => setProteinOverride(sanitizeNutritionDraft(t))}
                     keyboardType="numeric"
                     maxLength={16}
+                    returnKeyType="done"
+                    blurOnSubmit
+                    onSubmitEditing={dismissMealKeyboard}
                   />
                   <Text style={styles.totalUnit}>g</Text>
                 </View>
-                <Text style={styles.totalHint}>
-                  tap to adjust • max{' '}
-                  {maxAllowedOverride(anchorProtein, PROTEIN_OVERRIDE_BUFFER_G)}g
-                </Text>
+                <Pressable onPress={dismissMealKeyboard} accessibilityRole="none">
+                  <Text style={styles.totalHint}>
+                    tap to adjust • max{' '}
+                    {maxAllowedOverride(anchorProtein, PROTEIN_OVERRIDE_BUFFER_G)}g
+                  </Text>
+                </Pressable>
               </View>
               <View style={styles.nutritionDivider} />
               <View style={styles.nutritionCol}>
-                <Text style={styles.totalLabel}>CALORIES</Text>
+                <Pressable onPress={dismissMealKeyboard} accessibilityRole="none">
+                  <Text style={styles.totalLabel}>CALORIES</Text>
+                </Pressable>
                 <View style={styles.totalInputRow}>
                   <TextInput
+                    ref={calorieInputRef}
                     style={[
                       styles.totalInput,
                       textInputWeb,
@@ -394,24 +423,32 @@ export default function MealDetailScreen() {
                     onChangeText={(t) => setCalorieOverride(sanitizeNutritionDraft(t))}
                     keyboardType="numeric"
                     maxLength={16}
+                    returnKeyType="done"
+                    blurOnSubmit
+                    onSubmitEditing={dismissMealKeyboard}
                   />
                   <Text style={styles.totalUnit}>cal</Text>
                 </View>
-                <Text style={styles.totalHint}>
-                  tap to adjust • max{' '}
-                  {maxAllowedOverride(
-                    anchorCalories || Number(calorieOverride) || 0,
-                    CALORIE_OVERRIDE_BUFFER,
-                  )}
-                </Text>
+                <Pressable onPress={dismissMealKeyboard} accessibilityRole="none">
+                  <Text style={styles.totalHint}>
+                    tap to adjust • max{' '}
+                    {maxAllowedOverride(
+                      anchorCalories || Number(calorieOverride) || 0,
+                      CALORIE_OVERRIDE_BUFFER,
+                    )}
+                  </Text>
+                </Pressable>
               </View>
             </Animated.View>
 
             <Animated.View entering={FadeInDown.delay(220).duration(400)}>
               <View style={styles.ingredientsCard}>
-                <View style={styles.ingredientsHeader}>
+                <Pressable
+                  onPress={dismissMealKeyboard}
+                  accessibilityRole="none"
+                  style={styles.ingredientsHeader}>
                   <Text style={styles.ingredientsTitle}>INGREDIENTS ({items.length})</Text>
-                </View>
+                </Pressable>
 
                 {items.map((item, i) => {
                   const totalProtein = items.reduce(
@@ -429,6 +466,7 @@ export default function MealDetailScreen() {
                     <Pressable
                       key={`${item.name}-${i}`}
                       onPress={() => {
+                        dismissMealKeyboard();
                         Haptics.selectionAsync().catch(() => {});
                         const q = new URLSearchParams({
                           index: String(i),
@@ -468,6 +506,7 @@ export default function MealDetailScreen() {
 
               <Pressable
                 onPress={() => {
+                  dismissMealKeyboard();
                   Haptics.selectionAsync().catch(() => {});
                   router.push('/scan-ingredient' as never);
                 }}

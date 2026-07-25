@@ -17,6 +17,13 @@ test('resolveAdjustCountUnit picks vessel and slice units', () => {
   assert.equal(resolveAdjustCountUnit('Dal', '1 bowl'), 'bowl');
 });
 
+test('resolveAdjustCountUnit uses servings for curries and meals', () => {
+  assert.equal(resolveAdjustCountUnit('Gongura prawns', '1 serving'), 'serving');
+  assert.equal(resolveAdjustCountUnit('Prawn curry', '1 bowl'), 'serving');
+  assert.equal(resolveAdjustCountUnit('Mapo tofu', '1 bowl'), 'serving');
+  assert.equal(resolveAdjustCountUnit('Chicken jollof', '1 plate'), 'serving');
+});
+
 test('formatCountUnitLabel pluralizes spoonful and drizzle', () => {
   assert.equal(formatCountUnitLabel('spoonful', 1), 'spoonful');
   assert.equal(formatCountUnitLabel('spoonful', 2), 'spoonfuls');

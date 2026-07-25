@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -21,7 +21,8 @@ import {
   loadRecentFoods,
   pushRecentFood,
   refreshRemoteFoodCatalog,
-  searchCatalog,
+  searchCatalogExact,
+  searchCatalogSimilar,
 } from '@/lib/food-catalog';
 import { useContentColumn } from '@/lib/layout';
 import { colors, fonts, layout, pressableWeb, radius, spacing, textInputWeb } from '@/theme';
@@ -107,7 +108,29 @@ export default function ScanIngredientScreen() {
   );
 
   const searching = query.trim().length > 0;
-  const results = useMemo(() => searchCatalog(query), [query, catalogTick]);
+  const [exactResults, setExactResults] = useState<CatalogFood[]>([]);
+  const [similarResults, setSimilarResults] = useState<CatalogFood[]>([]);
+
+  // Exact hits sync on every keystroke; fuzzy similar deferred so typing never blocks.
+  useEffect(() => {
+    if (!query.trim()) {
+      setExactResults([]);
+      setSimilarResults([]);
+      return;
+    }
+    const exact = searchCatalogExact(query);
+    setExactResults(exact);
+    setSimilarResults([]);
+    let cancelled = false;
+    const t = setTimeout(() => {
+      if (cancelled) return;
+      setSimilarResults(searchCatalogSimilar(query, exact));
+    }, 0);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [query, catalogTick]);
 
   const commonBase = useMemo(() => commonCatalogFoods(), [catalogTick]);
 
@@ -172,7 +195,6 @@ export default function ScanIngredientScreen() {
             }
           }}>
           <Animated.View entering={FadeIn.duration(240)} style={styles.searchWrap}>
-            <Ionicons name="search" size={18} color={colors.textTertiary} />
             <TextInput
               style={[styles.searchInput, textInputWeb]}
               value={query}
@@ -186,25 +208,54 @@ export default function ScanIngredientScreen() {
               clearButtonMode="while-editing"
               accessibilityLabel="Search food"
             />
+            <View style={styles.searchIcon} pointerEvents="none">
+              <Ionicons name="search" size={18} color={colors.textTertiary} />
+            </View>
           </Animated.View>
 
           {searching ? (
-            <Animated.View entering={FadeInDown.duration(280)}>
-              <SectionLabel label="RESULTS" />
-              <GlassPanel style={styles.listCard}>
-                {results.length === 0 ? (
-                  <Text style={styles.empty}>No matches. Try another name.</Text>
-                ) : (
-                  results.map((food, i) => (
-                    <FoodRow
-                      key={food.name}
-                      food={food}
-                      icon="nutrition-outline"
-                      isLast={i === results.length - 1}
-                    />
-                  ))
-                )}
-              </GlassPanel>
+            <Animated.View entering={FadeInDown.duration(280)} style={styles.searchResults}>
+              {exactResults.length === 0 && similarResults.length === 0 ? (
+                <>
+                  <SectionLabel label="RESULTS" />
+                  <GlassPanel style={styles.listCard}>
+                    <Text style={styles.empty}>No matches. Try another name.</Text>
+                  </GlassPanel>
+                </>
+              ) : (
+                <>
+                  {exactResults.length > 0 ? (
+                    <>
+                      <SectionLabel label="RESULTS" />
+                      <GlassPanel style={styles.listCard}>
+                        {exactResults.map((food, i) => (
+                          <FoodRow
+                            key={`e-${food.name}`}
+                            food={food}
+                            icon="nutrition-outline"
+                            isLast={i === exactResults.length - 1}
+                          />
+                        ))}
+                      </GlassPanel>
+                    </>
+                  ) : null}
+                  {similarResults.length > 0 ? (
+                    <>
+                      <SectionLabel label="SIMILAR" />
+                      <GlassPanel style={styles.listCard}>
+                        {similarResults.map((food, i) => (
+                          <FoodRow
+                            key={`s-${food.name}`}
+                            food={food}
+                            icon="sparkles-outline"
+                            isLast={i === similarResults.length - 1}
+                          />
+                        ))}
+                      </GlassPanel>
+                    </>
+                  ) : null}
+                </>
+              )}
             </Animated.View>
           ) : (
             <>
@@ -294,22 +345,32 @@ const styles = StyleSheet.create({
     paddingBottom: layout.scrollBottomPad,
     gap: spacing.md,
   },
+  searchResults: {
+    gap: spacing.md,
+  },
   searchWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: spacing.md,
+    position: 'relative',
     height: 52,
     borderRadius: radius.md,
     backgroundColor: 'rgba(255,255,255,0.06)',
     borderWidth: 1,
     borderColor: 'rgba(255,138,61,0.35)',
+    overflow: 'hidden',
+  },
+  searchIcon: {
+    position: 'absolute',
+    left: spacing.md,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
   },
   searchInput: {
-    flex: 1,
+    ...StyleSheet.absoluteFillObject,
     fontFamily: fonts.body,
     fontSize: 16,
     color: colors.text,
+    paddingLeft: spacing.md + 18 + 10,
+    paddingRight: spacing.md,
     paddingVertical: 0,
   },
   sectionLabelRow: {

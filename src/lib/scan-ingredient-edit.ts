@@ -59,6 +59,15 @@ const QUANTIFIABLE_MEASURES = new Set([
   'sandwich',
   'burrito',
   'taco',
+  'burger',
+  'sub',
+  'roll',
+  'dosa',
+  'idli',
+  'naan',
+  'pita',
+  'pizza',
+  'quesadilla',
   'piece',
 ]);
 
@@ -144,15 +153,22 @@ const COUNTABLE_KEYWORDS = [
   'roti',
   'chapati',
   'paratha',
+  'naan',
+  'naans',
+  'pita',
   'pancake',
   'waffle',
   'samosa',
   'vada',
   'burger',
+  'burgers',
   'sandwich',
+  'sub',
+  'subs',
   'taco',
   'wrap',
   'roll',
+  'rolls',
   'biscuit',
   'cookie',
   'scoop',
@@ -167,13 +183,18 @@ const COUNTABLE_KEYWORDS = [
   'nuggets',
   'dumpling',
   'momos',
+  'sushi',
+  'nigiri',
+  'maki',
+  'bagel',
+  'quesadilla',
   'banana',
   'apple',
   'orange',
 ] as const;
 
 const COUNTABLE_UNIT_RE =
-  /\b(slices?|pieces?|units?|wholes?|eggs?|dosas?|idlis?|pcs?|scoops?|bars?|bottles?|cans?|cartons?|pots?|tubs?|jars?|packs?|pouches?|sachets?|muffins?|cookies?|brownies?|wraps?|sandwiches?|burritos?|tacos?)\b/i;
+  /\b(slices?|pieces?|units?|wholes?|eggs?|dosas?|idlis?|naans?|pcs?|scoops?|bars?|bottles?|cans?|cartons?|pots?|tubs?|jars?|packs?|pouches?|sachets?|muffins?|cookies?|brownies?|wraps?|sandwiches?|burgers?|subs?|rolls?|burritos?|tacos?|pitas?|pizzas?|quesadillas?)\b/i;
 const WEIGHT_OR_VOLUME_RE =
   /^~?\d+(?:\.\d+)?\s*(g|grams?|kg|oz|ml|millilit(?:er|re)s?|l|lit(?:er|re)s?|cups?|tbsp|tsp|tablespoons?|teaspoons?)\b/i;
 const LEADING_WEIGHT_RE = /^~?\d+(?:\.\d+)?\s*g\b/i;
@@ -270,7 +291,89 @@ const DRINK_KEYWORDS = [
   'protein drink',
 ] as const;
 
-/** Stews / dals / rice / oatmeal → bowls. */
+/** Cafe coffee drinks → cups (prefer over generic "glass"). */
+const COFFEE_DRINK_KEYWORDS = [
+  'coffee',
+  'latte',
+  'cappuccino',
+  'americano',
+  'mocha',
+  'macchiato',
+  'flat white',
+  'espresso',
+  'frappuccino',
+  'cold brew',
+  'matcha latte',
+  'cortado',
+  'piccolo',
+] as const;
+
+/** Sushi / rolls counted as pieces (or rolls when named as a roll). */
+const SUSHI_PIECE_KEYWORDS = [
+  'sushi',
+  'nigiri',
+  'sashimi',
+  'maki',
+  'kimbap',
+  'gimbap',
+] as const;
+
+const SUSHI_ROLL_KEYWORDS = [
+  'sushi roll',
+  'hand roll',
+  'temaki',
+  'california roll',
+  'dragon roll',
+  'spicy tuna roll',
+] as const;
+
+/**
+ * Food-name units preferred over lazy "piece"/"serving".
+ * Longer keywords win. Checked before generic piece/slice heuristics.
+ */
+const NAMED_COUNT_UNIT_FOODS: readonly {
+  keywords: readonly string[];
+  unit: string;
+}[] = [
+  { keywords: ['chicken breast', 'chicken breasts'], unit: 'chicken breast' },
+  { keywords: ['dosa', 'dosas'], unit: 'dosa' },
+  { keywords: ['idli', 'idlis'], unit: 'idli' },
+  { keywords: ['naan', 'naans'], unit: 'naan' },
+  {
+    keywords: ['roti', 'rotis', 'chapati', 'chapatis', 'paratha', 'parathas', 'phulka', 'thepla'],
+    unit: 'piece',
+  },
+  {
+    keywords: ['burger', 'burgers', 'cheeseburger', 'whopper', 'big mac', 'quarter pounder', 'mcchicken', 'zinger'],
+    unit: 'burger',
+  },
+  {
+    keywords: [
+      'sandwich',
+      'sandwiches',
+      'baguette',
+      'sub',
+      'subs',
+      'panini',
+      'toastie',
+      'mcmuffin',
+      'banh mi',
+    ],
+    unit: 'sandwich',
+  },
+  { keywords: ['wrap', 'wraps', 'pita wrap'], unit: 'wrap' },
+  { keywords: ['burrito', 'burritos'], unit: 'burrito' },
+  { keywords: ['taco', 'tacos'], unit: 'taco' },
+  { keywords: ['quesadilla', 'quesadillas'], unit: 'quesadilla' },
+  { keywords: ['pizza'], unit: 'slice' },
+  {
+    keywords: ['nugget', 'nuggets', 'mcnugget', 'mcnuggets', 'wing', 'wings', 'hot wing', 'hot wings'],
+    unit: 'piece',
+  },
+  { keywords: ['protein bar', 'protein bars', 'grenade', 'quest bar', 'carb killa'], unit: 'bar' },
+];
+
+/** Stews / dals / rice / oatmeal → bowls. Curries are servings (see SERVING_MEAL). */
 const BOWL_FOOD_KEYWORDS = [
   'soup',
   'broth',
@@ -280,7 +383,6 @@ const BOWL_FOOD_KEYWORDS = [
   'sambar',
   'sambhar',
   'rasam',
-  'curry',
   'bisque',
   'chowder',
   'consomme',
@@ -292,6 +394,49 @@ const BOWL_FOOD_KEYWORDS = [
   'oats',
   'oatmeal',
   'porridge',
+] as const;
+
+/**
+ * Curries and composed meals → servings (clearer than bowls/plates).
+ * Simple ingredients keep cup/tbsp/piece/bowl heuristics.
+ */
+const SERVING_MEAL_KEYWORDS = [
+  'curry',
+  'curried',
+  'vindaloo',
+  'korma',
+  'jalfrezi',
+  'madras',
+  'rogan josh',
+  'tikka masala',
+  'makhani',
+  'mapo',
+  'kung pao',
+  'general tso',
+  'sweet and sour',
+  'stir fry',
+  'stir-fry',
+  'chow mein',
+  'lo mein',
+  'paella',
+  'jollof',
+  'schnitzel',
+  'biryani',
+  'risotto',
+  'goulash',
+  'tagine',
+  'casserole',
+  'lasagna',
+  'lasagne',
+  'carbonara',
+  'bolognese',
+  'stroganoff',
+  'ratatouille',
+  'moussaka',
+  'pilaf',
+  'pulao',
+  'pilau',
+  'gongura',
 ] as const;
 
 const OIL_DRESSING_KEYWORDS = [
@@ -457,20 +602,28 @@ const WHOLE_COUNT_KEYWORDS = [
   'dosas',
   'idli',
   'idlis',
+  'naan',
+  'naans',
   'roti',
   'chapati',
   'paratha',
   'samosa',
   'vada',
   'burger',
+  'burgers',
   'sandwich',
+  'sub',
+  'subs',
   'taco',
   'wrap',
   'roll',
+  'rolls',
   'bar',
   'bars',
   'patty',
   'patties',
+  'bagel',
+  'quesadilla',
   'banana',
   'apple',
   'orange',
@@ -479,7 +632,7 @@ const WHOLE_COUNT_KEYWORDS = [
 ] as const;
 
 const EMBEDDED_COUNT_UNIT_RE =
-  /(\d+(?:\.\d+)?)\s*(cups?|glass(?:es)?|servings?|bowls?|plates?|scoops?|slices?|pieces?|stacks?|spears?|sticks?|handfuls?|florets?|spoonfuls?|spoons?|tbsp|tsp|tablespoons?|teaspoons?|bars?|bottles?|cans?|cartons?|pots?|tubs?|jars?|packs?|pouches?|sachets?|muffins?|cookies?|brownies?|wraps?|sandwiches?|burritos?|tacos?)\b/i;
+  /(\d+(?:\.\d+)?)\s*(cups?|glass(?:es)?|servings?|bowls?|plates?|scoops?|slices?|pieces?|stacks?|spears?|sticks?|handfuls?|florets?|spoonfuls?|spoons?|tbsp|tsp|tablespoons?|teaspoons?|bars?|bottles?|cans?|cartons?|pots?|tubs?|jars?|packs?|pouches?|sachets?|muffins?|cookies?|brownies?|wraps?|sandwiches?|burgers?|subs?|rolls?|burritos?|tacos?|dosas?|idlis?|naans?|pitas?|pizzas?|quesadillas?)\b/i;
 
 /** Measuring units shown on the count wheel (not the food name itself). */
 const MEASURE_UNITS = new Set([
@@ -517,6 +670,15 @@ const MEASURE_UNITS = new Set([
   'sandwich',
   'burrito',
   'taco',
+  'burger',
+  'sub',
+  'roll',
+  'dosa',
+  'idli',
+  'naan',
+  'pita',
+  'pizza',
+  'quesadilla',
 ]);
 
 let pending: ScanIngredientEdit | null = null;
@@ -615,8 +777,40 @@ function isDrinkFood(name: string, portion = ''): boolean {
   return textHasKeyword(`${name} ${portion}`.trim(), DRINK_KEYWORDS);
 }
 
+function isCoffeeDrink(name: string, portion = ''): boolean {
+  return textHasKeyword(`${name} ${portion}`.trim(), COFFEE_DRINK_KEYWORDS);
+}
+
 function isBowlFood(name: string, portion = ''): boolean {
   return textHasKeyword(`${name} ${portion}`.trim(), BOWL_FOOD_KEYWORDS);
+}
+
+function isServingMealFood(name: string, portion = ''): boolean {
+  return textHasKeyword(`${name} ${portion}`.trim(), SERVING_MEAL_KEYWORDS);
+}
+
+/** Named countable unit from food name (dosa/burger/sandwich…); longest keyword wins. */
+function resolveNamedCountUnit(name: string, portion = ''): string | null {
+  const haystack = `${name} ${portion}`.trim().toLowerCase();
+  let best: { unit: string; len: number } | null = null;
+  for (const spec of NAMED_COUNT_UNIT_FOODS) {
+    for (const keyword of spec.keywords) {
+      const re = new RegExp(`\\b${escapeRegExp(keyword)}\\b`, 'i');
+      if (!re.test(haystack)) continue;
+      if (!best || keyword.length > best.len) {
+        best = { unit: spec.unit, len: keyword.length };
+      }
+    }
+  }
+  return best?.unit ?? null;
+}
+
+function isSushiPieceFood(name: string, portion = ''): boolean {
+  return textHasKeyword(`${name} ${portion}`.trim(), SUSHI_PIECE_KEYWORDS);
+}
+
+function isSushiRollFood(name: string, portion = ''): boolean {
+  return textHasKeyword(`${name} ${portion}`.trim(), SUSHI_ROLL_KEYWORDS);
 }
 
 function isOilDressing(name: string, portion = ''): boolean {
@@ -701,7 +895,38 @@ export function resolveNaturalMeasureUnit(
   name: string,
   portion: string,
 ): string | null {
-  const clue = detectPortionUnitClue(`${portion} ${name}`);
+  // Chicken breast etc. must stay whole items (never piece/slice/sandwich).
+  if (isWholeItemFood(name, portion) && textHasKeyword(name, ['chicken breast', 'chicken breasts'])) {
+    return null;
+  }
+
+  // Named foods (dosa/burger/sandwich/bar…) beat vague "piece"/"serving" in portion.
+  const named = resolveNamedCountUnit(name, portion);
+  if (named === 'chicken breast') return null;
+  if (named && named !== 'serving') {
+    // Prefer explicit vessel/measure in portion when it is already a real unit
+    // (e.g. "1 cup latte" → cup), but not lazy "piece" on a dosa.
+    const clue = detectPortionUnitClue(portion);
+    if (clue && clue !== 'serving' && clue !== 'piece') return clue;
+    return named;
+  }
+
+  // Curries / full meals → servings (not bowls/plates).
+  if (isServingMealFood(name, portion)) {
+    const mealClue = detectPortionUnitClue(portion);
+    if (
+      mealClue &&
+      mealClue !== 'serving' &&
+      mealClue !== 'bowl' &&
+      mealClue !== 'plate'
+    ) {
+      return mealClue;
+    }
+    return 'serving';
+  }
+
+  // Prefer portion clues; only fall back to name so "Pizza Hut" is not a unit.
+  const clue = detectPortionUnitClue(portion) ?? detectPortionUnitClue(name);
   if (clue && clue !== 'serving') return clue;
 
   // Produce/snack-specific units beat vague "servings".
@@ -712,7 +937,10 @@ export function resolveNaturalMeasureUnit(
   if (isWholeItemFood(name, portion)) return null;
 
   if (isScoopFood(name, portion)) return 'scoop';
+  if (isCoffeeDrink(name, portion)) return 'cup';
   if (isDrinkFood(name, portion)) return 'glass';
+  if (isSushiRollFood(name, portion)) return 'roll';
+  if (isSushiPieceFood(name, portion)) return 'piece';
   if (isBowlFood(name, portion)) return 'bowl';
   if (isTablespoonFood(name, portion) || isOilDressing(name, portion)) return 'tablespoon';
   if (isCupGrain(name, portion)) return 'cup';
@@ -733,9 +961,41 @@ export function resolveNaturalMeasureUnit(
 export function resolveAdjustCountUnit(name: string, portion: string): string {
   const haystack = `${name} ${portion}`.trim().toLowerCase();
   // Explicit "N serving(s)" wins over food heuristics (e.g. chicken → piece).
-  if (/^~?\d+(?:\.\d+)?\s*servings?\s*$/i.test(portion.trim())) return 'serving';
+  if (/^~?\d+(?:\.\d+)?\s*servings?\s*$/i.test(portion.trim())) {
+    const namedOnServing = resolveNamedCountUnit(name, portion);
+    if (namedOnServing && namedOnServing !== 'serving' && namedOnServing !== 'chicken breast') {
+      return namedOnServing;
+    }
+    if (isCoffeeDrink(name, portion)) return 'cup';
+    if (isSushiRollFood(name, portion)) return 'roll';
+    if (isSushiPieceFood(name, portion)) return 'piece';
+    if (isServingMealFood(name, portion)) return 'serving';
+    if (isBowlFood(name, portion)) return 'bowl';
+    return 'serving';
+  }
 
-  const countUnit = detectCountUnit(haystack);
+  // Named units (dosa/burger…) beat generic "piece" in portion labels.
+  const named = resolveNamedCountUnit(name, portion);
+  if (named === 'chicken breast') {
+    return foodLower(name);
+  }
+  // Prefer portion string so brand names ("Pizza Hut") are not misread as units.
+  const countUnit = detectCountUnit(portion) ?? detectCountUnit(haystack);
+  if (named && named !== 'serving') {
+    if (!countUnit || countUnit === 'piece' || countUnit === named) return named;
+  }
+  // Curries / meals: servings beat bowl/plate vessel labels in portion.
+  if (isServingMealFood(name, portion)) {
+    if (
+      !countUnit ||
+      countUnit === 'bowl' ||
+      countUnit === 'plate' ||
+      countUnit === 'serving' ||
+      countUnit === 'piece'
+    ) {
+      return 'serving';
+    }
+  }
   if (countUnit) return countUnit;
 
   const natural = resolveNaturalMeasureUnit(name, portion);
@@ -797,9 +1057,18 @@ export function formatCountUnitLabel(unit: string, qty: number): string {
   if (/^cookies?$/i.test(base)) return singular ? 'cookie' : 'cookies';
   if (/^brownies?$/i.test(base)) return singular ? 'brownie' : 'brownies';
   if (/^wraps?$/i.test(base)) return singular ? 'wrap' : 'wraps';
-  if (/^sandwiches?$/i.test(base)) return singular ? 'sandwich' : 'sandwiches';
+  if (/^sandwich(?:es)?$/i.test(base)) return singular ? 'sandwich' : 'sandwiches';
   if (/^burritos?$/i.test(base)) return singular ? 'burrito' : 'burritos';
   if (/^tacos?$/i.test(base)) return singular ? 'taco' : 'tacos';
+  if (/^burgers?$/i.test(base)) return singular ? 'burger' : 'burgers';
+  if (/^subs?$/i.test(base)) return singular ? 'sub' : 'subs';
+  if (/^rolls?$/i.test(base)) return singular ? 'roll' : 'rolls';
+  if (/^dosas?$/i.test(base)) return singular ? 'dosa' : 'dosas';
+  if (/^idlis?$/i.test(base)) return singular ? 'idli' : 'idlis';
+  if (/^naans?$/i.test(base)) return singular ? 'naan' : 'naans';
+  if (/^pitas?$/i.test(base)) return singular ? 'pita' : 'pitas';
+  if (/^pizzas?$/i.test(base)) return singular ? 'pizza' : 'pizzas';
+  if (/^quesadillas?$/i.test(base)) return singular ? 'quesadilla' : 'quesadillas';
   if (singular) {
     if (/s$/i.test(base) && !/ss$/i.test(base)) return base.replace(/s$/i, '');
     return base;
@@ -920,13 +1189,14 @@ const SAUCE_ADD_KEYWORDS = [
 ] as const;
 
 const VESSEL_MATCH_RE =
-  /\b(bowls?|plates?|cups?|glass(?:es)?|scoops?|servings?|ladles?|spoonfuls?|spoons?|tbsp|tsp|tablespoons?|teaspoons?|drizzle|bars?|bottles?|cans?|cartons?|pots?|tubs?|jars?|packs?|pouches?|sachets?|muffins?|cookies?|brownies?|wraps?|sandwiches?|burritos?|tacos?)\b/i;
+  /\b(bowls?|plates?|cups?|glass(?:es)?|scoops?|servings?|ladles?|spoonfuls?|spoons?|tbsp|tsp|tablespoons?|teaspoons?|drizzle|bars?|bottles?|cans?|cartons?|pots?|tubs?|jars?|packs?|pouches?|sachets?|muffins?|cookies?|brownies?|wraps?|sandwich(?:es)?|burgers?|subs?|rolls?|burritos?|tacos?|dosas?|idlis?|naans?|pitas?|quesadillas?)\b/i;
 
+/** Match count units in portion labels (avoid scanning food names like "Pizza Hut"). */
 const COUNT_UNIT_MATCH_RE =
-  /\b(slices?|pieces?|scoops?|stacks?|spears?|sticks?|handfuls?|florets?|bars?|bottles?|cans?|cartons?|pots?|tubs?|jars?|packs?|pouches?|sachets?|muffins?|cookies?|brownies?|wraps?|sandwiches?|burritos?|tacos?)\b/i;
+  /\b(slices?|pieces?|scoops?|stacks?|spears?|sticks?|handfuls?|florets?|bars?|bottles?|cans?|cartons?|pots?|tubs?|jars?|packs?|pouches?|sachets?|muffins?|cookies?|brownies?|wraps?|sandwich(?:es)?|burgers?|subs?|rolls?|burritos?|tacos?|dosas?|idlis?|naans?|pitas?|quesadillas?)\b/i;
 
 const PORTION_UNIT_CLUE_RE =
-  /\b(cups?|glass(?:es)?|bowls?|plates?|ladles?|scoops?|slices?|pieces?|stacks?|spears?|sticks?|handfuls?|florets?|spoonfuls?|spoons?|tbsp|tablespoons?|tsp|teaspoons?|drizzle|servings?|bars?|bottles?|cans?|cartons?|pots?|tubs?|jars?|packs?|pouches?|sachets?|muffins?|cookies?|brownies?|wraps?|sandwiches?|burritos?|tacos?)\b/i;
+  /\b(cups?|glass(?:es)?|bowls?|plates?|ladles?|scoops?|slices?|pieces?|stacks?|spears?|sticks?|handfuls?|florets?|spoonfuls?|spoons?|tbsp|tablespoons?|tsp|teaspoons?|drizzle|servings?|bars?|bottles?|cans?|cartons?|pots?|tubs?|jars?|packs?|pouches?|sachets?|muffins?|cookies?|brownies?|wraps?|sandwich(?:es)?|burgers?|subs?|rolls?|burritos?|tacos?|dosas?|idlis?|naans?|pitas?|quesadillas?)\b/i;
 
 function normalizeMeasureUnit(raw: string): string {
   const lower = raw.toLowerCase();
@@ -962,9 +1232,18 @@ function normalizeMeasureUnit(raw: string): string {
   if (/^cookies?$/.test(lower)) return 'cookie';
   if (/^brownies?$/.test(lower)) return 'brownie';
   if (/^wraps?$/.test(lower)) return 'wrap';
-  if (/^sandwiches?$/.test(lower)) return 'sandwich';
+  if (/^sandwich(?:es)?$/.test(lower)) return 'sandwich';
+  if (/^burgers?$/.test(lower)) return 'burger';
+  if (/^subs?$/.test(lower)) return 'sub';
+  if (/^rolls?$/.test(lower)) return 'roll';
   if (/^burritos?$/.test(lower)) return 'burrito';
   if (/^tacos?$/.test(lower)) return 'taco';
+  if (/^dosas?$/.test(lower)) return 'dosa';
+  if (/^idlis?$/.test(lower)) return 'idli';
+  if (/^naans?$/.test(lower)) return 'naan';
+  if (/^pitas?$/.test(lower)) return 'pita';
+  if (/^pizzas?$/.test(lower)) return 'pizza';
+  if (/^quesadillas?$/.test(lower)) return 'quesadilla';
   return lower.replace(/s$/, '');
 }
 
@@ -1000,7 +1279,8 @@ function foodLower(name: string): string {
 function foodWithoutCountUnit(name: string): string {
   const cleaned = foodDisplayName(name)
     .replace(
-      /\b(slices?|pieces?|stacks?|scoops?|spears?|sticks?|handfuls?|florets?|cups?|bowls?|plates?|glass(?:es)?|spoonfuls?|spoons?|tablespoons?|teaspoons?|tbsp|tsp|servings?|bars?|bottles?|cans?|cartons?|pots?|tubs?|jars?|packs?|pouches?|sachets?|muffins?|cookies?|brownies?|wraps?|sandwiches?|burritos?|tacos?)\b/gi,
+      // Strip measure words only (not brand/food tokens like pizza, dosa, burger).
+      /\b(slices?|pieces?|stacks?|scoops?|spears?|sticks?|handfuls?|florets?|cups?|bowls?|plates?|glass(?:es)?|spoonfuls?|spoons?|tablespoons?|teaspoons?|tbsp|tsp|servings?|bars?|bottles?|cans?|cartons?|pots?|tubs?|jars?|packs?|pouches?|sachets?|muffins?|cookies?|brownies?|wraps?|sandwich(?:es)?|subs?|burritos?|tacos?|quesadillas?)\b/gi,
       '',
     )
     .replace(/\s+/g, ' ')
@@ -1050,14 +1330,33 @@ export function buildAdjustQuestion(
     return `How many ${unitPlural} of ${base} did you ${verb}:`;
   }
 
+  // Named food units: "How many dosas/burgers/sandwiches…" (not "pieces of …").
+  const named = resolveNamedCountUnit(name, portion);
+  if (named === 'chicken breast' || (isWholeItemFood(name, portion) && textHasKeyword(name, ['chicken breast', 'chicken breasts']))) {
+    return `How many whole ${pluralizeFood(food, 2)} did you ${verb}:`;
+  }
+  if (named && ['dosa', 'idli', 'naan', 'burger', 'sandwich', 'wrap', 'burrito', 'taco', 'quesadilla', 'bar', 'sub', 'roll'].includes(named)) {
+    return `How many ${pluralMeasureUnit(named)} did you ${verb}:`;
+  }
+  if (named === 'slice' && textHasKeyword(name, ['pizza'])) {
+    return `How many slices of ${foodWithoutCountUnit(name)} did you ${verb}:`;
+  }
+  if (named === 'piece' && textHasKeyword(haystack, ['nugget', 'nuggets', 'wing', 'wings', 'roti', 'chapati', 'paratha'])) {
+    const ofFood = foodWithoutCountUnit(name);
+    return `How many pieces of ${ofFood} did you ${verb}:`;
+  }
+
   // Count mode — real units (tbsp, cups, glasses, bowls, scoops, slices…)
-  const countUnit = detectCountUnit(haystack);
-  if (countUnit) {
+  const countUnit = detectCountUnit(portion) ?? detectCountUnit(haystack);
+  if (countUnit && !(countUnit === 'piece' && named && named !== 'piece')) {
     const ofFood = foodWithoutCountUnit(name);
     return `How many ${pluralMeasureUnit(countUnit)} of ${ofFood} did you ${verb}:`;
   }
 
   if (measure && MEASURE_UNITS.has(measure)) {
+    if (['dosa', 'idli', 'naan', 'burger', 'sandwich', 'wrap', 'burrito', 'taco', 'quesadilla', 'sub', 'roll'].includes(measure)) {
+      return `How many ${pluralMeasureUnit(measure)} did you ${verb}:`;
+    }
     const ofFood = foodWithoutCountUnit(name);
     return `How many ${pluralMeasureUnit(measure)} of ${ofFood} did you ${verb}:`;
   }

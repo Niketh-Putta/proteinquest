@@ -3,29 +3,29 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useFocusEffect } from 'expo-router';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Image,
-  Keyboard,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-  type LayoutChangeEvent,
-  useWindowDimensions,
+    Image,
+    Keyboard,
+    Platform,
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    View,
+    useWindowDimensions,
+    type LayoutChangeEvent,
 } from 'react-native';
 import Animated, {
-  Easing,
-  FadeIn,
-  FadeInDown,
-  useAnimatedStyle,
-  useSharedValue,
-  withRepeat,
-  withSequence,
-  withTiming,
+    Easing,
+    FadeIn,
+    FadeInDown,
+    useAnimatedStyle,
+    useSharedValue,
+    withRepeat,
+    withSequence,
+    withTiming,
 } from 'react-native-reanimated';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Defs, Mask, Rect } from 'react-native-svg';
@@ -34,70 +34,70 @@ import { Button } from '@/components/Button';
 import { Celebration } from '@/components/Celebration';
 import { GlassPanel } from '@/components/GlassPanel';
 import { MealPhotoPreview } from '@/components/MealPhotoPreview';
-import {
-  analyzeFoodPhoto,
-  countLifetimeMeals,
-  countTodayPhotoScans,
-  fetchTodayMealSummary,
-  insertLog,
-  recordPhotoScan,
-  getFoodPhotoUrl,
-  updateLogImagePath,
-  uploadFoodPhoto,
-} from '@/lib/api';
 import { trackEvent } from '@/lib/analytics';
-import { rememberLocalMealPhoto } from '@/lib/local-meal-photo';
 import {
-  XP_GOAL_BONUS,
-  XP_PER_GRAM,
-  applyLogToCharacter,
-  displayDragonId,
-  displayDragonName,
-  isDailyDragonLockedForToday,
+    analyzeFoodPhoto,
+    countLifetimeMeals,
+    countTodayPhotoScans,
+    fetchTodayMealSummary,
+    getFoodPhotoUrl,
+    insertLog,
+    recordPhotoScan,
+    updateLogImagePath,
+    uploadFoodPhoto,
+} from '@/lib/api';
+import {
+    XP_GOAL_BONUS,
+    XP_PER_GRAM,
+    applyLogToCharacter,
+    displayDragonId,
+    displayDragonName,
+    isDailyDragonLockedForToday,
 } from '@/lib/character';
 import { clearNeedsFirstScan, needsFirstScan } from '@/lib/first-scan';
 import { useLayout } from '@/lib/layout';
+import { rememberLocalMealPhoto } from '@/lib/local-meal-photo';
 import {
-  CALORIE_OVERRIDE_BUFFER,
-  PROTEIN_OVERRIDE_BUFFER_G,
-  clampCalorieOverride,
-  clampProteinOverride,
-  maxAllowedOverride,
+    CALORIE_OVERRIDE_BUFFER,
+    PROTEIN_OVERRIDE_BUFFER_G,
+    clampCalorieOverride,
+    clampProteinOverride,
+    maxAllowedOverride,
 } from '@/lib/log-limits';
 import { prepareSquareMealPhoto, type CameraCrop } from '@/lib/meal-photo';
-import { pickLibraryImage } from '@/lib/pick-library-image';
 import { scheduleSecondMealNudge } from '@/lib/meal-reminders';
-import { bindUnmirroredWebCameraPreview } from '@/lib/web-camera-preview';
 import {
-  canScan,
-  hasUnlimitedScans,
-  isScanLimitMessage,
-  remainingFreeScans,
+    parseNutritionNumber,
+    sanitizeNutritionDraft,
+} from '@/lib/parse-nutrition-number';
+import {
+    canScan,
+    hasUnlimitedScans,
+    isScanLimitMessage,
+    remainingFreeScans,
 } from '@/lib/paywall-gate';
+import { pickLibraryImage } from '@/lib/pick-library-image';
 import { todayISODate } from '@/lib/protein';
 import { getRetention, markCareDay, rollLootDrop } from '@/lib/retention';
 import {
-  parseNutritionNumber,
-  sanitizeNutritionDraft,
-} from '@/lib/parse-nutrition-number';
-import {
-  consumePendingIngredientEdit,
-  registerIngredientEditApplier,
-  type ScanIngredientEdit,
+    consumePendingIngredientEdit,
+    registerIngredientEditApplier,
+    type ScanIngredientEdit,
 } from '@/lib/scan-ingredient-edit';
 import { useSession } from '@/lib/session';
 import type { Analysis } from '@/lib/types';
+import { bindUnmirroredWebCameraPreview } from '@/lib/web-camera-preview';
 import {
-  colors,
-  displayLH,
-  fonts,
-  layout,
-  noTextCaret,
-  pressableWeb,
-  radius,
-  shadowCard,
-  spacing,
-  textInputWeb,
+    colors,
+    displayLH,
+    fonts,
+    layout,
+    noTextCaret,
+    pressableWeb,
+    radius,
+    shadowCard,
+    spacing,
+    textInputWeb,
 } from '@/theme';
 
 type Phase = 'camera' | 'analyzing' | 'result';
@@ -685,6 +685,14 @@ export default function ScanScreen() {
   const scanModeRef = useRef<ScanMode>(scanMode);
   scanModeRef.current = scanMode;
   const foodNameRef = useRef<TextInput>(null);
+  const proteinInputRef = useRef<TextInput>(null);
+  const calorieInputRef = useRef<TextInput>(null);
+  const dismissMealKeyboard = useCallback(() => {
+    foodNameRef.current?.blur();
+    proteinInputRef.current?.blur();
+    calorieInputRef.current?.blur();
+    Keyboard.dismiss();
+  }, []);
   const [discardOpen, setDiscardOpen] = useState(false);
   const discardActionRef = useRef<null | (() => void)>(null);
   const phaseRef = useRef<Phase>(phase);
@@ -1954,7 +1962,9 @@ export default function ScanScreen() {
               alignSelf: 'center',
             },
           ]}
-          keyboardShouldPersistTaps="always"
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+          onScrollBeginDrag={dismissMealKeyboard}
           showsVerticalScrollIndicator={false}>
           {displayUri ? (
             <Animated.View
@@ -1968,7 +1978,10 @@ export default function ScanScreen() {
                   ),
                 },
               ]}>
-              <View style={styles.resultPhotoShell}>
+              <Pressable
+                onPress={dismissMealKeyboard}
+                accessibilityRole="none"
+                style={styles.resultPhotoShell}>
                 <MealPhotoPreview
                   uri={displayUri}
                   square={previewSquare}
@@ -1987,7 +2000,7 @@ export default function ScanScreen() {
                     {' CONFIDENCE'}
                   </Text>
                 </View>
-              </View>
+              </Pressable>
             </Animated.View>
           ) : null}
 
@@ -2006,6 +2019,8 @@ export default function ScanScreen() {
                 autoCorrect
                 maxLength={80}
                 returnKeyType="done"
+                blurOnSubmit
+                onSubmitEditing={dismissMealKeyboard}
                 accessibilityLabel="Edit food name"
               />
               <Pressable
@@ -2016,14 +2031,19 @@ export default function ScanScreen() {
                 <Ionicons name="pencil" size={18} color={colors.text} />
               </Pressable>
             </View>
-            <Text style={styles.metaText}>{formatScanMeta(scannedAt)}</Text>
+            <Pressable onPress={dismissMealKeyboard} accessibilityRole="none">
+              <Text style={styles.metaText}>{formatScanMeta(scannedAt)}</Text>
+            </Pressable>
           </Animated.View>
 
           <Animated.View entering={FadeInDown.delay(160).duration(400)} style={styles.nutritionCard}>
             <View style={styles.nutritionCol}>
-              <Text style={styles.totalLabel}>TOTAL PROTEIN</Text>
+              <Pressable onPress={dismissMealKeyboard} accessibilityRole="none">
+                <Text style={styles.totalLabel}>TOTAL PROTEIN</Text>
+              </Pressable>
               <View style={styles.totalInputRow}>
                 <TextInput
+                  ref={proteinInputRef}
                   style={[
                     styles.totalInput,
                     textInputWeb,
@@ -2035,20 +2055,28 @@ export default function ScanScreen() {
                   onChangeText={(t) => setProteinOverride(sanitizeNutritionDraft(t))}
                   keyboardType="numeric"
                   maxLength={16}
+                  returnKeyType="done"
+                  blurOnSubmit
+                  onSubmitEditing={dismissMealKeyboard}
                 />
                 <Text style={styles.totalUnit}>g</Text>
               </View>
-              <Text style={styles.totalHint}>
-                {manualEntry
-                  ? 'tap to adjust • add ingredients below'
-                  : `tap to adjust • max ${maxAllowedOverride(analysis.total_protein_g, PROTEIN_OVERRIDE_BUFFER_G)}g`}
-              </Text>
+              <Pressable onPress={dismissMealKeyboard} accessibilityRole="none">
+                <Text style={styles.totalHint}>
+                  {manualEntry
+                    ? 'tap to adjust • add ingredients below'
+                    : `tap to adjust • max ${maxAllowedOverride(analysis.total_protein_g, PROTEIN_OVERRIDE_BUFFER_G)}g`}
+                </Text>
+              </Pressable>
             </View>
             <View style={styles.nutritionDivider} />
             <View style={styles.nutritionCol}>
-              <Text style={styles.totalLabel}>CALORIES</Text>
+              <Pressable onPress={dismissMealKeyboard} accessibilityRole="none">
+                <Text style={styles.totalLabel}>CALORIES</Text>
+              </Pressable>
               <View style={styles.totalInputRow}>
                 <TextInput
+                  ref={calorieInputRef}
                   style={[
                     styles.totalInput,
                     textInputWeb,
@@ -2060,24 +2088,32 @@ export default function ScanScreen() {
                   onChangeText={(t) => setCalorieOverride(sanitizeNutritionDraft(t))}
                   keyboardType="numeric"
                   maxLength={16}
+                  returnKeyType="done"
+                  blurOnSubmit
+                  onSubmitEditing={dismissMealKeyboard}
                 />
                 <Text style={styles.totalUnit}>cal</Text>
               </View>
-              <Text style={styles.totalHint}>
-                {manualEntry
-                  ? 'tap to adjust • add ingredients below'
-                  : `tap to adjust • max ${maxAllowedOverride(analysis.calories, CALORIE_OVERRIDE_BUFFER)}`}
-              </Text>
+              <Pressable onPress={dismissMealKeyboard} accessibilityRole="none">
+                <Text style={styles.totalHint}>
+                  {manualEntry
+                    ? 'tap to adjust • add ingredients below'
+                    : `tap to adjust • max ${maxAllowedOverride(analysis.calories, CALORIE_OVERRIDE_BUFFER)}`}
+                </Text>
+              </Pressable>
             </View>
           </Animated.View>
 
           <Animated.View entering={FadeInDown.delay(220).duration(400)}>
             <View style={styles.ingredientsCard}>
-              <View style={styles.ingredientsHeader}>
+              <Pressable
+                onPress={dismissMealKeyboard}
+                accessibilityRole="none"
+                style={styles.ingredientsHeader}>
                 <Text style={styles.ingredientsTitle}>
                   INGREDIENTS ({analysis.items.length})
                 </Text>
-              </View>
+              </Pressable>
 
               {analysis.items.map((item, i) => {
                 const itemCalories =
@@ -2092,6 +2128,7 @@ export default function ScanScreen() {
                   <Pressable
                     key={`${item.name}-${i}`}
                     onPress={() => {
+                      dismissMealKeyboard();
                       Haptics.selectionAsync().catch(() => {});
                       const q = new URLSearchParams({
                         index: String(i),
@@ -2133,6 +2170,7 @@ export default function ScanScreen() {
 
             <Pressable
               onPress={() => {
+                dismissMealKeyboard();
                 Haptics.selectionAsync().catch(() => {});
                 router.push('/scan-ingredient' as never);
               }}
