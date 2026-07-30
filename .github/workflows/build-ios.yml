@@ -70,6 +70,11 @@ jobs:
           fi
           npx eas-cli whoami
 
+      # EXPO_TOKEN is nikethputta1; app.json must not point at inaccessible team projects.
+      - name: Point EAS at accessible Expo project (nikethputta1)
+        if: inputs.submit_only != true
+        run: node scripts/patch-eas-project.mjs restore
+
       - name: Sync EAS production env vars
         if: inputs.submit_only != true
         env:

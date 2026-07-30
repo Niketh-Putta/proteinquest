@@ -10,7 +10,7 @@
     "backgroundColor": "#0C0B10",
     "ios": {
       "bundleIdentifier": "com.proteinquest.app",
-      "buildNumber": "49",
+      "buildNumber": "50",
       "supportsTablet": true,
       "entitlements": {
         "aps-environment": "production"
@@ -94,13 +94,13 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "29f5edc0-8bc3-4b2d-998e-3f5cb44b0c48"
+        "projectId": "246d88eb-db0c-4937-a681-653a2b7c53fa"
       },
       "supabaseUrl": "https://csxdkvpvcasuknhnprxp.supabase.co",
       "supabaseKey": "sb_publishable_Zg6Jj70nqJcd7OGof5iP6w_9My7yS9F",
       "revenueCatIosKey": "appl_KODNDDCOzElyVFNlBBZkYQZjtxH",
       "revenueCatAndroidKey": "goog_pBfqlzoHuwkGyuMtFQGqArwkSfl"
     },
-    "owner": "nikethputtas-team"
+    "owner": "nikethputta1"
   }
 }
