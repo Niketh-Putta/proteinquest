@@ -56,24 +56,60 @@ const EDITABLE_VERSION_STATES = new Set([
   'READY_FOR_REVIEW',
 ]);
 
-async function listIosVersions(limit = 20) {
+async function listIosVersions(limit = 50) {
   const r = await asc(
     'GET',
-    `/v1/apps/${APP_ID}/appStoreVersions?filter[platform]=IOS&limit=${limit}&sort=-createdDate`,
+    `/v1/apps/${APP_ID}/appStoreVersions?filter[platform]=IOS&limit=${limit}`,
   );
+  if (r.status >= 400) {
+    console.log('list versions failed', r.status, errDetail(r.json));
+    return [];
+  }
   return r.json.data ?? [];
 }
 
-async function adoptEditableVersion(versionString) {
+async function cancelOpenReviewSubmission() {
+  const open = await asc('GET', `/v1/apps/${APP_ID}/reviewSubmissions?filter[state]=OPEN&limit=5`);
+  for (const sub of open.json.data ?? []) {
+    const id = sub.id;
+    console.log('Canceling OPEN review submission', id, sub.attributes?.state);
+    const canceled = await asc('PATCH', `/v1/reviewSubmissions/${id}`, {
+      data: {
+        type: 'reviewSubmissions',
+        id,
+        attributes: { canceled: true },
+      },
+    });
+    console.log('cancel submission', canceled.status, errDetail(canceled.json) || 'ok');
+  }
+}
+
+async function adoptBlockingVersion(versionString) {
   const versions = await listIosVersions();
+  console.log(`ASC returned ${versions.length} iOS version(s)`);
   for (const v of versions) {
-    const state = v.attributes?.appStoreState;
-    const current = v.attributes?.versionString;
-    console.log('ASC version', current, state, v.id);
+    console.log('ASC version', v.attributes?.versionString, v.attributes?.appStoreState, v.id);
   }
 
-  const editable = versions.find((v) => EDITABLE_VERSION_STATES.has(v.attributes?.appStoreState));
-  if (!editable) return null;
+  const inFlight = versions.find((v) =>
+    ['WAITING_FOR_REVIEW', 'IN_REVIEW', 'READY_FOR_REVIEW'].includes(v.attributes?.appStoreState),
+  );
+  if (inFlight) {
+    console.log(
+      'Found in-flight version',
+      inFlight.attributes?.versionString,
+      inFlight.attributes?.appStoreState,
+    );
+    await cancelOpenReviewSubmission();
+    // After cancel, version typically becomes PREPARE_FOR_SUBMISSION / DEVELOPER_REJECTED.
+  }
+
+  const refreshed = await listIosVersions();
+  const editable = refreshed.find((v) => EDITABLE_VERSION_STATES.has(v.attributes?.appStoreState));
+  if (!editable) {
+    console.log('No editable ASC version available to adopt');
+    return null;
+  }
 
   const current = editable.attributes?.versionString;
   if (current === versionString) {
@@ -81,7 +117,7 @@ async function adoptEditableVersion(versionString) {
     return editable.id;
   }
 
-  console.log(`Renaming editable version ${current} → ${versionString} (${editable.id})`);
+  console.log(`Renaming editable version ${current} -> ${versionString} (${editable.id})`);
   const patched = await asc('PATCH', `/v1/appStoreVersions/${editable.id}`, {
     data: {
       type: 'appStoreVersions',
@@ -125,7 +161,7 @@ async function findOrCreateVersion(versionString) {
   const detail = errDetail(created.json) || 'Could not create version';
   console.log('Create version failed:', detail);
   if (/cannot create a new version|current state/i.test(detail)) {
-    const adopted = await adoptEditableVersion(versionString);
+    const adopted = await adoptBlockingVersion(versionString);
     if (adopted) return adopted;
   }
   throw new Error(detail);
