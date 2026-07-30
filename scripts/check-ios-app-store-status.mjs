@@ -9,6 +9,15 @@ const version = process.argv.find((a) => a.startsWith('--version='))?.split('=')
 
 console.log(`\n=== ProteinQuest iOS App Store status (${version}) ===\n`);
 
+const all = await asc('GET', `/v1/apps/${APP_ID}/appStoreVersions?filter[platform]=IOS&limit=20`);
+console.log('All iOS versions:');
+for (const v of all.json.data ?? []) {
+  console.log(`  ${v.attributes?.versionString} — ${v.attributes?.appStoreState} — ${v.id}`);
+}
+if (all.status >= 400) {
+  console.log('list versions error', all.status, JSON.stringify(all.json).slice(0, 400));
+}
+
 const versions = await asc(
   'GET',
   `/v1/apps/${APP_ID}/appStoreVersions?filter[versionString]=${version}&limit=1`,
