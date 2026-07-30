@@ -69,19 +69,35 @@ async function listIosVersions(limit = 50) {
 }
 
 async function cancelOpenReviewSubmission() {
-  const open = await asc('GET', `/v1/apps/${APP_ID}/reviewSubmissions?filter[state]=OPEN&limit=5`);
+  const open = await asc('GET', `/v1/apps/${APP_ID}/reviewSubmissions?limit=20`);
+  console.log(`reviewSubmissions count=${(open.json.data ?? []).length}`);
   for (const sub of open.json.data ?? []) {
-    const id = sub.id;
-    console.log('Canceling OPEN review submission', id, sub.attributes?.state);
-    const canceled = await asc('PATCH', `/v1/reviewSubmissions/${id}`, {
+    const state = sub.attributes?.state;
+    console.log('reviewSubmission', sub.id, state);
+    if (state && !['OPEN', 'UNRESOLVED_ISSUES'].includes(state)) continue;
+    console.log('Canceling review submission', sub.id, state);
+    const canceled = await asc('PATCH', `/v1/reviewSubmissions/${sub.id}`, {
       data: {
         type: 'reviewSubmissions',
-        id,
+        id: sub.id,
         attributes: { canceled: true },
       },
     });
     console.log('cancel submission', canceled.status, errDetail(canceled.json) || 'ok');
   }
+}
+
+async function removeVersionFromReview(versionId) {
+  const sub = await asc('GET', `/v1/appStoreVersions/${versionId}/appStoreVersionSubmission`);
+  const subId = sub.json.data?.id;
+  if (!subId) {
+    console.log('No legacy appStoreVersionSubmission for', versionId, sub.status);
+    return false;
+  }
+  console.log('Deleting appStoreVersionSubmission', subId, 'for version', versionId);
+  const del = await asc('DELETE', `/v1/appStoreVersionSubmissions/${subId}`);
+  console.log('delete appStoreVersionSubmission', del.status, errDetail(del.json) || 'ok');
+  return del.status === 204 || del.status < 400;
 }
 
 async function adoptBlockingVersion(versionString) {
@@ -101,10 +117,19 @@ async function adoptBlockingVersion(versionString) {
       inFlight.attributes?.appStoreState,
     );
     await cancelOpenReviewSubmission();
-    // After cancel, version typically becomes PREPARE_FOR_SUBMISSION / DEVELOPER_REJECTED.
+    await removeVersionFromReview(inFlight.id);
+    await new Promise((r) => setTimeout(r, 3000));
   }
 
   const refreshed = await listIosVersions();
+  for (const v of refreshed) {
+    console.log(
+      'ASC version after cancel',
+      v.attributes?.versionString,
+      v.attributes?.appStoreState,
+      v.id,
+    );
+  }
   const editable = refreshed.find((v) => EDITABLE_VERSION_STATES.has(v.attributes?.appStoreState));
   if (!editable) {
     console.log('No editable ASC version available to adopt');
