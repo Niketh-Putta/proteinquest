@@ -71,10 +71,11 @@ async function listIosVersions(limit = 50) {
 async function cancelOpenReviewSubmission() {
   const open = await asc('GET', `/v1/apps/${APP_ID}/reviewSubmissions?limit=20`);
   console.log(`reviewSubmissions count=${(open.json.data ?? []).length}`);
+  const cancelable = new Set(['OPEN', 'UNRESOLVED_ISSUES', 'WAITING_FOR_REVIEW', 'READY_FOR_REVIEW', 'IN_REVIEW']);
   for (const sub of open.json.data ?? []) {
     const state = sub.attributes?.state;
     console.log('reviewSubmission', sub.id, state);
-    if (state && !['OPEN', 'UNRESOLVED_ISSUES'].includes(state)) continue;
+    if (state && !cancelable.has(state)) continue;
     console.log('Canceling review submission', sub.id, state);
     const canceled = await asc('PATCH', `/v1/reviewSubmissions/${sub.id}`, {
       data: {
@@ -90,14 +91,35 @@ async function cancelOpenReviewSubmission() {
 async function removeVersionFromReview(versionId) {
   const sub = await asc('GET', `/v1/appStoreVersions/${versionId}/appStoreVersionSubmission`);
   const subId = sub.json.data?.id;
-  if (!subId) {
-    console.log('No legacy appStoreVersionSubmission for', versionId, sub.status);
+  const subType = sub.json.data?.type;
+  if (!subId || subType !== 'appStoreVersionSubmissions') {
+    console.log(
+      'No legacy appStoreVersionSubmission for',
+      versionId,
+      sub.status,
+      subType || 'none',
+      JSON.stringify(sub.json).slice(0, 200),
+    );
     return false;
   }
   console.log('Deleting appStoreVersionSubmission', subId, 'for version', versionId);
   const del = await asc('DELETE', `/v1/appStoreVersionSubmissions/${subId}`);
   console.log('delete appStoreVersionSubmission', del.status, errDetail(del.json) || 'ok');
   return del.status === 204 || del.status < 400;
+}
+
+async function waitForEditableVersion(preferredId, attempts = 20) {
+  for (let i = 1; i <= attempts; i++) {
+    const versions = await listIosVersions();
+    const target = preferredId
+      ? versions.find((v) => v.id === preferredId)
+      : versions.find((v) => EDITABLE_VERSION_STATES.has(v.attributes?.appStoreState));
+    const state = target?.attributes?.appStoreState;
+    console.log(`wait editable ${i}/${attempts}:`, target?.attributes?.versionString, state, target?.id);
+    if (target && EDITABLE_VERSION_STATES.has(state)) return target;
+    await new Promise((r) => setTimeout(r, 5000));
+  }
+  return null;
 }
 
 async function adoptBlockingVersion(versionString) {
@@ -118,19 +140,11 @@ async function adoptBlockingVersion(versionString) {
     );
     await cancelOpenReviewSubmission();
     await removeVersionFromReview(inFlight.id);
-    await new Promise((r) => setTimeout(r, 3000));
   }
 
-  const refreshed = await listIosVersions();
-  for (const v of refreshed) {
-    console.log(
-      'ASC version after cancel',
-      v.attributes?.versionString,
-      v.attributes?.appStoreState,
-      v.id,
-    );
-  }
-  const editable = refreshed.find((v) => EDITABLE_VERSION_STATES.has(v.attributes?.appStoreState));
+  const editable =
+    (await waitForEditableVersion(inFlight?.id)) ||
+    (await listIosVersions()).find((v) => EDITABLE_VERSION_STATES.has(v.attributes?.appStoreState));
   if (!editable) {
     console.log('No editable ASC version available to adopt');
     return null;
