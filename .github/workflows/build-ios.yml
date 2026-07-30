@@ -37,6 +37,9 @@ jobs:
   build-and-submit:
     runs-on: macos-26
     timeout-minutes: 120
+    env:
+      # workflow_dispatch submit_only, or commit message tag to skip IPA rebuild
+      SKIP_BUILD: ${{ inputs.submit_only == true || contains(github.event.head_commit.message, '[submit-only]') }}
     steps:
       - uses: actions/checkout@v4
 
@@ -49,18 +52,18 @@ jobs:
         run: npm ci
 
       - name: Align Expo SDK packages
-        if: inputs.submit_only != true
+        if: env.SKIP_BUILD != 'true'
         run: npx expo install --fix
 
       - name: Select Xcode 26.4.1 (SDK 56 minimum)
-        if: inputs.submit_only != true
+        if: env.SKIP_BUILD != 'true'
         run: |
           sudo xcode-select -s /Applications/Xcode_26.4.1.app/Contents/Developer
           xcodebuild -version
           xcrun --sdk iphoneos --show-sdk-version
 
       - name: Verify EXPO_TOKEN is configured
-        if: inputs.submit_only != true
+        if: env.SKIP_BUILD != 'true'
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
@@ -72,11 +75,11 @@ jobs:
 
       # EXPO_TOKEN is nikethputta1; app.json must not point at inaccessible team projects.
       - name: Point EAS at accessible Expo project (nikethputta1)
-        if: inputs.submit_only != true
+        if: env.SKIP_BUILD != 'true'
         run: node scripts/patch-eas-project.mjs restore
 
       - name: Sync EAS production env vars
-        if: inputs.submit_only != true
+        if: env.SKIP_BUILD != 'true'
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
@@ -122,7 +125,7 @@ jobs:
           echo "Using ASC Key ID: $KEY_ID"
 
       - name: Sync ASC credentials into eas.json
-        if: steps.asc.outputs.present == 'true' && inputs.submit_only != true
+        if: steps.asc.outputs.present == 'true' && env.SKIP_BUILD != 'true'
         env:
           APPLE_ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
         run: |
@@ -153,7 +156,7 @@ jobs:
         run: node scripts/validate-asc-key.mjs
 
       - name: Validate iOS version > latest approved (ITMS-90062)
-        if: steps.asc.outputs.present == 'true' && inputs.submit_only != true
+        if: steps.asc.outputs.present == 'true' && env.SKIP_BUILD != 'true'
         env:
           APPLE_ASC_API_KEY_P8: ${{ secrets.APPLE_ASC_API_KEY_P8 }}
           APPLE_ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
@@ -163,7 +166,7 @@ jobs:
 
       - name: Bootstrap iOS credentials on EAS
         id: ios_bootstrap
-        if: steps.asc.outputs.present == 'true' && inputs.submit_only != true
+        if: steps.asc.outputs.present == 'true' && env.SKIP_BUILD != 'true'
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           APPLE_ASC_API_KEY_P8: ${{ secrets.APPLE_ASC_API_KEY_P8 }}
@@ -180,7 +183,7 @@ jobs:
 
       - name: Build iOS production (local)
         id: ios_build
-        if: inputs.submit_only != true
+        if: env.SKIP_BUILD != 'true'
         env:
           EAS_BUILD_NO_EXPO_GO_WARNING: 'true'
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
@@ -212,7 +215,7 @@ jobs:
           echo "ipa_built=true" >> "$GITHUB_OUTPUT"
 
       - name: Upload IPA to App Store Connect
-        if: steps.asc.outputs.present == 'true' && inputs.submit_only != true && steps.ios_build.outputs.ipa_built == 'true'
+        if: steps.asc.outputs.present == 'true' && env.SKIP_BUILD != 'true' && steps.ios_build.outputs.ipa_built == 'true'
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           APPLE_ASC_API_KEY_P8: ${{ secrets.APPLE_ASC_API_KEY_P8 }}

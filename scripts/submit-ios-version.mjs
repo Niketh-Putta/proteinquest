@@ -47,6 +47,57 @@ function errDetail(json) {
   return `${e.code || e.status}: ${e.detail || e.title}`;
 }
 
+const EDITABLE_VERSION_STATES = new Set([
+  'PREPARE_FOR_SUBMISSION',
+  'DEVELOPER_REJECTED',
+  'REJECTED',
+  'METADATA_REJECTED',
+  'INVALID_BINARY',
+  'READY_FOR_REVIEW',
+]);
+
+async function listIosVersions(limit = 20) {
+  const r = await asc(
+    'GET',
+    `/v1/apps/${APP_ID}/appStoreVersions?filter[platform]=IOS&limit=${limit}&sort=-createdDate`,
+  );
+  return r.json.data ?? [];
+}
+
+async function adoptEditableVersion(versionString) {
+  const versions = await listIosVersions();
+  for (const v of versions) {
+    const state = v.attributes?.appStoreState;
+    const current = v.attributes?.versionString;
+    console.log('ASC version', current, state, v.id);
+  }
+
+  const editable = versions.find((v) => EDITABLE_VERSION_STATES.has(v.attributes?.appStoreState));
+  if (!editable) return null;
+
+  const current = editable.attributes?.versionString;
+  if (current === versionString) {
+    console.log('Using editable version', versionString, editable.id);
+    return editable.id;
+  }
+
+  console.log(`Renaming editable version ${current} → ${versionString} (${editable.id})`);
+  const patched = await asc('PATCH', `/v1/appStoreVersions/${editable.id}`, {
+    data: {
+      type: 'appStoreVersions',
+      id: editable.id,
+      attributes: { versionString },
+    },
+  });
+  if (patched.status >= 400) {
+    throw new Error(
+      `Could not rename editable version ${current} to ${versionString}: ${errDetail(patched.json)}`,
+    );
+  }
+  console.log('Using renamed editable version', versionString, editable.id);
+  return editable.id;
+}
+
 async function findOrCreateVersion(versionString) {
   const existing = await asc(
     'GET',
@@ -66,9 +117,18 @@ async function findOrCreateVersion(versionString) {
     },
   });
   versionId = created.json.data?.id;
-  if (!versionId) throw new Error(errDetail(created.json) || 'Could not create version');
-  console.log('Created version', versionString, versionId);
-  return versionId;
+  if (versionId) {
+    console.log('Created version', versionString, versionId);
+    return versionId;
+  }
+
+  const detail = errDetail(created.json) || 'Could not create version';
+  console.log('Create version failed:', detail);
+  if (/cannot create a new version|current state/i.test(detail)) {
+    const adopted = await adoptEditableVersion(versionString);
+    if (adopted) return adopted;
+  }
+  throw new Error(detail);
 }
 
 async function getVersionState(versionId) {
