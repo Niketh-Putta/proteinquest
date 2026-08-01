@@ -269,8 +269,8 @@ jobs:
               sleep 20
               continue
             fi
-            if echo "$OUT" | grep -qE "cannot be reviewed|ENTITY_STATE_INVALID"; then
-              echo "Attempt $i/45 — version not reviewable yet after attach, retry in 20s…"
+            if echo "$OUT" | grep -qE "cannot be reviewed|ENTITY_STATE_INVALID|did not stick|UNRESOLVED_ISSUES|already present in"; then
+              echo "Attempt $i/45 — clearing ASC review blockers, retry in 20s…"
               sleep 20
               continue
             fi
