@@ -209,6 +209,13 @@ export async function getOfferingsStatus(): Promise<OfferingsStatus> {
   }
 }
 
+function withPeriod(priceString: string, period: 'wk' | 'yr'): string {
+  const raw = priceString.trim();
+  if (!raw) return raw;
+  if (/\/\s*(wk|yr|mo|week|year|month)\b/i.test(raw)) return raw;
+  return `${raw}/${period}`;
+}
+
 /** Fetch current offering packages mapped to our plan IDs. Static copy only when RC is unconfigured. */
 export async function getRevenueCatPlans(): Promise<RevenueCatPlan[]> {
   const fallback: RevenueCatPlan[] = [
@@ -222,8 +229,8 @@ export async function getRevenueCatPlans(): Promise<RevenueCatPlan[]> {
     {
       id: REVENUECAT_PRODUCT_IDS.yearly,
       title: 'Yearly',
-      price: '$4.99/mo',
-      caption: 'Billed as $59.99 annually',
+      price: '$59.99/yr',
+      caption: 'Billed annually. Cancel anytime.',
       packageIdentifier: '$rc_annual',
     },
   ];
@@ -249,15 +256,16 @@ export async function getRevenueCatPlans(): Promise<RevenueCatPlan[]> {
         pkg.identifier === '$rc_weekly';
 
       if (!isYearly && !isWeekly) continue;
-      if (!pkg.product.priceString?.trim()) continue;
+      const priceString = pkg.product.priceString?.trim();
+      if (!priceString) continue;
 
-      // Marketing UI copy in USD; Apple/Google still show localized store price at purchase.
+      // Show the live App Store / Play localized price (same amount as the purchase sheet).
       mapped.push({
         id: isYearly ? REVENUECAT_PRODUCT_IDS.yearly : REVENUECAT_PRODUCT_IDS.weekly,
         title: isYearly ? 'Yearly' : 'Weekly',
-        price: isYearly ? '$4.99/mo' : '$9.99/wk',
+        price: withPeriod(priceString, isYearly ? 'yr' : 'wk'),
         caption: isYearly
-          ? 'Billed as $59.99 annually'
+          ? `Billed as ${priceString} annually`
           : 'Full Pro access. Cancel anytime.',
         packageIdentifier: pkg.identifier,
       });
