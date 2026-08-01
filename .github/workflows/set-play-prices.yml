@@ -1,5 +1,5 @@
-# Update Google Play subscription regional prices (US + GB + converted regions).
-name: Set Play subscription prices
+# Update Google Play + App Store subscription regional prices (no app rebuild).
+name: Set store subscription prices
 
 on:
   workflow_dispatch:
@@ -34,10 +34,44 @@ jobs:
           mkdir -p store
           printf '%s' "$GOOGLE_PLAY_SERVICE_ACCOUNT_JSON" > store/google-play-service-account.json
 
-      - name: Set subscription prices
+      - name: Configure App Store Connect API key
+        id: asc
+        env:
+          APPLE_ASC_KEY_ID: ${{ secrets.APPLE_ASC_KEY_ID }}
+          APPLE_ASC_API_KEY_P8: ${{ secrets.APPLE_ASC_API_KEY_P8 }}
         run: |
-          if [ "${{ inputs.dry_run }}" = "true" ]; then
-            node scripts/play-set-subscription-prices.mjs --dry-run
-          else
-            node scripts/play-set-subscription-prices.mjs
+          if [ -z "$APPLE_ASC_API_KEY_P8" ]; then
+            echo "::error::APPLE_ASC_API_KEY_P8 missing"
+            exit 1
           fi
+          KEY_ID="$(node -e "const {normalizeKeyId}=require('./scripts/normalize-p8.cjs'); process.stdout.write(normalizeKeyId(process.env.APPLE_ASC_KEY_ID||'JZ3C87NKB9'));")"
+          export KEY_ID
+          mkdir -p store
+          node -e "
+            const fs=require('fs');
+            const {normalizeP8}=require('./scripts/normalize-p8.cjs');
+            const keyId=process.env.KEY_ID;
+            const key=normalizeP8(process.env.APPLE_ASC_API_KEY_P8||'');
+            if(!key) { console.error('APPLE_ASC_API_KEY_P8 empty'); process.exit(1); }
+            fs.writeFileSync('store/AuthKey_'+keyId+'.p8', key);
+          "
+          echo "key_id=$KEY_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Set subscription prices
+        env:
+          ASC_KEY_ID: ${{ steps.asc.outputs.key_id }}
+          ASC_KEY_PATH: ./store/AuthKey_${{ steps.asc.outputs.key_id }}.p8
+          ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
+          EXPO_ASC_KEY_ID: ${{ steps.asc.outputs.key_id }}
+          EXPO_ASC_API_KEY_PATH: ./store/AuthKey_${{ steps.asc.outputs.key_id }}.p8
+          EXPO_ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          export ASC_ISSUER_ID="${ASC_ISSUER_ID:-75ae36fa-911c-462c-818e-f1bcc4222c24}"
+          export EXPO_ASC_ISSUER_ID="${EXPO_ASC_ISSUER_ID:-75ae36fa-911c-462c-818e-f1bcc4222c24}"
+          DRY=()
+          if [ "${{ inputs.dry_run }}" = "true" ]; then DRY=(--dry-run); fi
+          echo "== Google Play =="
+          node scripts/play-set-subscription-prices.mjs "${DRY[@]}"
+          echo "== App Store Connect =="
+          node scripts/asc-set-subscription-prices.mjs "${DRY[@]}"

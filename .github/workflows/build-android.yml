@@ -1,11 +1,12 @@
 # Uses GitHub secret EXPO_TOKEN (nikethputta1). Add GOOGLE_PLAY_SERVICE_ACCOUNT_JSON for auto-submit.
+# mode=prices-only (or commit message [prices-only]) updates Play + App Store subscription regional prices.
 name: Build and submit Android
 
 on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'build = AAB + Play upload; prices-only = update Play subscription regional prices'
+        description: 'build = AAB + Play upload; prices-only = update Play + App Store subscription prices'
         required: false
         default: 'build'
         type: choice
@@ -13,7 +14,8 @@ on:
           - build
           - prices-only
   push:
-    branches: [main]
+    # Feature branch listed so a [prices-only] commit can apply store prices without merging.
+    branches: [main, cursor/fix-play-gbp-prices-4928]
     paths:
       - 'src/**'
       - 'app.json'
@@ -22,6 +24,9 @@ on:
       - 'package-lock.json'
       - 'scripts/download-eas-aab.mjs'
       - 'scripts/upload-aab-to-play.mjs'
+      - 'scripts/play-set-subscription-prices.mjs'
+      - 'scripts/asc-set-subscription-prices.mjs'
+      - 'scripts/asc-api.mjs'
       - '.github/workflows/build-android.yml'
 
 concurrency:
@@ -32,7 +37,11 @@ concurrency:
 
 jobs:
   build-and-submit:
+    # On the temporary feature branch, only run for [prices-only] commits (avoid accidental AAB builds).
+    if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[prices-only]') }}
     runs-on: ubuntu-latest
+    env:
+      PRICES_ONLY: ${{ inputs.mode == 'prices-only' || contains(github.event.head_commit.message, '[prices-only]') }}
     steps:
       - uses: actions/checkout@v4
 
@@ -42,11 +51,11 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.mode != 'prices-only' }}
+        if: env.PRICES_ONLY != 'true'
         run: npm ci
 
       - name: Verify EXPO_TOKEN is configured
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.mode != 'prices-only' }}
+        if: env.PRICES_ONLY != 'true'
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
@@ -61,7 +70,7 @@ jobs:
           GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
         run: |
           if [ -z "$GOOGLE_PLAY_SERVICE_ACCOUNT_JSON" ]; then
-            echo "No GOOGLE_PLAY_SERVICE_ACCOUNT_JSON secret — Play submit will be skipped."
+            echo "No GOOGLE_PLAY_SERVICE_ACCOUNT_JSON secret — Play submit/prices will be skipped."
             echo "present=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -70,17 +79,56 @@ jobs:
           echo "present=true" >> "$GITHUB_OUTPUT"
           echo "Google Play service account configured."
 
-      - name: Set Play subscription prices (US + GB + converted regions)
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'prices-only' }}
+      - name: Configure App Store Connect API key
+        if: env.PRICES_ONLY == 'true'
+        id: asc
+        env:
+          APPLE_ASC_KEY_ID: ${{ secrets.APPLE_ASC_KEY_ID }}
+          APPLE_ASC_API_KEY_P8: ${{ secrets.APPLE_ASC_API_KEY_P8 }}
         run: |
+          if [ -z "$APPLE_ASC_API_KEY_P8" ]; then
+            echo "::error::APPLE_ASC_API_KEY_P8 missing — required for App Store price update"
+            exit 1
+          fi
+          KEY_ID="$(node -e "const {normalizeKeyId}=require('./scripts/normalize-p8.cjs'); process.stdout.write(normalizeKeyId(process.env.APPLE_ASC_KEY_ID||'JZ3C87NKB9'));")"
+          export KEY_ID
+          mkdir -p store
+          node -e "
+            const fs=require('fs');
+            const {normalizeP8}=require('./scripts/normalize-p8.cjs');
+            const keyId=process.env.KEY_ID;
+            const key=normalizeP8(process.env.APPLE_ASC_API_KEY_P8||'');
+            if(!key) { console.error('APPLE_ASC_API_KEY_P8 empty'); process.exit(1); }
+            fs.writeFileSync('store/AuthKey_'+keyId+'.p8', key);
+          "
+          echo "key_id=$KEY_ID" >> "$GITHUB_OUTPUT"
+          echo "ASC key configured ($KEY_ID)."
+
+      - name: Set Play + App Store subscription prices
+        if: env.PRICES_ONLY == 'true'
+        env:
+          APPLE_ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
+          ASC_KEY_ID: ${{ steps.asc.outputs.key_id }}
+          ASC_KEY_PATH: ./store/AuthKey_${{ steps.asc.outputs.key_id }}.p8
+          ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
+          EXPO_ASC_KEY_ID: ${{ steps.asc.outputs.key_id }}
+          EXPO_ASC_API_KEY_PATH: ./store/AuthKey_${{ steps.asc.outputs.key_id }}.p8
+          EXPO_ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
+        run: |
+          set -euo pipefail
           if [ "${{ steps.play_creds.outputs.present }}" != "true" ]; then
             echo "::error::GOOGLE_PLAY_SERVICE_ACCOUNT_JSON required for prices-only"
             exit 1
           fi
+          export ASC_ISSUER_ID="${ASC_ISSUER_ID:-75ae36fa-911c-462c-818e-f1bcc4222c24}"
+          export EXPO_ASC_ISSUER_ID="${EXPO_ASC_ISSUER_ID:-75ae36fa-911c-462c-818e-f1bcc4222c24}"
+          echo "== Google Play =="
           node scripts/play-set-subscription-prices.mjs
+          echo "== App Store Connect =="
+          node scripts/asc-set-subscription-prices.mjs
 
       - name: Sync EAS production env vars
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.mode != 'prices-only' }}
+        if: env.PRICES_ONLY != 'true'
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
@@ -96,7 +144,7 @@ jobs:
           done
 
       - name: Build Android AAB (local + Play upload key via nikethputta EAS project)
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.mode != 'prices-only' }}
+        if: env.PRICES_ONLY != 'true'
         id: eas_build
         env:
           EAS_BUILD_NO_EXPO_GO_WARNING: 'true'
@@ -126,7 +174,7 @@ jobs:
           echo "build_id=play-signed-$(date +%s)" >> "$GITHUB_OUTPUT"
 
       - name: Upload AAB artifact
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.mode != 'prices-only' }}
+        if: env.PRICES_ONLY != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: proteinquest-aab-${{ steps.eas_build.outputs.build_id }}
@@ -134,7 +182,7 @@ jobs:
           retention-days: 30
 
       - name: Submit to Play production
-        if: ${{ steps.play_creds.outputs.present == 'true' && (github.event_name != 'workflow_dispatch' || inputs.mode != 'prices-only') }}
+        if: ${{ env.PRICES_ONLY != 'true' && steps.play_creds.outputs.present == 'true' }}
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN_NIKETHPUTTA }}
         run: |
