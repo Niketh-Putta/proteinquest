@@ -9,7 +9,6 @@ import React, {
   startTransition,
 } from 'react';
 import {
-  InteractionManager,
   Platform,
   Pressable,
   ScrollView,
@@ -18,20 +17,21 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { GlassPanel } from '@/components/GlassPanel';
 import { SkeletonList } from '@/components/LoadingSkeleton';
 import { PageCanvas } from '@/components/PageCanvas';
 import type { CatalogFood } from '@/lib/food-catalog';
+import { prefetchFoodCatalog } from '@/lib/food-catalog-prefetch';
 import { useContentColumn } from '@/lib/layout';
+import { prefetchRoute } from '@/lib/navigate-responsive';
 import { colors, fonts, layout, pressableWeb, radius, spacing, textInputWeb } from '@/theme';
 
 type FoodCatalogApi = typeof import('@/lib/food-catalog');
 
 function openAdjust(api: FoodCatalogApi, food: CatalogFood) {
-  void api.pushRecentFood(food);
   const q = new URLSearchParams({
     index: '-1',
     name: food.name,
@@ -41,7 +41,10 @@ function openAdjust(api: FoodCatalogApi, food: CatalogFood) {
     mode: 'add',
   });
   if (food.estimated_grams != null) q.set('grams', String(food.estimated_grams));
+  // Navigate first; remember recent in the background.
+  prefetchRoute(`/scan-adjust?${q.toString()}` as never);
   router.push(`/scan-adjust?${q.toString()}` as never);
+  void api.pushRecentFood(food);
 }
 
 function SectionLabel({ label }: { label: string }) {
@@ -109,25 +112,22 @@ export default function ScanIngredientScreen() {
   const [screenFocused, setScreenFocused] = useState(false);
   const catalogReady = api != null;
 
-  // Paint header + skeleton first (critical on iOS push). Load catalog after the transition.
+  // Paint header + skeleton on first frame. Catalog is usually already warming
+  // from pressIn / result-phase prefetch.
   useEffect(() => {
     let alive = true;
-    const task = InteractionManager.runAfterInteractions(() => {
+    void prefetchFoodCatalog().then((mod) => {
       if (!alive) return;
-      void import('@/lib/food-catalog').then((mod) => {
-        if (!alive) return;
-        setApi(mod);
-        void mod.loadRecentFoods().then((list) => {
-          if (alive) setRecent(list);
-        });
-        void mod.refreshRemoteFoodCatalog().then(() => {
-          if (alive) setCatalogTick((n) => n + 1);
-        });
+      setApi(mod);
+      void mod.loadRecentFoods().then((list) => {
+        if (alive) setRecent(list);
+      });
+      void mod.refreshRemoteFoodCatalog().then(() => {
+        if (alive) setCatalogTick((n) => n + 1);
       });
     });
     return () => {
       alive = false;
-      task.cancel?.();
     };
   }, []);
 
@@ -255,7 +255,7 @@ export default function ScanIngredientScreen() {
                 loadMoreBrowse();
               }
             }}>
-            <Animated.View entering={FadeIn.duration(180)} style={styles.searchWrap}>
+            <View style={styles.searchWrap}>
               <View style={styles.searchIcon} pointerEvents="none">
                 <Ionicons name="search" size={18} color={colors.textTertiary} />
               </View>
@@ -274,7 +274,7 @@ export default function ScanIngredientScreen() {
                 clearButtonMode="while-editing"
                 accessibilityLabel="Search food"
               />
-            </Animated.View>
+            </View>
 
             {!catalogReady ? (
               <CatalogSkeleton />

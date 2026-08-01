@@ -58,8 +58,10 @@ import {
     isDailyDragonLockedForToday,
 } from '@/lib/character';
 import { clearNeedsFirstScan, needsFirstScan } from '@/lib/first-scan';
+import { prefetchFoodCatalog } from '@/lib/food-catalog-prefetch';
 import { useLayout } from '@/lib/layout';
 import { rememberLocalMealPhoto } from '@/lib/local-meal-photo';
+import { prefetchRoute } from '@/lib/navigate-responsive';
 import {
     CALORIE_OVERRIDE_BUFFER,
     PROTEIN_OVERRIDE_BUFFER_G,
@@ -1090,7 +1092,7 @@ export default function ScanScreen() {
     }
   }, [scanMode]);
 
-  // Prefetch Add Ingredient so iOS push shows the skeleton shell immediately.
+  // Prefetch Add Ingredient route + catalog so push paints skeleton immediately.
   useEffect(() => {
     if (phase !== 'result') return;
     try {
@@ -1098,6 +1100,7 @@ export default function ScanScreen() {
     } catch {
       /* ignore */
     }
+    void prefetchFoodCatalog();
   }, [phase]);
 
   async function analyze(uri: string, cameraCrop?: CameraCrop) {
@@ -2270,17 +2273,15 @@ export default function ScanScreen() {
 
             <Pressable
               onPress={() => {
-                dismissMealKeyboard();
-                // Push immediately (iOS + Android); destination shows skeleton then loads catalog.
+                // Push first so the skeleton page paints before keyboard/haptics work.
+                prefetchRoute('/scan-ingredient' as never);
                 router.push('/scan-ingredient' as never);
+                dismissMealKeyboard();
                 Haptics.selectionAsync().catch(() => {});
               }}
               onPressIn={() => {
-                try {
-                  router.prefetch('/scan-ingredient' as never);
-                } catch {
-                  /* older router */
-                }
+                prefetchRoute('/scan-ingredient' as never);
+                void prefetchFoodCatalog();
               }}
               style={({ pressed }) => [
                 styles.addIngredientRow,

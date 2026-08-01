@@ -25,7 +25,8 @@ import { PageCanvas } from '@/components/PageCanvas';
 import { fetchLogById, getFoodPhotoUrl, updateLog } from '@/lib/api';
 import { getLocalMealPhoto } from '@/lib/local-meal-photo';
 import { useContentColumn, useLayout } from '@/lib/layout';
-import { leaveThen } from '@/lib/navigate-responsive';
+import { prefetchFoodCatalog } from '@/lib/food-catalog-prefetch';
+import { leaveThen, prefetchRoute } from '@/lib/navigate-responsive';
 import {
   CALORIE_OVERRIDE_BUFFER,
   PROTEIN_OVERRIDE_BUFFER_G,
@@ -135,11 +136,8 @@ export default function MealDetailScreen() {
   const [saveConfirmModalVisible, setSaveConfirmModalVisible] = useState(false);
 
   useEffect(() => {
-    try {
-      router.prefetch('/scan-ingredient' as never);
-    } catch {
-      /* ignore */
-    }
+    prefetchRoute('/scan-ingredient' as never);
+    void prefetchFoodCatalog();
   }, []);
 
   useEffect(() => {
@@ -644,16 +642,14 @@ export default function MealDetailScreen() {
 
               <Pressable
                 onPress={() => {
-                  dismissMealKeyboard();
+                  prefetchRoute('/scan-ingredient' as never);
                   router.push('/scan-ingredient' as never);
+                  dismissMealKeyboard();
                   Haptics.selectionAsync().catch(() => {});
                 }}
                 onPressIn={() => {
-                  try {
-                    router.prefetch('/scan-ingredient' as never);
-                  } catch {
-                    /* older router */
-                  }
+                  prefetchRoute('/scan-ingredient' as never);
+                  void prefetchFoodCatalog();
                 }}
                 style={({ pressed }) => [
                   styles.addIngredientRow,

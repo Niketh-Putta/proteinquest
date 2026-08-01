@@ -16,7 +16,8 @@ on:
         default: false
         type: boolean
   push:
-    branches: [main]
+    # Feature branch: App Store IPA build (use [build-only] to skip ASC submit).
+    branches: [main, cursor/live-paywall-prices-4928]
     paths:
       - 'src/**'
       - 'app.json'
