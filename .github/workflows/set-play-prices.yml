@@ -1,0 +1,43 @@
+# Update Google Play subscription regional prices (US + GB + converted regions).
+name: Set Play subscription prices
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (log only, no PATCH)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+jobs:
+  set-prices:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Configure Google Play service account
+        env:
+          GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          if [ -z "$GOOGLE_PLAY_SERVICE_ACCOUNT_JSON" ]; then
+            echo "::error::Missing GOOGLE_PLAY_SERVICE_ACCOUNT_JSON secret"
+            exit 1
+          fi
+          mkdir -p store
+          printf '%s' "$GOOGLE_PLAY_SERVICE_ACCOUNT_JSON" > store/google-play-service-account.json
+
+      - name: Set subscription prices
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            node scripts/play-set-subscription-prices.mjs --dry-run
+          else
+            node scripts/play-set-subscription-prices.mjs
+          fi

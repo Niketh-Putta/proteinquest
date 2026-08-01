@@ -3,6 +3,15 @@ name: Build and submit Android
 
 on:
   workflow_dispatch:
+    inputs:
+      mode:
+        description: 'build = AAB + Play upload; prices-only = update Play subscription regional prices'
+        required: false
+        default: 'build'
+        type: choice
+        options:
+          - build
+          - prices-only
   push:
     branches: [main]
     paths:
@@ -33,9 +42,11 @@ jobs:
           cache: npm
 
       - name: Install dependencies
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.mode != 'prices-only' }}
         run: npm ci
 
       - name: Verify EXPO_TOKEN is configured
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.mode != 'prices-only' }}
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
@@ -59,7 +70,17 @@ jobs:
           echo "present=true" >> "$GITHUB_OUTPUT"
           echo "Google Play service account configured."
 
+      - name: Set Play subscription prices (US + GB + converted regions)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'prices-only' }}
+        run: |
+          if [ "${{ steps.play_creds.outputs.present }}" != "true" ]; then
+            echo "::error::GOOGLE_PLAY_SERVICE_ACCOUNT_JSON required for prices-only"
+            exit 1
+          fi
+          node scripts/play-set-subscription-prices.mjs
+
       - name: Sync EAS production env vars
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.mode != 'prices-only' }}
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
@@ -75,6 +96,7 @@ jobs:
           done
 
       - name: Build Android AAB (local + Play upload key via nikethputta EAS project)
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.mode != 'prices-only' }}
         id: eas_build
         env:
           EAS_BUILD_NO_EXPO_GO_WARNING: 'true'
@@ -104,6 +126,7 @@ jobs:
           echo "build_id=play-signed-$(date +%s)" >> "$GITHUB_OUTPUT"
 
       - name: Upload AAB artifact
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.mode != 'prices-only' }}
         uses: actions/upload-artifact@v4
         with:
           name: proteinquest-aab-${{ steps.eas_build.outputs.build_id }}
@@ -111,7 +134,7 @@ jobs:
           retention-days: 30
 
       - name: Submit to Play production
-        if: steps.play_creds.outputs.present == 'true'
+        if: ${{ steps.play_creds.outputs.present == 'true' && (github.event_name != 'workflow_dispatch' || inputs.mode != 'prices-only') }}
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN_NIKETHPUTTA }}
         run: |
