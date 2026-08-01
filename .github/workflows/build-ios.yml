@@ -16,8 +16,7 @@ on:
         default: false
         type: boolean
   push:
-    # Feature branch for one-shot App Store IPA build (no review submit).
-    branches: [main, cursor/live-paywall-prices-4928]
+    branches: [main]
     paths:
       - 'src/**'
       - 'app.json'
