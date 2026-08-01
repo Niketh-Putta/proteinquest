@@ -1,6 +1,7 @@
 {
   "packageName": "com.proteinquest.app",
   "currency": "USD",
+  "pricingNotes": "US base prices below. Run node scripts/play-set-subscription-prices.mjs (or Android workflow mode=prices-only) to convert and push GB/other regional prices via Play API.",
   "subscriptions": [
     {
       "productId": "pro_weekly",
