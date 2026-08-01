@@ -81,7 +81,18 @@ jobs:
             fi
           done
 
-      - name: Build Android AAB (local + Play upload key via nikethputta EAS project)
+      - name: Free disk space (local AAB fills the runner)
+        run: |
+          set -euo pipefail
+          df -h
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android/sdk/ndk-bundle /usr/local/share/boost /opt/ghc /usr/local/graalvm /usr/local/lib/android/sdk/ndk || true
+          sudo rm -rf /opt/hostedtoolcache/CodeQL /opt/hostedtoolcache/go /opt/hostedtoolcache/Python || true
+          sudo docker system prune -af || true
+          # Keep only current Node; drop unused tool caches.
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"/Ruby "$AGENT_TOOLSDIRECTORY"/Java_Temurin-Hotspot_jdk/8* || true
+          df -h
+
+      - name: Build Android AAB (EAS cloud + Play upload key via nikethputta)
         id: eas_build
         env:
           EAS_BUILD_NO_EXPO_GO_WARNING: 'true'
@@ -107,10 +118,14 @@ jobs:
             fi
           done
           npx eas-cli whoami
-          npx eas-cli build --platform android --profile production --local --non-interactive --output store/proteinquest.aab
+          # Cloud build avoids GitHub runner "No space left on device" during packageReleaseBundle.
+          npx eas-cli build --platform android --profile production --non-interactive --wait --json > store/eas-android.json
+          BUILD_ID="$(node -e "const j=require('./store/eas-android.json'); const b=Array.isArray(j)?j[0]:j; if(!b?.id){console.error(JSON.stringify(j).slice(0,500)); process.exit(1)}; process.stdout.write(b.id);")"
+          echo "EAS build id: $BUILD_ID"
+          node scripts/download-eas-aab.mjs "$BUILD_ID" --out=store/proteinquest.aab
           node scripts/patch-eas-project.mjs restore
           ls -lh store/proteinquest.aab
-          echo "build_id=play-signed-$(date +%s)" >> "$GITHUB_OUTPUT"
+          echo "build_id=$BUILD_ID" >> "$GITHUB_OUTPUT"
 
       - name: Upload AAB artifact
         uses: actions/upload-artifact@v4
