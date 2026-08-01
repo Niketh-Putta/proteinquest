@@ -10,8 +10,14 @@ on:
         required: false
         default: false
         type: boolean
+      build_only:
+        description: 'Build IPA only; skip ASC upload and App Review submit'
+        required: false
+        default: false
+        type: boolean
   push:
-    branches: [main]
+    # Feature branch for one-shot App Store IPA build (no review submit).
+    branches: [main, cursor/live-paywall-prices-4928]
     paths:
       - 'src/**'
       - 'app.json'
@@ -40,6 +46,8 @@ jobs:
     env:
       # workflow_dispatch submit_only, or commit message tag to skip IPA rebuild
       SKIP_BUILD: ${{ inputs.submit_only == true || contains(github.event.head_commit.message, '[submit-only]') }}
+      # Build IPA only: no eas submit / App Review (workflow_dispatch or [build-only] commit tag)
+      BUILD_ONLY: ${{ inputs.build_only == true || contains(github.event.head_commit.message, '[build-only]') }}
     steps:
       - uses: actions/checkout@v4
 
@@ -214,8 +222,16 @@ jobs:
           ls -lh store/ProteinQuest.ipa
           echo "ipa_built=true" >> "$GITHUB_OUTPUT"
 
+      - name: Upload IPA artifact (build-only)
+        if: env.BUILD_ONLY == 'true' && env.SKIP_BUILD != 'true' && steps.ios_build.outputs.ipa_built == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ProteinQuest-ios-ipa
+          path: store/ProteinQuest.ipa
+          retention-days: 14
+
       - name: Upload IPA to App Store Connect
-        if: steps.asc.outputs.present == 'true' && env.SKIP_BUILD != 'true' && steps.ios_build.outputs.ipa_built == 'true'
+        if: env.BUILD_ONLY != 'true' && steps.asc.outputs.present == 'true' && env.SKIP_BUILD != 'true' && steps.ios_build.outputs.ipa_built == 'true'
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           APPLE_ASC_API_KEY_P8: ${{ secrets.APPLE_ASC_API_KEY_P8 }}
@@ -233,7 +249,7 @@ jobs:
           npx eas-cli submit --platform ios --profile production --path store/ProteinQuest.ipa --non-interactive
 
       - name: App Store status (before submit)
-        if: steps.asc.outputs.present == 'true'
+        if: env.BUILD_ONLY != 'true' && steps.asc.outputs.present == 'true'
         env:
           APPLE_ASC_API_KEY_P8: ${{ secrets.APPLE_ASC_API_KEY_P8 }}
           APPLE_ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
@@ -242,7 +258,7 @@ jobs:
         run: node scripts/check-ios-app-store-status.mjs || true
 
       - name: Submit for App Store review
-        if: steps.asc.outputs.present == 'true'
+        if: env.BUILD_ONLY != 'true' && steps.asc.outputs.present == 'true'
         env:
           APPLE_ASC_API_KEY_P8: ${{ secrets.APPLE_ASC_API_KEY_P8 }}
           APPLE_ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
@@ -281,7 +297,7 @@ jobs:
           exit 1
 
       - name: Upload App Store screenshots
-        if: steps.asc.outputs.present == 'true'
+        if: env.BUILD_ONLY != 'true' && steps.asc.outputs.present == 'true'
         env:
           APPLE_ASC_API_KEY_P8: ${{ secrets.APPLE_ASC_API_KEY_P8 }}
           APPLE_ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
@@ -293,11 +309,13 @@ jobs:
         if: always()
         run: |
           echo "## iOS App Store pipeline" >> "$GITHUB_STEP_SUMMARY"
-          if [ "${{ steps.ios_build.outputs.ipa_built }}" = "true" ]; then
+          if [ "${{ env.BUILD_ONLY }}" = "true" ] && [ "${{ steps.ios_build.outputs.ipa_built }}" = "true" ]; then
+            echo "Build-only: local IPA built and uploaded as a GitHub Actions artifact (no ASC upload / App Review)." >> "$GITHUB_STEP_SUMMARY"
+          elif [ "${{ steps.ios_build.outputs.ipa_built }}" = "true" ]; then
             echo "Local IPA built and uploaded to App Store Connect." >> "$GITHUB_STEP_SUMMARY"
           elif [ "${{ steps.ios_build.outcome }}" = "skipped" ]; then
-            echo "Submit-only run — skipped local build." >> "$GITHUB_STEP_SUMMARY"
+            echo "Submit-only run - skipped local build." >> "$GITHUB_STEP_SUMMARY"
           elif [ "${{ steps.ios_build.outcome }}" = "failure" ]; then
-            echo "Local iOS build failed — see logs." >> "$GITHUB_STEP_SUMMARY"
+            echo "Local iOS build failed - see logs." >> "$GITHUB_STEP_SUMMARY"
           fi
           echo "Check review status: App Store Connect → Apps → ProteinQuest → App Store → iOS App" >> "$GITHUB_STEP_SUMMARY"
