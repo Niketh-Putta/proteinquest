@@ -265,8 +265,8 @@ jobs:
               exit 0
             fi
             if echo "$OUT" | grep -qE "No VALID build found|No VALID build for iOS"; then
-              echo "Attempt $i/45 — ASC build still processing, retry in 60s…"
-              sleep 60
+              echo "Attempt $i/45 — ASC build still processing, retry in 20s…"
+              sleep 20
               continue
             fi
             echo "::error::Submit failed (non-retryable). Fix blockers in App Store Connect or listing metadata."
