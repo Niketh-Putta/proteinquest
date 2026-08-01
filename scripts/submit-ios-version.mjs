@@ -290,33 +290,57 @@ async function findLatestBuildId(preferMarketingVersion) {
     const prv = included.find((i) => i.id === prvId);
     return prv?.attributes?.version ?? null;
   };
+  const buildNo = (b) => Number(b.attributes?.version || 0);
 
-  const valid = list.filter((b) => b.attributes?.processingState === 'VALID');
-  if (!valid.length) throw new Error('No VALID build found in App Store Connect yet');
+  const forVersion = preferMarketingVersion
+    ? list.filter((b) => marketingVersion(b) === preferMarketingVersion)
+    : list;
 
-  if (preferMarketingVersion) {
-    const matches = valid
-      .filter((b) => marketingVersion(b) === preferMarketingVersion)
-      .sort((a, b) => Number(b.attributes?.version || 0) - Number(a.attributes?.version || 0));
-    const match = matches[0];
-    if (match) {
-      console.log(
-        'Matched VALID build for',
-        preferMarketingVersion,
-        'build',
-        match.attributes.version,
-        match.id,
-      );
-      return match.id;
-    }
-    throw new Error(
-      `No VALID build found for iOS ${preferMarketingVersion} yet (latest VALID is ${marketingVersion(valid[0])} build ${valid[0].attributes.version})`,
+  for (const b of forVersion.slice(0, 8)) {
+    console.log(
+      'ASC build',
+      marketingVersion(b),
+      'cf',
+      b.attributes?.version,
+      b.attributes?.processingState,
+      b.id,
     );
   }
 
-  const ready = valid[0];
-  console.log('Latest VALID build', marketingVersion(ready), ready.attributes.version, ready.id);
-  return ready.id;
+  // If a newer binary is still processing, wait — do not resubmit an older rejected build.
+  const newest = [...forVersion].sort((a, b) => buildNo(b) - buildNo(a))[0];
+  if (
+    newest &&
+    newest.attributes?.processingState &&
+    newest.attributes.processingState !== 'VALID' &&
+    newest.attributes.processingState !== 'FAILED' &&
+    newest.attributes.processingState !== 'INVALID'
+  ) {
+    throw new Error(
+      `No VALID build found for iOS ${preferMarketingVersion || ''} yet (build ${newest.attributes.version} still ${newest.attributes.processingState})`,
+    );
+  }
+
+  const valid = forVersion
+    .filter((b) => b.attributes?.processingState === 'VALID')
+    .sort((a, b) => buildNo(b) - buildNo(a));
+  if (!valid.length) {
+    throw new Error(
+      preferMarketingVersion
+        ? `No VALID build found for iOS ${preferMarketingVersion} yet`
+        : 'No VALID build found in App Store Connect yet',
+    );
+  }
+
+  const match = valid[0];
+  console.log(
+    'Matched VALID build for',
+    marketingVersion(match) || preferMarketingVersion,
+    'build',
+    match.attributes.version,
+    match.id,
+  );
+  return match.id;
 }
 
 async function listAppReviewSubmissions(stateFilter) {
@@ -530,10 +554,49 @@ async function submitVersion(versionId, buildId) {
     console.log('review detail', r.status, r.json.errors?.[0]?.detail || 'ok');
   }
 
-  const submissionId = await getOrCreateReviewSubmission(versionId);
-  await ensureReviewSubmissionItem(submissionId, {
-    appStoreVersion: { data: { type: 'appStoreVersions', id: versionId } },
+  // After attaching a new binary, REJECTED often flips to an editable/ready state.
+  for (let i = 0; i < 12; i++) {
+    const { state: next } = await getVersionState(versionId);
+    if (
+      next === 'PREPARE_FOR_SUBMISSION' ||
+      next === 'READY_FOR_REVIEW' ||
+      next === 'DEVELOPER_REJECTED'
+    ) {
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+  }
+
+  // Prefer legacy version submission first after a rejection — more reliable than
+  // adding a REJECTED appStoreVersion into a fresh reviewSubmissions item.
+  const legacy = await asc('POST', '/v1/appStoreVersionSubmissions', {
+    data: {
+      type: 'appStoreVersionSubmissions',
+      relationships: {
+        appStoreVersion: { data: { type: 'appStoreVersions', id: versionId } },
+      },
+    },
   });
+  console.log('legacy submit', legacy.status, errDetail(legacy.json) || 'ok');
+  if (legacy.status === 201 || legacy.status === 200) {
+    console.log(`\n✓ ProteinQuest iOS ${versionArg} submitted for App Review`);
+    return;
+  }
+  if (/already been submitted|already submitted/i.test(errDetail(legacy.json))) {
+    console.log(`\n✓ ProteinQuest iOS ${versionArg} already in App Store state: WAITING_FOR_REVIEW`);
+    return;
+  }
+
+  const submissionId = await getOrCreateReviewSubmission(versionId);
+  try {
+    await ensureReviewSubmissionItem(submissionId, {
+      appStoreVersion: { data: { type: 'appStoreVersions', id: versionId } },
+    });
+  } catch (itemErr) {
+    console.log('review item failed, legacy detail:', errDetail(legacy.json));
+    await logVersionBlockers(versionId);
+    throw itemErr;
+  }
   for (const subId of SUBSCRIPTION_IDS) {
     if (!(await subscriptionNeedsReview(subId))) {
       console.log('skip subscription review item (already approved or not ready)', subId);
