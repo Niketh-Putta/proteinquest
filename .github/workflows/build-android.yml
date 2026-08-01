@@ -4,8 +4,7 @@ name: Build and submit Android
 on:
   workflow_dispatch:
   push:
-    # Feature branch: Play production ship before merge.
-    branches: [main, cursor/live-paywall-prices-4928]
+    branches: [main]
     paths:
       - 'src/**'
       - 'app.json'
