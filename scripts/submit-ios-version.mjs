@@ -217,9 +217,13 @@ async function findOrCreateVersion(versionString) {
 }
 
 async function getVersionState(versionId) {
-  const r = await asc('GET', `/v1/appStoreVersions/${versionId}`);
+  const r = await asc('GET', `/v1/appStoreVersions/${versionId}?include=build`);
   const state = r.json.data?.attributes?.appStoreState;
-  const buildRel = r.json.data?.relationships?.build?.data?.id;
+  let buildRel = r.json.data?.relationships?.build?.data?.id;
+  if (!buildRel) {
+    const includedBuild = (r.json.included ?? []).find((i) => i.type === 'builds');
+    buildRel = includedBuild?.id;
+  }
   console.log('Version state:', state || 'unknown', buildRel ? `(build ${buildRel})` : '(no build)');
   return { state, buildRel, raw: r.json.data };
 }
@@ -379,7 +383,50 @@ async function cancelReviewSubmission(submissionId) {
     data: { type: 'reviewSubmissions', id: submissionId, attributes: { canceled: true } },
   });
   console.log('cancel submission', submissionId, r.status, r.json.errors?.[0]?.detail || 'ok');
-  return r.status < 400;
+  return r.status < 400 || r.status === 409;
+}
+
+async function waitForSubmissionSettled(submissionId, attempts = 24) {
+  for (let i = 1; i <= attempts; i++) {
+    const r = await asc('GET', `/v1/reviewSubmissions/${submissionId}`);
+    const state = r.json.data?.attributes?.state;
+    console.log(`wait submission ${i}/${attempts}:`, submissionId, state);
+    if (!state || state === 'COMPLETE' || state === 'CANCELED') return state;
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+  }
+  return null;
+}
+
+/**
+ * After a rejection, the version is stuck inside an UNRESOLVED_ISSUES submission.
+ * Cancel that (and empty READY_FOR_REVIEW drafts) before creating a new one.
+ */
+async function clearBlockingReviewSubmissions(versionId) {
+  const all = await listAppReviewSubmissions();
+  for (const sub of all) {
+    const state = sub.attributes?.state;
+    console.log('reviewSubmission', sub.id, state);
+  }
+
+  const blockingStates = new Set(['UNRESOLVED_ISSUES', 'READY_FOR_REVIEW']);
+  for (const sub of all) {
+    const state = sub.attributes?.state;
+    if (!blockingStates.has(state)) continue;
+
+    if (state === 'READY_FOR_REVIEW') {
+      const items = await listReviewSubmissionItems(sub.id);
+      const ownsOurs = items.some((it) => itemVersionId(it) === versionId);
+      const empty = items.length === 0;
+      if (!ownsOurs && !empty) {
+        console.log('leave READY_FOR_REVIEW submission alone (other items)', sub.id);
+        continue;
+      }
+    }
+
+    console.log('Clearing blocking review submission', sub.id, state);
+    await cancelReviewSubmission(sub.id);
+    await waitForSubmissionSettled(sub.id);
+  }
 }
 
 async function createReviewSubmission() {
@@ -396,6 +443,8 @@ async function createReviewSubmission() {
 }
 
 async function getOrCreateReviewSubmission(versionId) {
+  await clearBlockingReviewSubmissions(versionId);
+
   const owned = await findSubmissionContainingVersion(versionId);
   if (owned) {
     const subState = owned.attributes?.state;
@@ -403,24 +452,19 @@ async function getOrCreateReviewSubmission(versionId) {
       console.log('submission already in flight', owned.id, subState);
       return owned.id;
     }
-    if (subState === 'UNRESOLVED_ISSUES') {
-      const cancelled = await cancelReviewSubmission(owned.id);
-      if (!cancelled) return owned.id;
-    } else {
+    if (subState === 'READY_FOR_REVIEW') {
+      console.log('adopt READY_FOR_REVIEW submission for this version', owned.id);
       return owned.id;
     }
   }
 
   const ready = await listAppReviewSubmissions('READY_FOR_REVIEW');
-  if (ready[0]?.id) {
-    console.log('reuse READY_FOR_REVIEW submission', ready[0].id);
-    return ready[0].id;
-  }
-
-  const open = await listAppReviewSubmissions('OPEN');
-  if (open[0]?.id) {
-    console.log('Found OPEN review submission', open[0].id);
-    return open[0].id;
+  for (const sub of ready) {
+    const items = await listReviewSubmissionItems(sub.id);
+    if (items.length === 0 || items.some((it) => itemVersionId(it) === versionId)) {
+      console.log('reuse READY_FOR_REVIEW submission', sub.id);
+      return sub.id;
+    }
   }
 
   const { submissionId, status, json } = await createReviewSubmission();
@@ -431,9 +475,6 @@ async function getOrCreateReviewSubmission(versionId) {
     console.log('reuse READY_FOR_REVIEW submission after create conflict', readyAfter[0].id);
     return readyAfter[0].id;
   }
-
-  const retryOwned = await findSubmissionContainingVersion(versionId);
-  if (retryOwned) return retryOwned.id;
 
   if (status >= 400) throw new Error(`Could not create review submission: ${errDetail(json)}`);
   throw new Error('Could not create review submission: no id returned');
@@ -491,8 +532,10 @@ async function ensureReviewSubmissionItem(submissionId, relationships) {
   });
   console.log('review item', relType, relId, r.status, r.json.errors?.[0]?.detail || 'ok');
   if (r.status >= 400) {
+    console.log('review item error body:', JSON.stringify(r.json).slice(0, 800));
     const detail = errDetail(r.json);
-    if (r.status === 409 && /already (present|added)|not in valid state/i.test(detail)) {
+    // Only treat as ok when THIS submission already has the item.
+    if (r.status === 409 && /already (present|added) in this/i.test(detail)) {
       console.log('review item conflict ok:', detail);
       return null;
     }
@@ -522,6 +565,24 @@ async function submitVersion(versionId, buildId) {
   console.log('attach build', r.status, r.json.errors?.[0]?.detail || 'ok');
   if (r.status >= 400) throw new Error(`Attach build failed: ${errDetail(r.json)}`);
 
+  // Confirm the relationship stuck (ASC sometimes needs a moment after rejection).
+  let attached = false;
+  for (let i = 0; i < 8; i++) {
+    const { buildRel } = await getVersionState(versionId);
+    if (buildRel === buildId) {
+      attached = true;
+      break;
+    }
+    console.log('build not visible yet, re-attach…');
+    await asc('PATCH', `/v1/appStoreVersions/${versionId}/relationships/build`, {
+      data: { type: 'builds', id: buildId },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+  }
+  if (!attached) {
+    throw new Error(`Attach build did not stick for version ${versionId} / build ${buildId}`);
+  }
+
   r = await asc('PATCH', `/v1/builds/${buildId}`, {
     data: {
       type: 'builds',
@@ -547,64 +608,31 @@ async function submitVersion(versionId, buildId) {
           contactFirstName: 'Kishore',
           contactLastName: 'Putta',
           contactPhone: listing.contactPhone || '+447700900123',
-          notes: listing.reviewNotes,
+          notes:
+            (listing.reviewNotes || '') +
+            '\n\nResubmission note: Fixed Guideline 2.1 camera permission handling so Scan requests OS camera access before any error UI. Also hardened subscription/analysis error copy and notification permission prompts.',
         },
       },
     });
     console.log('review detail', r.status, r.json.errors?.[0]?.detail || 'ok');
   }
 
-  // After attaching a new binary, REJECTED often flips to an editable/ready state.
-  for (let i = 0; i < 12; i++) {
-    const { state: next } = await getVersionState(versionId);
-    if (
-      next === 'PREPARE_FOR_SUBMISSION' ||
-      next === 'READY_FOR_REVIEW' ||
-      next === 'DEVELOPER_REJECTED'
-    ) {
-      break;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 5000));
-  }
-
-  // Prefer legacy version submission first after a rejection — more reliable than
-  // adding a REJECTED appStoreVersion into a fresh reviewSubmissions item.
-  const legacy = await asc('POST', '/v1/appStoreVersionSubmissions', {
-    data: {
-      type: 'appStoreVersionSubmissions',
-      relationships: {
-        appStoreVersion: { data: { type: 'appStoreVersions', id: versionId } },
-      },
-    },
-  });
-  console.log('legacy submit', legacy.status, errDetail(legacy.json) || 'ok');
-  if (legacy.status === 201 || legacy.status === 200) {
-    console.log(`\n✓ ProteinQuest iOS ${versionArg} submitted for App Review`);
-    return;
-  }
-  if (/already been submitted|already submitted/i.test(errDetail(legacy.json))) {
-    console.log(`\n✓ ProteinQuest iOS ${versionArg} already in App Store state: WAITING_FOR_REVIEW`);
-    return;
-  }
-
   const submissionId = await getOrCreateReviewSubmission(versionId);
-  try {
-    await ensureReviewSubmissionItem(submissionId, {
-      appStoreVersion: { data: { type: 'appStoreVersions', id: versionId } },
-    });
-  } catch (itemErr) {
-    console.log('review item failed, legacy detail:', errDetail(legacy.json));
-    await logVersionBlockers(versionId);
-    throw itemErr;
-  }
+  await ensureReviewSubmissionItem(submissionId, {
+    appStoreVersion: { data: { type: 'appStoreVersions', id: versionId } },
+  });
   for (const subId of SUBSCRIPTION_IDS) {
     if (!(await subscriptionNeedsReview(subId))) {
       console.log('skip subscription review item (already approved or not ready)', subId);
       continue;
     }
-    await ensureReviewSubmissionItem(submissionId, {
-      inAppPurchases: { data: { type: 'inAppPurchases', id: subId } },
-    });
+    try {
+      await ensureReviewSubmissionItem(submissionId, {
+        inAppPurchases: { data: { type: 'inAppPurchases', id: subId } },
+      });
+    } catch (subErr) {
+      console.log('subscription item skipped:', subErr?.message || subErr);
+    }
   }
 
   r = await asc('PATCH', `/v1/reviewSubmissions/${submissionId}`, {
@@ -617,6 +645,7 @@ async function submitVersion(versionId, buildId) {
   }
 
   await logVersionBlockers(versionId);
+  console.log('submit error body:', JSON.stringify(r.json).slice(0, 800));
   throw new Error(`Submit for review failed: ${errDetail(r.json)}`);
 }
 
