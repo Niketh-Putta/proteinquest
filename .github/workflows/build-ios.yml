@@ -11,8 +11,7 @@ on:
         default: false
         type: boolean
   push:
-    # Feature branch so iOS production can ship before merge.
-    branches: [main, cursor/live-paywall-prices-4928]
+    branches: [main]
     paths:
       - 'src/**'
       - 'app.json'

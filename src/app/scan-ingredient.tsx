@@ -9,6 +9,7 @@ import React, {
   startTransition,
 } from 'react';
 import {
+  InteractionManager,
   Platform,
   Pressable,
   ScrollView,
@@ -17,7 +18,14 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
+import Animated, {
+  FadeIn,
+  FadeInDown,
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withTiming,
+} from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { GlassPanel } from '@/components/GlassPanel';
@@ -85,26 +93,34 @@ function FoodRow({
   );
 }
 
-function SkeletonRow({ isLast }: { isLast: boolean }) {
+function SkeletonRow({ isLast, pulseStyle }: { isLast: boolean; pulseStyle: object }) {
   return (
     <View style={[styles.foodRow, !isLast && styles.foodRowBorder]}>
-      <View style={[styles.foodIcon, styles.skeletonBlock]} />
-      <View style={[styles.skeletonLine, { flex: 1 }]} />
-      <View style={[styles.skeletonBlock, { width: 16, height: 16, borderRadius: 4 }]} />
+      <Animated.View style={[styles.foodIcon, styles.skeletonBlock, pulseStyle]} />
+      <Animated.View style={[styles.skeletonLine, { flex: 1 }, pulseStyle]} />
+      <Animated.View
+        style={[styles.skeletonBlock, { width: 16, height: 16, borderRadius: 4 }, pulseStyle]}
+      />
     </View>
   );
 }
 
 function CatalogSkeleton() {
+  const opacity = useSharedValue(0.45);
+  useEffect(() => {
+    opacity.value = withRepeat(withTiming(1, { duration: 700 }), -1, true);
+  }, [opacity]);
+  const pulseStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
+
   return (
-    <Animated.View entering={FadeIn.duration(180)}>
+    <View>
       <SectionLabel label="COMMON" />
       <GlassPanel style={styles.listCard}>
         {Array.from({ length: 8 }, (_, i) => (
-          <SkeletonRow key={`sk-${i}`} isLast={i === 7} />
+          <SkeletonRow key={`sk-${i}`} isLast={i === 7} pulseStyle={pulseStyle} />
         ))}
       </GlassPanel>
-    </Animated.View>
+    </View>
   );
 }
 
@@ -118,12 +134,14 @@ export default function ScanIngredientScreen() {
   const [browseLimit, setBrowseLimit] = useState(BROWSE_PAGE);
   const [catalogTick, setCatalogTick] = useState(0);
   const [api, setApi] = useState<FoodCatalogApi | null>(null);
+  const [screenFocused, setScreenFocused] = useState(false);
   const catalogReady = api != null;
 
-  // Paint the shell immediately; load the heavy food catalog after first frame.
+  // Paint header + skeleton first (critical on iOS push). Load catalog after the transition.
   useEffect(() => {
     let alive = true;
-    const boot = () => {
+    const task = InteractionManager.runAfterInteractions(() => {
+      if (!alive) return;
       void import('@/lib/food-catalog').then((mod) => {
         if (!alive) return;
         setApi(mod);
@@ -134,24 +152,19 @@ export default function ScanIngredientScreen() {
           if (alive) setCatalogTick((n) => n + 1);
         });
       });
-    };
-    let raf = 0;
-    let timeout: ReturnType<typeof setTimeout> | null = null;
-    if (typeof requestAnimationFrame === 'function') {
-      raf = requestAnimationFrame(() => boot());
-    } else {
-      timeout = setTimeout(boot, 0);
-    }
+    });
     return () => {
       alive = false;
-      if (raf) cancelAnimationFrame(raf);
-      if (timeout) clearTimeout(timeout);
+      task.cancel?.();
     };
   }, []);
 
   useFocusEffect(
     useCallback(() => {
-      if (!api) return;
+      setScreenFocused(true);
+      if (!api) {
+        return () => setScreenFocused(false);
+      }
       let alive = true;
       void api.loadRecentFoods().then((list) => {
         if (alive) setRecent(list);
@@ -161,6 +174,7 @@ export default function ScanIngredientScreen() {
       });
       return () => {
         alive = false;
+        setScreenFocused(false);
       };
     }, [api]),
   );
@@ -281,7 +295,8 @@ export default function ScanIngredientScreen() {
                 placeholderTextColor={colors.textTertiary}
                 autoCapitalize="sentences"
                 autoCorrect
-                autoFocus
+                // Avoid stealing focus while the route is only prefetched on iOS.
+                autoFocus={screenFocused && catalogReady}
                 editable={catalogReady}
                 returnKeyType="search"
                 clearButtonMode="while-editing"

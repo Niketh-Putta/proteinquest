@@ -1082,6 +1082,16 @@ export default function ScanScreen() {
     }
   }, [scanMode]);
 
+  // Prefetch Add Ingredient so iOS push shows the skeleton shell immediately.
+  useEffect(() => {
+    if (phase !== 'result') return;
+    try {
+      router.prefetch('/scan-ingredient' as never);
+    } catch {
+      /* ignore */
+    }
+  }, [phase]);
+
   async function analyze(uri: string, cameraCrop?: CameraCrop) {
     // Hard gate: text must never hit analyze-food image path.
     if (scanModeRef.current !== 'photo') return;
@@ -2256,9 +2266,16 @@ export default function ScanScreen() {
             <Pressable
               onPress={() => {
                 dismissMealKeyboard();
-                // Navigate first so the page opens immediately; catalog paints skeleton then loads.
+                // Push immediately (iOS + Android); destination shows skeleton then loads catalog.
                 router.push('/scan-ingredient' as never);
                 Haptics.selectionAsync().catch(() => {});
+              }}
+              onPressIn={() => {
+                try {
+                  router.prefetch('/scan-ingredient' as never);
+                } catch {
+                  /* older router */
+                }
               }}
               style={({ pressed }) => [
                 styles.addIngredientRow,

@@ -133,6 +133,14 @@ export default function MealDetailScreen() {
   const [saveConfirmModalVisible, setSaveConfirmModalVisible] = useState(false);
 
   useEffect(() => {
+    try {
+      router.prefetch('/scan-ingredient' as never);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
     async function load() {
       if (!id) {
@@ -625,6 +633,13 @@ export default function MealDetailScreen() {
                   dismissMealKeyboard();
                   router.push('/scan-ingredient' as never);
                   Haptics.selectionAsync().catch(() => {});
+                }}
+                onPressIn={() => {
+                  try {
+                    router.prefetch('/scan-ingredient' as never);
+                  } catch {
+                    /* older router */
+                  }
                 }}
                 style={({ pressed }) => [
                   styles.addIngredientRow,

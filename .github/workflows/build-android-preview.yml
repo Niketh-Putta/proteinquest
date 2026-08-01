@@ -4,7 +4,7 @@ name: Build Android preview APK
 on:
   workflow_dispatch:
   push:
-    branches: [main, cursor/live-paywall-prices-4928]
+    branches: [main]
     paths:
       - 'src/app/paywall.tsx'
       - 'src/app/settings.tsx'
