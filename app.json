@@ -36,7 +36,7 @@
         "com.android.vending.BILLING",
         "android.permission.POST_NOTIFICATIONS"
       ],
-      "versionCode": 119
+      "versionCode": 120
     },
     "web": {
       "output": "single",
