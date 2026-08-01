@@ -37,6 +37,7 @@ import {
   peekFoodPhotoUrl,
   prefetchFoodPhotoUrls,
 } from '@/lib/api';
+import { SkeletonList } from '@/components/LoadingSkeleton';
 import { prefetchRoute } from '@/lib/navigate-responsive';
 import { peekLocalMealPhoto } from '@/lib/local-meal-photo';
 import {
@@ -160,6 +161,8 @@ export default function TodayScreen() {
   const [viewedISO, setViewedISO] = useState(() => todayISODate());
   const [dayTotals, setDayTotals] = useState<Record<string, number>>({});
   const [logs, setLogs] = useState<ProteinLog[]>([]);
+  /** True until the first day-logs fetch settles (shows meal skeleton, not empty state). */
+  const [logsBooting, setLogsBooting] = useState(true);
   const [lastMealAt, setLastMealAt] = useState<string | null>(null);
   const [lifetimeMeals, setLifetimeMeals] = useState(0);
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -186,6 +189,7 @@ export default function TodayScreen() {
     // Kick signing the same tick as paint; peekFoodPhotoUrl covers remounts.
     void prefetchFoodPhotoUrls(logsData.map((l) => l.image_path));
     setLogs(logsData);
+    setLogsBooting(false);
     setNowMs(Date.now());
   }, []);
 
@@ -290,6 +294,7 @@ export default function TodayScreen() {
         return logsData;
       } catch (e) {
         console.error('Failed to load logs:', e);
+        setLogsBooting(false);
         return [] as ProteinLog[];
       }
     },
@@ -318,7 +323,11 @@ export default function TodayScreen() {
       return;
     }
     // Clear immediately so a slow fetch cannot leave yesterday's meals under today's label.
-    applyLogsIfViewing(date, []);
+    // Keep booting=true until loadDayLogs/applyLogs settles (don't use applyLogs([]) here).
+    if (viewedISORef.current === date) {
+      setLogs([]);
+      setLogsBooting(true);
+    }
     const meta = peekTodayHomeMeta(userId);
     if (!meta) return; // Focus bootstrap will full-load.
     void loadDayLogs(date).catch((e) => console.error('Failed to load day logs:', e));
@@ -697,7 +706,12 @@ export default function TodayScreen() {
 
         <View style={styles.rule} />
 
-        {logs.length > 0 ? (
+        {logsBooting && logs.length === 0 ? (
+          <View style={{ gap: spacing.sm }}>
+            <Text style={styles.sectionTitle}>{sectionTitle}</Text>
+            <SkeletonList rows={4} />
+          </View>
+        ) : logs.length > 0 ? (
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>{sectionTitle}</Text>
             <View

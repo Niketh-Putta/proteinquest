@@ -18,17 +18,11 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import Animated, {
-  FadeIn,
-  FadeInDown,
-  useAnimatedStyle,
-  useSharedValue,
-  withRepeat,
-  withTiming,
-} from 'react-native-reanimated';
+import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { GlassPanel } from '@/components/GlassPanel';
+import { SkeletonList } from '@/components/LoadingSkeleton';
 import { PageCanvas } from '@/components/PageCanvas';
 import type { CatalogFood } from '@/lib/food-catalog';
 import { useContentColumn } from '@/lib/layout';
@@ -93,33 +87,11 @@ function FoodRow({
   );
 }
 
-function SkeletonRow({ isLast, pulseStyle }: { isLast: boolean; pulseStyle: object }) {
-  return (
-    <View style={[styles.foodRow, !isLast && styles.foodRowBorder]}>
-      <Animated.View style={[styles.foodIcon, styles.skeletonBlock, pulseStyle]} />
-      <Animated.View style={[styles.skeletonLine, { flex: 1 }, pulseStyle]} />
-      <Animated.View
-        style={[styles.skeletonBlock, { width: 16, height: 16, borderRadius: 4 }, pulseStyle]}
-      />
-    </View>
-  );
-}
-
 function CatalogSkeleton() {
-  const opacity = useSharedValue(0.45);
-  useEffect(() => {
-    opacity.value = withRepeat(withTiming(1, { duration: 700 }), -1, true);
-  }, [opacity]);
-  const pulseStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
-
   return (
     <View>
       <SectionLabel label="COMMON" />
-      <GlassPanel style={styles.listCard}>
-        {Array.from({ length: 8 }, (_, i) => (
-          <SkeletonRow key={`sk-${i}`} isLast={i === 7} pulseStyle={pulseStyle} />
-        ))}
-      </GlassPanel>
+      <SkeletonList rows={8} />
     </View>
   );
 }
@@ -573,13 +545,5 @@ const styles = StyleSheet.create({
     fontSize: 11,
     letterSpacing: 0.6,
     color: colors.textTertiary,
-  },
-  skeletonBlock: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
-  },
-  skeletonLine: {
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: 'rgba(255,255,255,0.08)',
   },
 });

@@ -10,20 +10,27 @@ export function prefetchRoute(href: Href) {
   }
 }
 
-/** Push immediately; run heavy work after the transition finishes. */
-export function pushThen(href: Href, work?: () => void | Promise<void>) {
-  router.push(href);
-  if (!work) return;
+/** Run work after the current navigation/animation settles. */
+export function runAfterNav(work: () => void | Promise<void>) {
   InteractionManager.runAfterInteractions(() => {
     void work();
   });
 }
 
+/** Push immediately; run heavy work after the transition finishes. */
+export function pushThen(href: Href, work?: () => void | Promise<void>) {
+  router.push(href);
+  if (work) runAfterNav(work);
+}
+
 /** Replace immediately; run heavy work after the transition finishes. */
 export function replaceThen(href: Href, work?: () => void | Promise<void>) {
   router.replace(href);
-  if (!work) return;
-  InteractionManager.runAfterInteractions(() => {
-    void work();
-  });
+  if (work) runAfterNav(work);
+}
+
+/** Leave the screen immediately, then persist / clean up in the background. */
+export function leaveThen(leave: () => void, work?: () => void | Promise<void>) {
+  leave();
+  if (work) runAfterNav(work);
 }

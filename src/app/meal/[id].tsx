@@ -25,6 +25,7 @@ import { PageCanvas } from '@/components/PageCanvas';
 import { fetchLogById, getFoodPhotoUrl, updateLog } from '@/lib/api';
 import { getLocalMealPhoto } from '@/lib/local-meal-photo';
 import { useContentColumn, useLayout } from '@/lib/layout';
+import { leaveThen } from '@/lib/navigate-responsive';
 import {
   CALORIE_OVERRIDE_BUFFER,
   PROTEIN_OVERRIDE_BUFFER_G,
@@ -290,23 +291,19 @@ export default function MealDetailScreen() {
 
     setSaving(true);
     setError(null);
-    try {
-      await updateLog(log.id, {
+    setSaveConfirmOpen(false);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    // Leave immediately; persist after the transition so Save feels instant.
+    leaveThen(leave, () =>
+      updateLog(log.id, {
         foodName: foodName.trim() || 'Meal',
         proteinG,
         calories: calorieClamp.value,
         items,
-      });
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-      // Prefer back so Today stays mounted (keeps thumbs/dragon warm).
-      leave();
-    } catch (e) {
-      const msg =
-        e instanceof Error && e.message ? e.message : 'Could not save changes. Try again.';
-      setError(msg);
-    } finally {
-      setSaving(false);
-    }
+      }).catch((e) => {
+        if (__DEV__) console.warn('[meal] background save failed:', e);
+      })
+    );
   }
 
   const requestClose = useCallback(() => {

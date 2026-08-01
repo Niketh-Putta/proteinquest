@@ -21,7 +21,7 @@ import Svg, {
   Polygon,
   Stop,
 } from 'react-native-svg';
-import { SkeletonList } from '@/components/LoadingSkeleton';
+import { SkeletonCards, SkeletonList } from '@/components/LoadingSkeleton';
 import { PageCanvas } from '@/components/PageCanvas';
 import { trackEvent } from '@/lib/analytics';
 import { confirmDestructive } from '@/lib/confirm';
@@ -622,9 +622,17 @@ export default function LeagueTab() {
           ) : null}
 
           <View style={styles.podium}>
-            <PodiumColumn entry={podium[1]} place={2} youArt={youDragonArt} onRemove={confirmRemove} />
-            <PodiumColumn entry={podium[0]} place={1} youArt={youDragonArt} onRemove={confirmRemove} />
-            <PodiumColumn entry={podium[2]} place={3} youArt={youDragonArt} onRemove={confirmRemove} />
+            {loading && podium.every((p) => !p) ? (
+              <View style={{ flex: 1 }}>
+                <SkeletonCards count={3} />
+              </View>
+            ) : (
+              <>
+                <PodiumColumn entry={podium[1]} place={2} youArt={youDragonArt} onRemove={confirmRemove} />
+                <PodiumColumn entry={podium[0]} place={1} youArt={youDragonArt} onRemove={confirmRemove} />
+                <PodiumColumn entry={podium[2]} place={3} youArt={youDragonArt} onRemove={confirmRemove} />
+              </>
+            )}
           </View>
 
           <View style={styles.list}>

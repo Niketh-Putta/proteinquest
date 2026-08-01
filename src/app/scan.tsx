@@ -34,6 +34,7 @@ import Svg, { Defs, Mask, Rect } from 'react-native-svg';
 import { Button } from '@/components/Button';
 import { Celebration } from '@/components/Celebration';
 import { GlassPanel } from '@/components/GlassPanel';
+import { SkeletonMedia } from '@/components/LoadingSkeleton';
 import { ModalMotionLayer } from '@/components/ModalMotionLayer';
 import { MealPhotoPreview } from '@/components/MealPhotoPreview';
 import { trackEvent } from '@/lib/analytics';
@@ -961,6 +962,14 @@ export default function ScanScreen() {
 
   async function ensureCanScan(): Promise<number | null> {
     if (!needsScanQuota) return null;
+    // Optimistic: if the pill already says zero, open paywall immediately.
+    if (scansLeft === 0) {
+      openPaywallForLimit();
+      void Promise.all([countTodayPhotoScans(), countLifetimeMeals()])
+        .then(([used, life]) => setScansLeft(remainingFreeScans(used, profile, life)))
+        .catch(() => {});
+      return null;
+    }
     const [used, life] = await Promise.all([countTodayPhotoScans(), countLifetimeMeals()]);
     setScansLeft(remainingFreeScans(used, profile, life));
     if (!canScan(profile, used, life)) {
@@ -1237,11 +1246,10 @@ export default function ScanScreen() {
           ? uploadFoodPhoto(session.user.id, imageBase64)
           : Promise.resolve(null));
 
-      // Upload usually finishes during review; await it so Today has image_path immediately.
-      const [todaySummary, wasFirstEver, imagePath] = await Promise.all([
+      // Don't block Log it on photo upload — attach path in the background.
+      const [todaySummary, wasFirstEver] = await Promise.all([
         fetchTodayMealSummary(todayISO),
         needsFirstScan(),
-        uploadPromise.catch(() => null),
       ]);
 
       const log = await insertLog({
@@ -1251,25 +1259,23 @@ export default function ScanScreen() {
         proteinG,
         calories,
         confidence: analysis.confidence,
-        imagePath: imagePath ?? null,
+        imagePath: null,
         source: manualEntry ? 'manual' : 'photo',
       });
 
       // Instant Today thumb from the local capture (before signed URL is ready).
       if (displayUri) rememberLocalMealPhoto(log.id, displayUri);
 
-      if (imagePath) {
-        void getFoodPhotoUrl(imagePath);
-      } else if (imageBase64) {
-        // Upload lagged or failed — attach in background without blocking home.
-        void uploadFoodPhoto(session.user.id, imageBase64)
-          .then(async (path) => {
-            if (!path) return;
-            await updateLogImagePath(log.id, path);
-            void getFoodPhotoUrl(path);
-          })
-          .catch(() => {});
-      }
+      void uploadPromise
+        .then(async (path) => {
+          if (!path && imageBase64) {
+            path = await uploadFoodPhoto(session.user.id, imageBase64);
+          }
+          if (!path) return;
+          await updateLogImagePath(log.id, path);
+          void getFoodPhotoUrl(path);
+        })
+        .catch(() => {});
 
       const {
         updates,
@@ -1293,7 +1299,8 @@ export default function ScanScreen() {
       const loot = rollLootDrop(retention);
       retention = loot.next;
       const merged = { ...updates, retention };
-      await Promise.all([saveProfile(merged), clearNeedsFirstScan()]);
+      // Persist XP/streak off the critical path so home paints immediately.
+      void Promise.all([saveProfile(merged), clearNeedsFirstScan()]).catch(() => {});
 
       const mealsToday = todaySummary.mealCount + 1;
       const dragonId = displayDragonId(profile, todayISO);
@@ -1311,8 +1318,8 @@ export default function ScanScreen() {
       const xpGained =
         Math.round(proteinG * XP_PER_GRAM) + (goalJustHit ? XP_GOAL_BONUS : 0);
 
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       if (goalJustHit || evolved || leveledUp) {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
         setCelebration({
           evolved,
           leveledUp,
@@ -1328,7 +1335,6 @@ export default function ScanScreen() {
           streakFreezeUsed,
         });
       } else {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
         goHome({
           fed: true,
           protein: proteinG,
@@ -1382,10 +1388,10 @@ export default function ScanScreen() {
   const headerTitle =
     phase === 'result' ? 'CONFIRM & LOG' : phase === 'analyzing' ? 'ANALYZING' : 'ProteinQuest';
 
-  async function skipFirstScan() {
-    await clearNeedsFirstScan();
+  function skipFirstScan() {
     setFirstScanRequired(false);
     goHome();
+    void clearNeedsFirstScan().catch(() => {});
   }
 
   const resetToCamera = useCallback(() => {
@@ -1600,7 +1606,7 @@ export default function ScanScreen() {
             />
           ) : cameraPermissionUi === 'loading' || cameraPermissionUi === 'requesting' ? (
             <View style={[styles.camera, styles.cameraDenied]} accessibilityLabel="Requesting camera access">
-              <View style={styles.cameraSkeletonBlock} />
+              <SkeletonMedia style={styles.cameraSkeletonBlock} />
               <Text style={[styles.deniedTitle, { marginTop: spacing.md }]}>
                 {cameraPermissionUi === 'requesting' ? 'Requesting camera access' : 'Preparing camera'}
               </Text>
@@ -2030,7 +2036,7 @@ export default function ScanScreen() {
                   <ScanSweep />
                 </View>
               ) : (
-                <View style={styles.analyzingPlaceholder} />
+                <SkeletonMedia style={styles.analyzingPlaceholder} />
               )}
             </View>
           </View>
