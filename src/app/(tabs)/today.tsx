@@ -37,6 +37,7 @@ import {
   peekFoodPhotoUrl,
   prefetchFoodPhotoUrls,
 } from '@/lib/api';
+import { prefetchRoute } from '@/lib/navigate-responsive';
 import { peekLocalMealPhoto } from '@/lib/local-meal-photo';
 import {
   applyDeleteLogToCharacter,
@@ -428,6 +429,7 @@ export default function TodayScreen() {
 
   const openFeed = () => {
     trackEvent('feed_cta_tapped', { source: 'today' });
+    prefetchRoute('/scan');
     router.push('/scan');
   };
 
@@ -764,6 +766,9 @@ export default function TodayScreen() {
       <View style={[styles.logItem, index > 0 && styles.logRowBorder]}>
         <View style={styles.logRow}>
           <Pressable
+            onPressIn={() =>
+              prefetchRoute({ pathname: '/meal/[id]', params: { id: item.id } } as never)
+            }
             onPress={() =>
               router.push({ pathname: '/meal/[id]', params: { id: item.id } } as never)
             }

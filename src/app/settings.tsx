@@ -27,6 +27,7 @@ import { FeedToast } from '@/components/FeedToast';
 import { SubscriptionBillingInfo } from '@/components/SubscriptionBillingInfo';
 import { DragonEvolutionGallery } from '@/components/DragonEvolutionGallery';
 import { GoalEditor } from '@/components/GoalEditor';
+import { prefetchRoute } from '@/lib/navigate-responsive';
 import {
   DRAGONS,
   buildDragonNames,
@@ -374,7 +375,10 @@ export default function SettingsScreen({ embedded = false }: { embedded?: boolea
                 <Ionicons name="checkmark-circle" size={20} color={colors.accent} />
               ) : null}
             </Pressable>
-            <Pressable onPress={() => router.push('/league')} style={styles.leagueLink}>
+            <Pressable
+              onPressIn={() => prefetchRoute('/league')}
+              onPress={() => router.push('/league')}
+              style={styles.leagueLink}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.leagueLinkTitle}>Protein League</Text>
                 <Text style={styles.leagueLinkHint}>See your rank and who&apos;s ahead</Text>
@@ -446,6 +450,7 @@ export default function SettingsScreen({ embedded = false }: { embedded?: boolea
             {!profile?.is_premium ? (
               <View style={styles.upgradeGlow}>
                 <Pressable
+                  onPressIn={() => prefetchRoute('/paywall')}
                   onPress={() => router.push('/paywall')}
                   android_ripple={{ color: 'rgba(255, 249, 247, 0.18)' }}
                   accessibilityRole="button"
