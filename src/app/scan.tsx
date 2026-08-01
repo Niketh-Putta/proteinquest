@@ -671,6 +671,7 @@ export default function ScanScreen() {
   );
   const [permission, requestPermission, getPermission] = useCameraPermissions();
   const [requestingCameraPermission, setRequestingCameraPermission] = useState(false);
+  const [cameraPermissionTimedOut, setCameraPermissionTimedOut] = useState(false);
   const cameraPermissionRequestRef = useRef<Promise<unknown> | null>(null);
   const cameraRef = useRef<CameraView>(null);
   const cameraWrapRef = useRef<View>(null);
@@ -1334,10 +1335,28 @@ export default function ScanScreen() {
     }
   }
 
-  const cameraPermissionUi = resolveCameraPermissionUi({
+  const cameraPermissionUiRaw = resolveCameraPermissionUi({
     permission,
     requesting: requestingCameraPermission,
   });
+  // If the OS never answers, fall back to an explicit Continue CTA (never a dead spinner).
+  useEffect(() => {
+    if (
+      cameraPermissionUiRaw === 'granted' ||
+      cameraPermissionUiRaw === 'needs_prompt' ||
+      cameraPermissionUiRaw === 'blocked'
+    ) {
+      setCameraPermissionTimedOut(false);
+      return;
+    }
+    const t = setTimeout(() => setCameraPermissionTimedOut(true), 4000);
+    return () => clearTimeout(t);
+  }, [cameraPermissionUiRaw]);
+  const cameraPermissionUi =
+    cameraPermissionTimedOut &&
+    (cameraPermissionUiRaw === 'loading' || cameraPermissionUiRaw === 'requesting')
+      ? 'needs_prompt'
+      : cameraPermissionUiRaw;
   const hasCameraPermission = cameraPermissionUi === 'granted';
   const cameraReady = hasCameraPermission && cameraInitialized;
 

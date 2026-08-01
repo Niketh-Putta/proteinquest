@@ -3,11 +3,13 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Image } from 'expo-image';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
+import * as Notifications from 'expo-notifications';
 import { router } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -107,8 +109,12 @@ export default function SettingsScreen({ embedded = false }: { embedded?: boolea
       const ok = await setMealRemindersEnabled(next, profile);
       if (next && !ok) {
         const status = await getNotificationPermissionStatus();
-        if (status !== 'granted') {
-          setError('Turn on notifications in Settings to get meal reminders.');
+        if (status === Notifications.PermissionStatus.GRANTED) {
+          setError('Could not schedule meal reminders. Try again.');
+        } else if (status === Notifications.PermissionStatus.UNDETERMINED) {
+          setError('Allow notifications when prompted to get meal reminders.');
+        } else {
+          setError('Turn on notifications for ProteinQuest in Settings to get meal reminders.');
         }
         setRemindersOn(false);
       } else {

@@ -145,9 +145,14 @@ export async function setMealRemindersEnabled(
   profile?: Profile | null,
 ): Promise<boolean> {
   await AsyncStorage.setItem(ENABLED_KEY, enabled ? '1' : '0');
-  if (enabled) return syncMealReminders(profile);
-  await cancelMealReminders();
-  return false;
+  if (!enabled) {
+    await cancelMealReminders();
+    return false;
+  }
+  // Explicit user/onboarding action may show the OS prompt.
+  const granted = await requestMealReminderPermission();
+  if (!granted) return false;
+  return syncMealReminders(profile);
 }
 
 export async function getNotificationPermissionStatus(): Promise<Notifications.PermissionStatus> {
@@ -199,8 +204,11 @@ export async function syncMealReminders(profile?: Profile | null): Promise<boole
     return false;
   }
 
-  const granted = await requestMealReminderPermission();
-  if (!granted) return false;
+  // Background sync must never request permission (Guideline 5.1.1).
+  // Prompting only happens from setMealRemindersEnabled / explicit toggles.
+  if (!Device.isDevice) return false;
+  const { status } = await Notifications.getPermissionsAsync();
+  if (status !== Notifications.PermissionStatus.GRANTED) return false;
 
   await cancelMealReminders();
 
@@ -232,13 +240,19 @@ export async function syncMealReminders(profile?: Profile | null): Promise<boole
   return true;
 }
 
+async function hasNotificationPermission(): Promise<boolean> {
+  if (Platform.OS === 'web' || !Device.isDevice) return false;
+  const { status } = await Notifications.getPermissionsAsync();
+  return status === Notifications.PermissionStatus.GRANTED;
+}
+
 /** One-shot: ~3h after first meal — “peckish again”. */
 export async function scheduleSecondMealNudge(dragonName: string): Promise<void> {
   if (Platform.OS === 'web') return;
   const enabled = await isMealRemindersEnabled();
   if (!enabled) return;
-  const granted = await requestMealReminderPermission();
-  if (!granted) return;
+  // Do not prompt from post-log side effects.
+  if (!(await hasNotificationPermission())) return;
 
   await Notifications.cancelScheduledNotificationAsync('second-meal-nudge').catch(() => {});
   const when = new Date(Date.now() + 3 * 60 * 60 * 1000);
@@ -270,8 +284,7 @@ export async function scheduleStreakAtRiskNudge(
 
   const enabled = await isMealRemindersEnabled();
   if (!enabled) return;
-  const granted = await requestMealReminderPermission();
-  if (!granted) return;
+  if (!(await hasNotificationPermission())) return;
 
   const when = new Date();
   when.setHours(20, 0, 0, 0);
