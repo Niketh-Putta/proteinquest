@@ -14,6 +14,7 @@ const APP_ID = '6781790996';
 const SUBSCRIPTION_IDS = ['6781793893', '6781793936'];
 const listing = JSON.parse(fs.readFileSync('store/app-store-listing.json', 'utf8'));
 
+/** States where review is already in flight or live — do not re-submit. */
 const SUBMITTED_STATES = new Set([
   'WAITING_FOR_REVIEW',
   'IN_REVIEW',
@@ -21,7 +22,16 @@ const SUBMITTED_STATES = new Set([
   'READY_FOR_SALE',
   'PROCESSING_FOR_APP_STORE',
   'PENDING_APPLE_RELEASE',
+]);
+
+/** Rejected / editable states must attach a new build and submit again. */
+const RESUBMITTABLE_STATES = new Set([
+  'PREPARE_FOR_SUBMISSION',
+  'DEVELOPER_REJECTED',
   'REJECTED',
+  'METADATA_REJECTED',
+  'INVALID_BINARY',
+  'READY_FOR_REVIEW',
 ]);
 
 const args = process.argv.slice(2);
@@ -285,7 +295,10 @@ async function findLatestBuildId(preferMarketingVersion) {
   if (!valid.length) throw new Error('No VALID build found in App Store Connect yet');
 
   if (preferMarketingVersion) {
-    const match = valid.find((b) => marketingVersion(b) === preferMarketingVersion);
+    const matches = valid
+      .filter((b) => marketingVersion(b) === preferMarketingVersion)
+      .sort((a, b) => Number(b.attributes?.version || 0) - Number(a.attributes?.version || 0));
+    const match = matches[0];
     if (match) {
       console.log(
         'Matched VALID build for',
@@ -471,9 +484,12 @@ async function submitVersion(versionId, buildId) {
     console.log(`\n✓ ProteinQuest iOS ${versionArg} already in App Store state: ${state}`);
     return;
   }
-  if (state && state !== 'PREPARE_FOR_SUBMISSION' && state !== 'DEVELOPER_REJECTED' && state !== 'READY_FOR_REVIEW') {
+  if (state && !RESUBMITTABLE_STATES.has(state)) {
     await logVersionBlockers(versionId);
     throw new Error(`Version ${versionArg} is not ready for submission (state=${state})`);
+  }
+  if (state === 'REJECTED' || state === 'METADATA_REJECTED' || state === 'DEVELOPER_REJECTED') {
+    console.log(`Resubmitting from ${state} with build ${buildId}`);
   }
 
   let r = await asc('PATCH', `/v1/appStoreVersions/${versionId}/relationships/build`, {
