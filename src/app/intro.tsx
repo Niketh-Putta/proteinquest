@@ -1,7 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -36,6 +35,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { Button } from '@/components/Button';
 import { DragonPortrait } from '@/components/DragonPortrait';
+import { replaceThen } from '@/lib/navigate-responsive';
 import {
   DISPLAY_NAME_TAKEN,
   isDisplayNameAvailable,
@@ -396,13 +396,18 @@ export default function IntroScreen() {
         }
       }
       const names = buildDragonNames(dragonNames);
-      await saveProfile({
-        intro_completed: true,
-        ...(chosen ? { display_name: chosen } : {}),
-        dragon_names: names,
-      });
+      // Name check already passed; navigate first, then persist.
       trackEvent('dragon_named', { named: Object.keys(names).length });
-      router.replace('/onboarding');
+      replaceThen('/onboarding', () =>
+        saveProfile({
+          intro_completed: true,
+          ...(chosen ? { display_name: chosen } : {}),
+          dragon_names: names,
+        }).catch((e: unknown) => {
+          if (__DEV__ && e) console.error('[intro] saveProfile failed:', e);
+        })
+      );
+      setSaving(false);
     } catch (e: unknown) {
       if (__DEV__ && e) console.error('[intro] saveProfile failed:', e);
       if (isDisplayNameTakenError(e)) {

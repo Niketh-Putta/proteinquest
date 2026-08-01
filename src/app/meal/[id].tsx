@@ -18,6 +18,7 @@ import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { GlassPanel } from '@/components/GlassPanel';
+import { SkeletonList, SkeletonMedia } from '@/components/LoadingSkeleton';
 import { ModalMotionLayer } from '@/components/ModalMotionLayer';
 import { MealPhotoPreview } from '@/components/MealPhotoPreview';
 import { PageCanvas } from '@/components/PageCanvas';
@@ -168,13 +169,16 @@ export default function MealDetailScreen() {
         setAnchorCalories(calories);
         setProteinOverride(String(Math.round(protein)));
         setCalorieOverride(calories > 0 ? String(Math.round(calories)) : '');
+        if (!cancelled) setLoading(false);
+        // Paint meal chrome first; resolve photo after so the page feels instant.
         const uri =
           (await getFoodPhotoUrl(row.image_path)) ?? getLocalMealPhoto(row.id);
         if (!cancelled) setPhotoUri(uri);
       } catch {
-        if (!cancelled) setError('Could not load this meal');
-      } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setError('Could not load this meal');
+          setLoading(false);
+        }
       }
     }
     void load();
@@ -407,9 +411,22 @@ export default function MealDetailScreen() {
         ) : null}
 
         {loading ? (
-          <View style={styles.center}>
-            <ActivityIndicator color={colors.accent} />
-          </View>
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={[
+              styles.resultScroll,
+              column,
+              { paddingLeft: headerPadLeft, paddingRight: headerPadRight },
+            ]}>
+            <View
+              style={[
+                styles.resultImageWrap,
+                { maxWidth: Math.min(stageMaxWidth, isTablet || isDesktop ? 480 : 420) },
+              ]}>
+              <SkeletonMedia />
+            </View>
+            <SkeletonList rows={5} />
+          </ScrollView>
         ) : !log ? (
           <View style={styles.center}>
             <Text style={styles.emptyText}>Meal not found</Text>

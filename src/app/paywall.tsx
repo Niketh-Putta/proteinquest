@@ -16,6 +16,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { GlassPanel } from '@/components/GlassPanel';
+import { SkeletonCards } from '@/components/LoadingSkeleton';
 import { trackEvent } from '@/lib/analytics';
 import { APP_STORE_URL, PLAY_STORE_URL } from '@/lib/app-update';
 import { useContentColumn, useLayout } from '@/lib/layout';
@@ -182,14 +183,12 @@ export default function Paywall() {
     }
   }
 
-  async function handleDismiss() {
+  function handleDismiss() {
     trackEvent('paywall_dismiss', {});
-    try {
-      await saveProfile({ paywall_dismissed: true });
-    } catch {
-      /* non-fatal */
-    }
     goBack();
+    void saveProfile({ paywall_dismissed: true }).catch(() => {
+      /* non-fatal */
+    });
   }
 
   function renderPlan(plan: PaymentPlan) {
@@ -326,11 +325,7 @@ export default function Paywall() {
 
           <Text style={styles.sectionLabel}>CHOOSE A PLAN</Text>
           <View style={styles.plans}>
-            {loadingPlans ? (
-              <Text style={styles.offeringsWarning}>Loading subscription plans…</Text>
-            ) : (
-              provider.plans.map(renderPlan)
-            )}
+            {loadingPlans ? <SkeletonCards count={2} /> : provider.plans.map(renderPlan)}
           </View>
 
           {offeringsDown ? (

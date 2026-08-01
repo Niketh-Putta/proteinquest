@@ -5,7 +5,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-    ActivityIndicator,
     Image,
     Keyboard,
     Linking,
@@ -1601,7 +1600,7 @@ export default function ScanScreen() {
             />
           ) : cameraPermissionUi === 'loading' || cameraPermissionUi === 'requesting' ? (
             <View style={[styles.camera, styles.cameraDenied]} accessibilityLabel="Requesting camera access">
-              <ActivityIndicator size="large" color={colors.textSecondary} />
+              <View style={styles.cameraSkeletonBlock} />
               <Text style={[styles.deniedTitle, { marginTop: spacing.md }]}>
                 {cameraPermissionUi === 'requesting' ? 'Requesting camera access' : 'Preparing camera'}
               </Text>
@@ -2551,6 +2550,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: spacing.xl,
+  },
+  cameraSkeletonBlock: {
+    width: 120,
+    height: 120,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255,255,255,0.08)',
   },
   deniedTitle: {
     fontFamily: fonts.display,

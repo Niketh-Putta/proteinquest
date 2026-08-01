@@ -259,12 +259,14 @@ export default function SettingsScreen({ embedded = false }: { embedded?: boolea
   async function handleSubmit(updates: Partial<Profile>) {
     setSaving(true);
     setError(null);
+    setSavedFlash(true);
+    // Leave immediately so save feels instant; persist in the background.
+    if (!embedded) goHome();
     try {
       await saveProfile(updates);
-      setSavedFlash(true);
-      setTimeout(goHome, 700);
     } catch (e: any) {
       setError(e.message ?? 'Could not save. Please try again.');
+      setSavedFlash(false);
     } finally {
       setSaving(false);
     }
