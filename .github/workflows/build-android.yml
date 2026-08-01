@@ -14,8 +14,7 @@ on:
           - build
           - prices-only
   push:
-    # Feature branch listed so a [prices-only] commit can apply store prices without merging.
-    branches: [main, cursor/fix-play-gbp-prices-4928]
+    branches: [main]
     paths:
       - 'src/**'
       - 'app.json'
