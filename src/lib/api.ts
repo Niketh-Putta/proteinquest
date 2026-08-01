@@ -42,10 +42,12 @@ function friendlyAnalysisError(message: string): string {
     return 'AI is busy right now. Try again in a moment.';
   }
   if (/suspended|permission denied|invalid.?api.?key|incorrect.?api.?key/i.test(message)) {
-    return 'AI key is invalid or revoked. Update Supabase OPENAI_API_KEY (or GEMINI_API_KEY fallback).';
+    console.warn('[analyze] AI key issue:', message);
+    return 'Food analysis is temporarily unavailable. Try again shortly.';
   }
   if (/billing|not active|postpay|payment/i.test(message)) {
-    return 'AI billing is not active. Enable billing for OpenAI (or Gemini fallback) and try again.';
+    console.warn('[analyze] AI billing issue:', message);
+    return 'Food analysis is temporarily unavailable. Try again shortly.';
   }
   if (/malformed|Unterminated string|Unexpected token|JSON/i.test(message)) {
     return 'Analysis hit a glitch. Tap scan and try again.';

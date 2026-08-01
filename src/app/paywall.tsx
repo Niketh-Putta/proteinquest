@@ -115,10 +115,13 @@ export default function Paywall() {
     trackEvent('paywall_view', {});
   }, []);
 
-  useEffect(() => {
+  const reloadPlans = React.useCallback(() => {
     if (IS_WEB) return;
     const userId = session?.user.id;
-    if (!userId) return;
+    if (!userId) {
+      setLoadingPlans(false);
+      return;
+    }
     setLoadingPlans(true);
     getNativePaymentProvider(userId)
       .then((p) => {
@@ -128,6 +131,10 @@ export default function Paywall() {
       .catch(() => {})
       .finally(() => setLoadingPlans(false));
   }, [session?.user.id]);
+
+  useEffect(() => {
+    reloadPlans();
+  }, [reloadPlans]);
 
   async function grantPremium() {
     await saveProfile({ is_premium: true, paywall_dismissed: true });
@@ -250,10 +257,11 @@ export default function Paywall() {
     );
   }
 
+  const offeringsDown = !IS_WEB && !loadingPlans && provider.offeringsReady === false;
   const ctaLabel = loadingPlans
     ? 'Loading…'
-    : provider.offeringsReady === false
-      ? 'Unavailable'
+    : offeringsDown
+      ? 'Try again'
       : 'Subscribe';
 
   return (
@@ -325,6 +333,13 @@ export default function Paywall() {
             )}
           </View>
 
+          {offeringsDown ? (
+            <Text style={styles.offeringsWarning}>
+              {provider.offeringsMessage ??
+                'Subscriptions are temporarily unavailable. Try Restore Purchases, or tap Try again.'}
+            </Text>
+          ) : null}
+
           {IS_WEB ? (
             <View style={styles.webStoreBlock}>
               <Text style={styles.webStoreHint}>
@@ -356,19 +371,31 @@ export default function Paywall() {
             </View>
           ) : (
             <Pressable
-              onPress={handlePurchase}
-              disabled={!canPurchase || busy}
+              onPress={() => {
+                if (offeringsDown) {
+                  reloadPlans();
+                  return;
+                }
+                void handlePurchase();
+              }}
+              disabled={(!canPurchase && !offeringsDown) || busy || loadingPlans}
               style={({ pressed }) => [
                 styles.cta,
-                !canPurchase && styles.ctaDisabled,
-                canPurchase && styles.ctaReady,
-                pressed && canPurchase && { opacity: 0.9 },
+                !canPurchase && !offeringsDown && styles.ctaDisabled,
+                (canPurchase || offeringsDown) && styles.ctaReady,
+                pressed && (canPurchase || offeringsDown) && { opacity: 0.9 },
                 pressableWeb,
               ]}>
               {busy || loadingPlans ? (
-                <ActivityIndicator color={canPurchase ? colors.onAccent : MUTED} />
+                <ActivityIndicator color={canPurchase || offeringsDown ? colors.onAccent : MUTED} />
               ) : (
-                <Text style={[styles.ctaText, canPurchase && styles.ctaTextReady]}>{ctaLabel}</Text>
+                <Text
+                  style={[
+                    styles.ctaText,
+                    (canPurchase || offeringsDown) && styles.ctaTextReady,
+                  ]}>
+                  {ctaLabel}
+                </Text>
               )}
             </Pressable>
           )}

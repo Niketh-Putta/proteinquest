@@ -131,7 +131,7 @@ const stubProvider: PaymentProvider = {
   async purchase(_planId: string, _opts?: { userId?: string; email?: string }) {
     if (!__DEV__) {
       throw new Error(
-        'Payments are not enabled in this App Store build. Install the latest TestFlight or App Store update.',
+        'Subscriptions are temporarily unavailable in this install. Update to the latest App Store build and try again.',
       );
     }
     return true;

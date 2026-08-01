@@ -39,7 +39,7 @@ if (!versionArg) {
 
 const whatsNew =
   whatsNewArg ??
-  'Fixes camera permission handling so Scan requests access before showing any camera error, plus meal-edit and scan reliability improvements.';
+  'Fixes camera permission handling, clearer subscription and analysis errors, and notification prompts that only appear after you opt in.';
 
 function errDetail(json) {
   const e = json?.errors?.[0];

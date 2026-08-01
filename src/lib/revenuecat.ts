@@ -154,24 +154,18 @@ export interface OfferingsStatus {
   message?: string;
 }
 
+/** User-facing only — keep dashboard / key details in logs (App Review 2.1). */
 function offeringsUnavailableMessage(): string {
-  if (Platform.OS === 'android') {
-    return (
-      'Subscriptions are not available yet. In Google Play Console, ensure pro_weekly and pro_yearly are Active, ' +
-      "linked in RevenueCat offering 'default' ($rc_weekly, $rc_annual), and the Play service account is uploaded to RevenueCat. See store/PAYMENTS.md."
-    );
-  }
   if (!getApiKey()) {
-    const ver = Constants.expoConfig?.version ?? 'unknown';
-    return (
-      `This install (${ver}) was built without RevenueCat. Use the latest TestFlight or App Store build.`
-    );
+    console.warn('[RevenueCat] API key missing in this build');
+    return 'Subscriptions are temporarily unavailable in this install. Try Restore Purchases, or update to the latest App Store build.';
   }
-  return (
-    'Subscriptions are not loading from the App Store yet. Ensure pro_weekly and pro_yearly are Approved in App Store Connect, ' +
-    'RevenueCat has a valid In-App Purchase key (SubscriptionKey_W92LH2WSQ6.p8), and offering default links both products. ' +
-    'Try again in a few minutes after reinstalling.'
-  );
+  if (Platform.OS === 'android') {
+    console.warn('[RevenueCat] Android offerings empty — check Play Console products + RC offering links');
+  } else {
+    console.warn('[RevenueCat] iOS offerings empty — check ASC products + RC offering links');
+  }
+  return 'Subscriptions are temporarily unavailable. Try Restore Purchases, or try again in a few minutes.';
 }
 
 function offeringsConfigurationError(e: unknown): string | null {
@@ -191,7 +185,12 @@ export async function hasLiveOfferings(): Promise<boolean> {
 /** Whether store products are reachable via RevenueCat (distinct from SDK key being set). */
 export async function getOfferingsStatus(): Promise<OfferingsStatus> {
   if (!isRevenueCatConfigured()) {
-    return { ready: false, message: 'RevenueCat is not configured in this build.' };
+    console.warn('[RevenueCat] not configured in this build');
+    return {
+      ready: false,
+      message:
+        'Subscriptions are temporarily unavailable in this install. Try Restore Purchases, or update to the latest App Store build.',
+    };
   }
   try {
     await ensureRevenueCatReady();
@@ -291,7 +290,10 @@ export async function checkProEntitlement(): Promise<boolean> {
 /** Purchase a plan by our plan ID (pro_weekly | pro_yearly). Returns true when Pro is active. */
 export async function purchasePlan(planId: string): Promise<boolean> {
   if (!isRevenueCatConfigured()) {
-    throw new Error('RevenueCat is not configured. Set EXPO_PUBLIC_REVENUECAT_* keys.');
+    console.warn('[RevenueCat] purchasePlan: not configured');
+    throw new Error(
+      'Subscriptions are temporarily unavailable in this install. Try Restore Purchases, or update to the latest App Store build.',
+    );
   }
 
   const status = await getOfferingsStatus();
@@ -343,7 +345,10 @@ export async function purchasePlan(planId: string): Promise<boolean> {
 /** Restore previous App Store / Play Store purchases. Returns true when Pro is active. */
 export async function restorePurchases(): Promise<boolean> {
   if (!isRevenueCatConfigured()) {
-    throw new Error('RevenueCat is not configured.');
+    console.warn('[RevenueCat] restorePurchases: not configured');
+    throw new Error(
+      'Subscriptions are temporarily unavailable in this install. Update to the latest App Store build and try again.',
+    );
   }
   const Purchases = (await import('react-native-purchases')).default;
   const info = await Purchases.restorePurchases();
