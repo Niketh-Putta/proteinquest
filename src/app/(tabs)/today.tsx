@@ -528,6 +528,7 @@ export default function TodayScreen() {
         <View style={styles.header}>
           <View style={styles.headerLead}>
             <Pressable
+              onPressIn={() => prefetchRoute(isPro(profile) ? '/settings' : '/paywall')}
               onPress={() => router.push(isPro(profile) ? '/settings' : '/paywall')}
               hitSlop={8}
               accessibilityRole="button"
@@ -593,12 +594,18 @@ export default function TodayScreen() {
           <TrainerRankCard
             profile={profile}
             variant="rich"
-            onPress={() => router.push('/league')}
+            onPress={() => {
+              prefetchRoute('/league');
+              router.push('/league');
+            }}
           />
         ) : null}
 
         {!hasUnlimitedScans(profile) && scansLeft !== null ? (
-          <Pressable onPress={() => router.push('/paywall')} style={styles.scansPill}>
+          <Pressable
+            onPressIn={() => prefetchRoute('/paywall')}
+            onPress={() => router.push('/paywall')}
+            style={styles.scansPill}>
             <Ionicons name="sparkles" size={14} color={colors.accent} />
             <Text style={styles.scansPillText}>
               {scansLeft > 0
