@@ -207,9 +207,14 @@ export default function SettingsScreen({ embedded = false }: { embedded?: boolea
     if (uploadingAvatar) return;
     setError(null);
     try {
+      // Request before any error UI — matches App Review camera/photos guidance.
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!perm.granted) {
-        setError('Photo library access is needed to set a profile picture.');
+        setError(
+          perm.canAskAgain === false
+            ? 'Photo library access is off. Enable Photos for ProteinQuest in Settings.'
+            : 'Photo library access is needed to set a profile picture.',
+        );
         return;
       }
       const result = await ImagePicker.launchImageLibraryAsync({

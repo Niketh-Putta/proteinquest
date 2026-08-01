@@ -39,7 +39,7 @@ if (!versionArg) {
 
 const whatsNew =
   whatsNewArg ??
-  'Fixes free-scan counting and paywall routing, clearer safe-area layout, and an in-app update prompt when a newer store build is available.';
+  'Fixes camera permission handling so Scan requests access before showing any camera error, plus meal-edit and scan reliability improvements.';
 
 function errDetail(json) {
   const e = json?.errors?.[0];
