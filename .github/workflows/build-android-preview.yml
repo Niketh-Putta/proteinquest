@@ -8,6 +8,9 @@ on:
     paths:
       - 'src/app/paywall.tsx'
       - 'src/app/settings.tsx'
+      - 'src/app/scan-ingredient.tsx'
+      - 'src/app/scan.tsx'
+      - 'src/app/meal/**'
       - 'src/lib/payments.ts'
       - 'src/lib/revenuecat.ts'
       - 'app.json'

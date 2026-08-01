@@ -623,8 +623,8 @@ export default function MealDetailScreen() {
               <Pressable
                 onPress={() => {
                   dismissMealKeyboard();
-                  Haptics.selectionAsync().catch(() => {});
                   router.push('/scan-ingredient' as never);
+                  Haptics.selectionAsync().catch(() => {});
                 }}
                 style={({ pressed }) => [
                   styles.addIngredientRow,

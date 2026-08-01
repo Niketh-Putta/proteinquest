@@ -2256,8 +2256,9 @@ export default function ScanScreen() {
             <Pressable
               onPress={() => {
                 dismissMealKeyboard();
-                Haptics.selectionAsync().catch(() => {});
+                // Navigate first so the page opens immediately; catalog paints skeleton then loads.
                 router.push('/scan-ingredient' as never);
+                Haptics.selectionAsync().catch(() => {});
               }}
               style={({ pressed }) => [
                 styles.addIngredientRow,

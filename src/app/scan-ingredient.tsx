@@ -1,6 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
-import React, { useCallback, useDeferredValue, useEffect, useMemo, useState, startTransition } from 'react';
+import React, {
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useState,
+  startTransition,
+} from 'react';
 import {
   Platform,
   Pressable,
@@ -15,22 +22,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { GlassPanel } from '@/components/GlassPanel';
 import { PageCanvas } from '@/components/PageCanvas';
-import {
-  allCatalogFoods,
-  commonCatalogFoods,
-  type CatalogFood,
-  filterRecentCatalogFoods,
-  loadRecentFoods,
-  pushRecentFood,
-  refreshRemoteFoodCatalog,
-  searchCatalogExact,
-  searchCatalogSimilar,
-} from '@/lib/food-catalog';
+import type { CatalogFood } from '@/lib/food-catalog';
 import { useContentColumn } from '@/lib/layout';
 import { colors, fonts, layout, pressableWeb, radius, spacing, textInputWeb } from '@/theme';
 
-function openAdjust(food: CatalogFood) {
-  void pushRecentFood(food);
+type FoodCatalogApi = typeof import('@/lib/food-catalog');
+
+function openAdjust(api: FoodCatalogApi, food: CatalogFood) {
+  void api.pushRecentFood(food);
   const q = new URLSearchParams({
     index: '-1',
     name: food.name,
@@ -57,14 +56,16 @@ function FoodRow({
   food,
   icon,
   isLast,
+  onPress,
 }: {
   food: CatalogFood;
   icon: keyof typeof Ionicons.glyphMap;
   isLast: boolean;
+  onPress: () => void;
 }) {
   return (
     <Pressable
-      onPress={() => openAdjust(food)}
+      onPress={onPress}
       style={({ pressed }) => [
         styles.foodRow,
         !isLast && styles.foodRowBorder,
@@ -84,6 +85,29 @@ function FoodRow({
   );
 }
 
+function SkeletonRow({ isLast }: { isLast: boolean }) {
+  return (
+    <View style={[styles.foodRow, !isLast && styles.foodRowBorder]}>
+      <View style={[styles.foodIcon, styles.skeletonBlock]} />
+      <View style={[styles.skeletonLine, { flex: 1 }]} />
+      <View style={[styles.skeletonBlock, { width: 16, height: 16, borderRadius: 4 }]} />
+    </View>
+  );
+}
+
+function CatalogSkeleton() {
+  return (
+    <Animated.View entering={FadeIn.duration(180)}>
+      <SectionLabel label="COMMON" />
+      <GlassPanel style={styles.listCard}>
+        {Array.from({ length: 8 }, (_, i) => (
+          <SkeletonRow key={`sk-${i}`} isLast={i === 7} />
+        ))}
+      </GlassPanel>
+    </Animated.View>
+  );
+}
+
 const BROWSE_PAGE = 100;
 
 export default function ScanIngredientScreen() {
@@ -93,21 +117,52 @@ export default function ScanIngredientScreen() {
   const [recent, setRecent] = useState<CatalogFood[]>([]);
   const [browseLimit, setBrowseLimit] = useState(BROWSE_PAGE);
   const [catalogTick, setCatalogTick] = useState(0);
+  const [api, setApi] = useState<FoodCatalogApi | null>(null);
+  const catalogReady = api != null;
+
+  // Paint the shell immediately; load the heavy food catalog after first frame.
+  useEffect(() => {
+    let alive = true;
+    const boot = () => {
+      void import('@/lib/food-catalog').then((mod) => {
+        if (!alive) return;
+        setApi(mod);
+        void mod.loadRecentFoods().then((list) => {
+          if (alive) setRecent(list);
+        });
+        void mod.refreshRemoteFoodCatalog().then(() => {
+          if (alive) setCatalogTick((n) => n + 1);
+        });
+      });
+    };
+    let raf = 0;
+    let timeout: ReturnType<typeof setTimeout> | null = null;
+    if (typeof requestAnimationFrame === 'function') {
+      raf = requestAnimationFrame(() => boot());
+    } else {
+      timeout = setTimeout(boot, 0);
+    }
+    return () => {
+      alive = false;
+      if (raf) cancelAnimationFrame(raf);
+      if (timeout) clearTimeout(timeout);
+    };
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
+      if (!api) return;
       let alive = true;
-      void loadRecentFoods().then((list) => {
+      void api.loadRecentFoods().then((list) => {
         if (alive) setRecent(list);
       });
-      // Pull remote catalogue (no app rebuild needed when you add rows in Supabase).
-      void refreshRemoteFoodCatalog().then(() => {
+      void api.refreshRemoteFoodCatalog().then(() => {
         if (alive) setCatalogTick((n) => n + 1);
       });
       return () => {
         alive = false;
       };
-    }, []),
+    }, [api]),
   );
 
   const trimmedQuery = query.trim();
@@ -115,21 +170,20 @@ export default function ScanIngredientScreen() {
   const searching = trimmedQuery.length > 0;
   const searchPending = searching && deferredTrimmed !== trimmedQuery;
 
-  /** Recent list is tiny — filter on every keystroke for instant feedback. */
   const recentMatches = useMemo(
-    () => (searching ? filterRecentCatalogFoods(recent, trimmedQuery) : []),
-    [searching, recent, trimmedQuery],
+    () => (api && searching ? api.filterRecentCatalogFoods(recent, trimmedQuery) : []),
+    [api, searching, recent, trimmedQuery],
   );
 
   const exactResults = useMemo(() => {
-    if (!deferredTrimmed) return [];
-    return searchCatalogExact(deferredTrimmed);
-  }, [deferredTrimmed, catalogTick]);
+    if (!api || !deferredTrimmed) return [];
+    return api.searchCatalogExact(deferredTrimmed);
+  }, [api, deferredTrimmed, catalogTick]);
 
   const [similarResults, setSimilarResults] = useState<CatalogFood[]>([]);
 
   useEffect(() => {
-    if (!deferredTrimmed) {
+    if (!api || !deferredTrimmed) {
       setSimilarResults([]);
       return;
     }
@@ -138,33 +192,36 @@ export default function ScanIngredientScreen() {
       if (cancelled) return;
       startTransition(() => {
         if (cancelled) return;
-        setSimilarResults(searchCatalogSimilar(deferredTrimmed, exactResults));
+        setSimilarResults(api.searchCatalogSimilar(deferredTrimmed, exactResults));
       });
     }, 0);
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [deferredTrimmed, exactResults, catalogTick]);
+  }, [api, deferredTrimmed, exactResults, catalogTick]);
 
-  const commonBase = useMemo(() => commonCatalogFoods(), [catalogTick]);
+  const commonBase = useMemo(
+    () => (api ? api.commonCatalogFoods() : []),
+    [api, catalogTick],
+  );
 
   const common = useMemo(() => {
     const recentNames = new Set(recent.map((r) => r.name.toLowerCase()));
     return commonBase.filter((f) => !recentNames.has(f.name.toLowerCase()));
   }, [recent, commonBase]);
 
-  /** Full catalogue browse under COMMON so users can keep scrolling. Skip while searching. */
   const browseMore = useMemo(() => {
-    if (searching) return [] as CatalogFood[];
+    if (!api || searching) return [] as CatalogFood[];
     const skip = new Set([
       ...recent.map((r) => r.name.toLowerCase()),
       ...commonBase.map((f) => f.name.toLowerCase()),
     ]);
-    return allCatalogFoods()
+    return api
+      .allCatalogFoods()
       .filter((f) => !skip.has(f.name.toLowerCase()))
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [searching, recent, commonBase, catalogTick]);
+  }, [api, searching, recent, commonBase, catalogTick]);
 
   const browseVisible = browseMore.slice(0, browseLimit);
   const browseRemaining = Math.max(0, browseMore.length - browseLimit);
@@ -206,148 +263,161 @@ export default function ScanIngredientScreen() {
             contentContainerStyle={styles.scroll}
             scrollEventThrottle={160}
             onScroll={(e) => {
-              if (searching || browseRemaining <= 0) return;
+              if (!catalogReady || searching || browseRemaining <= 0) return;
               const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
               if (layoutMeasurement.height + contentOffset.y >= contentSize.height - 480) {
                 loadMoreBrowse();
               }
             }}>
-          <Animated.View entering={FadeIn.duration(240)} style={styles.searchWrap}>
-            <View style={styles.searchIcon} pointerEvents="none">
-              <Ionicons name="search" size={18} color={colors.textTertiary} />
-            </View>
-            <TextInput
-              style={[styles.searchInput, textInputWeb]}
-              value={query}
-              onChangeText={setQuery}
-              placeholder="Search food or ingredient..."
-              placeholderTextColor={colors.textTertiary}
-              autoCapitalize="sentences"
-              autoCorrect
-              autoFocus
-              returnKeyType="search"
-              clearButtonMode="while-editing"
-              accessibilityLabel="Search food"
-            />
-          </Animated.View>
-
-          {searching ? (
-            <Animated.View entering={FadeInDown.duration(280)} style={styles.searchResults}>
-              {searchPending && exactResults.length === 0 && similarResults.length === 0 ? (
-                <Text style={styles.searchPending}>Searching…</Text>
-              ) : null}
-              {recentMatches.length > 0 ? (
-                <>
-                  <SectionLabel label="RECENT" />
-                  <GlassPanel style={styles.listCard}>
-                    {recentMatches.map((food, i) => (
-                      <FoodRow
-                        key={`rm-${food.name}`}
-                        food={food}
-                        icon="time-outline"
-                        isLast={i === recentMatches.length - 1}
-                      />
-                    ))}
-                  </GlassPanel>
-                </>
-              ) : null}
-              {exactResults.length === 0 &&
-              similarResults.length === 0 &&
-              recentMatches.length === 0 &&
-              !searchPending ? (
-                <>
-                  <SectionLabel label="RESULTS" />
-                  <GlassPanel style={styles.listCard}>
-                    <Text style={styles.empty}>No matches. Try another name.</Text>
-                  </GlassPanel>
-                </>
-              ) : (
-                <>
-                  {exactResults.length > 0 ? (
-                    <>
-                      <SectionLabel label="RESULTS" />
-                      <GlassPanel style={styles.listCard}>
-                        {exactResults.map((food, i) => (
-                          <FoodRow
-                            key={`e-${food.name}`}
-                            food={food}
-                            icon="nutrition-outline"
-                            isLast={i === exactResults.length - 1}
-                          />
-                        ))}
-                      </GlassPanel>
-                    </>
-                  ) : null}
-                  {similarResults.length > 0 ? (
-                    <>
-                      <SectionLabel label="SIMILAR" />
-                      <GlassPanel style={styles.listCard}>
-                        {similarResults.map((food, i) => (
-                          <FoodRow
-                            key={`s-${food.name}`}
-                            food={food}
-                            icon="sparkles-outline"
-                            isLast={i === similarResults.length - 1}
-                          />
-                        ))}
-                      </GlassPanel>
-                    </>
-                  ) : null}
-                </>
-              )}
+            <Animated.View entering={FadeIn.duration(180)} style={styles.searchWrap}>
+              <View style={styles.searchIcon} pointerEvents="none">
+                <Ionicons name="search" size={18} color={colors.textTertiary} />
+              </View>
+              <TextInput
+                style={[styles.searchInput, textInputWeb]}
+                value={query}
+                onChangeText={setQuery}
+                placeholder="Search food or ingredient..."
+                placeholderTextColor={colors.textTertiary}
+                autoCapitalize="sentences"
+                autoCorrect
+                autoFocus
+                editable={catalogReady}
+                returnKeyType="search"
+                clearButtonMode="while-editing"
+                accessibilityLabel="Search food"
+              />
             </Animated.View>
-          ) : (
-            <>
-              {recent.length > 0 ? (
-                <Animated.View entering={FadeInDown.delay(40).duration(280)}>
-                  <SectionLabel label="RECENT" />
+
+            {!catalogReady ? (
+              <CatalogSkeleton />
+            ) : searching ? (
+              <Animated.View entering={FadeInDown.duration(280)} style={styles.searchResults}>
+                {searchPending && exactResults.length === 0 && similarResults.length === 0 ? (
+                  <Text style={styles.searchPending}>Searching…</Text>
+                ) : null}
+                {recentMatches.length > 0 ? (
+                  <>
+                    <SectionLabel label="RECENT" />
+                    <GlassPanel style={styles.listCard}>
+                      {recentMatches.map((food, i) => (
+                        <FoodRow
+                          key={`rm-${food.name}`}
+                          food={food}
+                          icon="time-outline"
+                          isLast={i === recentMatches.length - 1}
+                          onPress={() => api && openAdjust(api, food)}
+                        />
+                      ))}
+                    </GlassPanel>
+                  </>
+                ) : null}
+                {exactResults.length === 0 &&
+                similarResults.length === 0 &&
+                recentMatches.length === 0 &&
+                !searchPending ? (
+                  <>
+                    <SectionLabel label="RESULTS" />
+                    <GlassPanel style={styles.listCard}>
+                      <Text style={styles.empty}>No matches. Try another name.</Text>
+                    </GlassPanel>
+                  </>
+                ) : (
+                  <>
+                    {exactResults.length > 0 ? (
+                      <>
+                        <SectionLabel label="RESULTS" />
+                        <GlassPanel style={styles.listCard}>
+                          {exactResults.map((food, i) => (
+                            <FoodRow
+                              key={`e-${food.name}`}
+                              food={food}
+                              icon="nutrition-outline"
+                              isLast={i === exactResults.length - 1}
+                              onPress={() => api && openAdjust(api, food)}
+                            />
+                          ))}
+                        </GlassPanel>
+                      </>
+                    ) : null}
+                    {similarResults.length > 0 ? (
+                      <>
+                        <SectionLabel label="SIMILAR" />
+                        <GlassPanel style={styles.listCard}>
+                          {similarResults.map((food, i) => (
+                            <FoodRow
+                              key={`s-${food.name}`}
+                              food={food}
+                              icon="sparkles-outline"
+                              isLast={i === similarResults.length - 1}
+                              onPress={() => api && openAdjust(api, food)}
+                            />
+                          ))}
+                        </GlassPanel>
+                      </>
+                    ) : null}
+                  </>
+                )}
+              </Animated.View>
+            ) : (
+              <>
+                {recent.length > 0 ? (
+                  <Animated.View entering={FadeInDown.delay(40).duration(280)}>
+                    <SectionLabel label="RECENT" />
+                    <GlassPanel style={styles.listCard}>
+                      {recent.map((food, i) => (
+                        <FoodRow
+                          key={`r-${food.name}`}
+                          food={food}
+                          icon="time-outline"
+                          isLast={i === recent.length - 1}
+                          onPress={() => api && openAdjust(api, food)}
+                        />
+                      ))}
+                    </GlassPanel>
+                  </Animated.View>
+                ) : null}
+
+                <Animated.View entering={FadeInDown.delay(80).duration(280)}>
+                  <SectionLabel label="COMMON" />
                   <GlassPanel style={styles.listCard}>
-                    {recent.map((food, i) => (
+                    {common.map((food, i) => (
                       <FoodRow
-                        key={`r-${food.name}`}
+                        key={`c-${food.name}`}
                         food={food}
-                        icon="time-outline"
-                        isLast={i === recent.length - 1}
+                        icon="sparkles"
+                        isLast={i === common.length - 1 && browseVisible.length === 0}
+                        onPress={() => api && openAdjust(api, food)}
                       />
                     ))}
+                    {browseVisible.map((food, i) => (
+                      <FoodRow
+                        key={`b-${food.name}`}
+                        food={food}
+                        icon="nutrition-outline"
+                        isLast={i === browseVisible.length - 1 && browseRemaining === 0}
+                        onPress={() => api && openAdjust(api, food)}
+                      />
+                    ))}
+                    {browseRemaining > 0 ? (
+                      <Pressable
+                        onPress={loadMoreBrowse}
+                        style={({ pressed }) => [
+                          styles.loadMore,
+                          pressableWeb,
+                          pressed && { opacity: 0.8 },
+                        ]}
+                        accessibilityRole="button"
+                        accessibilityLabel="Load more foods">
+                        <Text style={styles.loadMoreText}>
+                          Scroll for more · {browseRemaining.toLocaleString()} left
+                        </Text>
+                      </Pressable>
+                    ) : null}
                   </GlassPanel>
                 </Animated.View>
-              ) : null}
-
-              <Animated.View entering={FadeInDown.delay(80).duration(280)}>
-                <SectionLabel label="COMMON" />
-                <GlassPanel style={styles.listCard}>
-                  {common.map((food, i) => (
-                    <FoodRow
-                      key={`c-${food.name}`}
-                      food={food}
-                      icon="sparkles"
-                      isLast={i === common.length - 1 && browseVisible.length === 0}
-                    />
-                  ))}
-                  {browseVisible.map((food, i) => (
-                    <FoodRow
-                      key={`b-${food.name}`}
-                      food={food}
-                      icon="nutrition-outline"
-                      isLast={i === browseVisible.length - 1 && browseRemaining === 0}
-                    />
-                  ))}
-                  {browseRemaining > 0 ? (
-                    <Pressable
-                      onPress={loadMoreBrowse}
-                      style={({ pressed }) => [styles.loadMore, pressableWeb, pressed && { opacity: 0.8 }]}
-                      accessibilityRole="button"
-                      accessibilityLabel="Load more foods">
-                      <Text style={styles.loadMoreText}>
-                        Scroll for more · {browseRemaining.toLocaleString()} left
-                      </Text>
-                    </Pressable>
-                  ) : null}
-                </GlassPanel>
-              </Animated.View>
-            </>
-          )}
+              </>
+            )}
           </ScrollView>
         </View>
       </SafeAreaView>
@@ -397,111 +467,79 @@ const styles = StyleSheet.create({
   },
   searchResults: {
     gap: spacing.md,
-    width: '100%',
+  },
+  searchPending: {
+    fontFamily: fonts.body,
+    fontSize: 13,
+    color: colors.textTertiary,
+    paddingHorizontal: spacing.xs,
   },
   searchWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-start',
-    width: '100%',
-    height: 52,
-    paddingHorizontal: spacing.md,
-    borderRadius: radius.md,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,138,61,0.35)',
-    overflow: 'hidden',
-  },
-  searchIcon: {
-    marginRight: 10,
-    width: 20,
-    height: 52,
-    alignItems: 'center',
+    position: 'relative',
     justifyContent: 'center',
   },
+  searchIcon: {
+    position: 'absolute',
+    left: spacing.md,
+    zIndex: 1,
+  },
   searchInput: {
-    flex: 1,
-    minWidth: 0,
-    alignSelf: 'stretch',
     fontFamily: fonts.body,
     fontSize: 16,
     color: colors.text,
-    paddingHorizontal: 0,
-    margin: 0,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+    borderRadius: radius.md,
+    paddingVertical: Platform.OS === 'ios' ? 14 : 12,
+    paddingLeft: 44,
+    paddingRight: spacing.md,
     // Match row height so placeholder/caret stay vertically centered (esp. web).
-    ...(Platform.OS === 'web'
-      ? ({
-          height: '100%',
-          lineHeight: 52,
-          paddingTop: 0,
-          paddingBottom: 0,
-          display: 'flex',
-          alignItems: 'center',
-        } as object)
-      : {
-          height: 52,
-          lineHeight: 52,
-          paddingVertical: 0,
-          textAlignVertical: 'center' as const,
-          ...(Platform.OS === 'android' ? { includeFontPadding: false } : null),
-        }),
-  },
-  searchPending: {
-    fontFamily: fonts.mono,
-    fontSize: 11,
-    letterSpacing: 1.2,
-    color: colors.textTertiary,
-    textAlign: 'center',
-    paddingVertical: 4,
+    minHeight: 48,
   },
   sectionLabelRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    marginBottom: 10,
-    marginTop: 4,
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
   },
   sectionRule: {
     flex: 1,
     height: StyleSheet.hairlineWidth,
-    backgroundColor: 'rgba(255,138,61,0.45)',
+    backgroundColor: 'rgba(255,255,255,0.12)',
   },
   sectionLabel: {
     fontFamily: fonts.mono,
     fontSize: 11,
-    letterSpacing: 2,
-    color: colors.textSecondary,
+    letterSpacing: 1.6,
+    color: colors.textTertiary,
   },
   listCard: {
-    width: '100%',
-    paddingVertical: 4,
-    paddingHorizontal: spacing.sm,
     overflow: 'hidden',
+    paddingVertical: 2,
   },
   foodRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
     paddingVertical: 14,
-    paddingHorizontal: spacing.sm,
   },
   foodRowBorder: {
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: 'rgba(255,255,255,0.08)',
   },
   foodIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 32,
+    height: 32,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,138,61,0.12)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,138,61,0.35)',
+    backgroundColor: 'rgba(255,255,255,0.06)',
   },
   foodName: {
     flex: 1,
-    fontFamily: fonts.displayMedium,
+    fontFamily: fonts.body,
     fontSize: 16,
     color: colors.text,
   },
@@ -509,17 +547,24 @@ const styles = StyleSheet.create({
     fontFamily: fonts.body,
     fontSize: 14,
     color: colors.textTertiary,
-    padding: spacing.lg,
-    textAlign: 'center',
+    padding: spacing.md,
   },
   loadMore: {
-    paddingVertical: 16,
+    paddingVertical: 14,
     alignItems: 'center',
   },
   loadMoreText: {
     fontFamily: fonts.mono,
     fontSize: 11,
-    letterSpacing: 1.2,
+    letterSpacing: 0.6,
     color: colors.textTertiary,
+  },
+  skeletonBlock: {
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  skeletonLine: {
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: 'rgba(255,255,255,0.08)',
   },
 });
