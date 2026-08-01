@@ -162,7 +162,7 @@ async function main() {
 
   let failed = 0;
   for (const t of TARGETS) {
-    const get = await api(token, 'GET', `/monetization/subscriptions/${t.productId}`);
+    const get = await api(token, 'GET', `/subscriptions/${encodeURIComponent(t.productId)}`);
     if (!get.ok) {
       console.error(`✗ GET ${t.productId}`, get.status, JSON.stringify(get.json));
       failed += 1;
@@ -207,7 +207,7 @@ async function main() {
     const patch = await api(
       token,
       'PATCH',
-      `/monetization/subscriptions/${encodeURIComponent(t.productId)}?${qs}`,
+      `/subscriptions/${encodeURIComponent(t.productId)}?${qs}`,
       { packageName: PACKAGE, productId: t.productId, basePlans: plans },
     );
     if (patch.ok) {

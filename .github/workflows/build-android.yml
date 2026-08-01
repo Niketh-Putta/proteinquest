@@ -122,10 +122,12 @@ jobs:
           fi
           export ASC_ISSUER_ID="${ASC_ISSUER_ID:-75ae36fa-911c-462c-818e-f1bcc4222c24}"
           export EXPO_ASC_ISSUER_ID="${EXPO_ASC_ISSUER_ID:-75ae36fa-911c-462c-818e-f1bcc4222c24}"
+          ec=0
           echo "== Google Play =="
-          node scripts/play-set-subscription-prices.mjs
+          node scripts/play-set-subscription-prices.mjs || ec=1
           echo "== App Store Connect =="
-          node scripts/asc-set-subscription-prices.mjs
+          node scripts/asc-set-subscription-prices.mjs || ec=1
+          exit "$ec"
 
       - name: Sync EAS production env vars
         if: env.PRICES_ONLY != 'true'
