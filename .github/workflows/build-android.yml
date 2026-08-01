@@ -4,7 +4,8 @@ name: Build and submit Android
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    # Feature branch included so production Play deploys can ship before merge.
+    branches: [main, cursor/live-paywall-prices-4928]
     paths:
       - 'src/**'
       - 'app.json'
@@ -13,6 +14,7 @@ on:
       - 'package-lock.json'
       - 'scripts/download-eas-aab.mjs'
       - 'scripts/upload-aab-to-play.mjs'
+      - 'scripts/patch-eas-project.mjs'
       - '.github/workflows/build-android.yml'
 
 concurrency:
@@ -35,14 +37,17 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Verify EXPO_TOKEN is configured
+      - name: Verify Expo token for Play-signed build
         env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_TOKEN_NIKETHPUTTA: ${{ secrets.EXPO_TOKEN_NIKETHPUTTA }}
+          EXPO_TOKEN_FALLBACK: ${{ secrets.EXPO_TOKEN }}
         run: |
+          export EXPO_TOKEN="${EXPO_TOKEN_NIKETHPUTTA:-$EXPO_TOKEN_FALLBACK}"
           if [ -z "$EXPO_TOKEN" ]; then
-            echo "::error::Missing GitHub secret EXPO_TOKEN. Add it at repo Settings → Secrets and variables → Actions, then re-run this workflow."
+            echo "::error::Missing EXPO_TOKEN_NIKETHPUTTA (or EXPO_TOKEN). Needed for Play-signed Android build."
             exit 1
           fi
+          npx eas-cli whoami
 
       - name: Configure Google Play service account
         id: play_creds
@@ -61,12 +66,14 @@ jobs:
 
       - name: Sync EAS production env vars
         env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_TOKEN_NIKETHPUTTA: ${{ secrets.EXPO_TOKEN_NIKETHPUTTA }}
+          EXPO_TOKEN_FALLBACK: ${{ secrets.EXPO_TOKEN }}
           EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
           EXPO_PUBLIC_SUPABASE_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_KEY }}
           EXPO_PUBLIC_REVENUECAT_IOS_KEY: ${{ secrets.EXPO_PUBLIC_REVENUECAT_IOS_KEY }}
           EXPO_PUBLIC_REVENUECAT_ANDROID_KEY: ${{ secrets.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY }}
         run: |
+          export EXPO_TOKEN="${EXPO_TOKEN_NIKETHPUTTA:-$EXPO_TOKEN_FALLBACK}"
           for name in EXPO_PUBLIC_SUPABASE_URL EXPO_PUBLIC_SUPABASE_KEY EXPO_PUBLIC_REVENUECAT_IOS_KEY EXPO_PUBLIC_REVENUECAT_ANDROID_KEY; do
             val="${!name:-}"
             if [ -n "$val" ]; then
@@ -78,15 +85,17 @@ jobs:
         id: eas_build
         env:
           EAS_BUILD_NO_EXPO_GO_WARNING: 'true'
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN_NIKETHPUTTA }}
+          EXPO_TOKEN_NIKETHPUTTA: ${{ secrets.EXPO_TOKEN_NIKETHPUTTA }}
+          EXPO_TOKEN_FALLBACK: ${{ secrets.EXPO_TOKEN }}
           EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
           EXPO_PUBLIC_SUPABASE_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_KEY }}
           EXPO_PUBLIC_REVENUECAT_IOS_KEY: ${{ secrets.EXPO_PUBLIC_REVENUECAT_IOS_KEY }}
           EXPO_PUBLIC_REVENUECAT_ANDROID_KEY: ${{ secrets.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY }}
         run: |
           set -euo pipefail
+          export EXPO_TOKEN="${EXPO_TOKEN_NIKETHPUTTA:-$EXPO_TOKEN_FALLBACK}"
           if [ -z "$EXPO_TOKEN" ]; then
-            echo "::error::Missing EXPO_TOKEN_NIKETHPUTTA (nikethputta account with Play upload keystore Rr3MWJDvmn)"
+            echo "::error::Missing EXPO_TOKEN_NIKETHPUTTA (nikethputta account with Play upload keystore)"
             exit 1
           fi
           mkdir -p store
