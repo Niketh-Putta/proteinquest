@@ -80,7 +80,12 @@ function goBack() {
 function formatPrice(price: string): { amount: string; period: string } {
   const m = price.match(/^(.*?)(\s*\/?\s*(wk|yr|mo|week|year|month).*)$/i);
   if (!m) return { amount: price, period: '' };
-  const period = m[2].replace(/^\s*\/?\s*/, '/').replace(/\s+/g, '');
+  const unit = (m[3] || '').toLowerCase();
+  // Annual plan is framed as monthly value: show "/month" in the UI.
+  const period =
+    unit === 'mo' || unit === 'month'
+      ? '/month'
+      : m[2].replace(/^\s*\/?\s*/, '/').replace(/\s+/g, '');
   return { amount: m[1].trim(), period: period.startsWith('/') ? period : `/${period}` };
 }
 
