@@ -44,8 +44,14 @@ export async function pickLibraryImage(): Promise<PickedImage | null> {
     return pickLibraryImageWeb();
   }
 
+  // Always request first — never surface a denial before the OS prompt.
   const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
   if (!perm.granted) {
+    if (perm.canAskAgain === false) {
+      throw new Error(
+        'Photo library access is off. Enable Photos for ProteinQuest in Settings, or try again.',
+      );
+    }
     throw new Error('Photo library access is needed to upload a meal photo.');
   }
 

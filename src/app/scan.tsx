@@ -5,8 +5,10 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+    ActivityIndicator,
     Image,
     Keyboard,
+    Linking,
     Platform,
     Pressable,
     ScrollView,
@@ -78,6 +80,11 @@ import {
     remainingFreeScans,
 } from '@/lib/paywall-gate';
 import { pickLibraryImage } from '@/lib/pick-library-image';
+import {
+  resolveCameraPermissionUi,
+  shouldAutoRequestCameraPermission,
+  shouldRequestCameraPermission,
+} from '@/lib/camera-permission';
 import { todayISODate } from '@/lib/protein';
 import { getRetention, markCareDay, rollLootDrop } from '@/lib/retention';
 import {
@@ -662,7 +669,9 @@ export default function ScanScreen() {
       </Text>
     </View>
   );
-  const [permission, requestPermission] = useCameraPermissions();
+  const [permission, requestPermission, getPermission] = useCameraPermissions();
+  const [requestingCameraPermission, setRequestingCameraPermission] = useState(false);
+  const cameraPermissionRequestRef = useRef<Promise<unknown> | null>(null);
   const cameraRef = useRef<CameraView>(null);
   const cameraWrapRef = useRef<View>(null);
   /** Synchronous lock so rapid taps can't launch parallel capture/library flows. */
@@ -738,12 +747,41 @@ export default function ScanScreen() {
     );
   }, [flash]);
 
+  const ensureCameraPermission = useCallback(
+    async (opts?: { force?: boolean }) => {
+      if (demoAutoScan) return;
+      // Refresh status first so we never show "denied" before a real OS answer.
+      const current = (getPermission ? await getPermission() : null) ?? permission;
+      if (!current) return;
+      if (opts?.force) {
+        if (!shouldRequestCameraPermission(current)) return;
+      } else if (!shouldAutoRequestCameraPermission(current)) {
+        return;
+      }
+      if (cameraPermissionRequestRef.current) {
+        await cameraPermissionRequestRef.current;
+        return;
+      }
+      setRequestingCameraPermission(true);
+      const pending = requestPermission().finally(() => {
+        cameraPermissionRequestRef.current = null;
+        setRequestingCameraPermission(false);
+      });
+      cameraPermissionRequestRef.current = pending;
+      await pending;
+    },
+    [demoAutoScan, getPermission, permission, requestPermission],
+  );
+
   useEffect(() => {
-    if (demoAutoScan) return;
-    if (!permission?.granted && permission?.canAskAgain !== false) {
-      requestPermission();
-    }
-  }, [demoAutoScan, permission, requestPermission]);
+    void ensureCameraPermission();
+  }, [ensureCameraPermission]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void ensureCameraPermission();
+    }, [ensureCameraPermission]),
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -1296,7 +1334,11 @@ export default function ScanScreen() {
     }
   }
 
-  const hasCameraPermission = permission?.granted;
+  const cameraPermissionUi = resolveCameraPermissionUi({
+    permission,
+    requesting: requestingCameraPermission,
+  });
+  const hasCameraPermission = cameraPermissionUi === 'granted';
   const cameraReady = hasCameraPermission && cameraInitialized;
 
   // Web: expo-camera CSS-mirrors front/desktop preview (scaleX(-1)) even when
@@ -1528,23 +1570,46 @@ export default function ScanScreen() {
                 })();
               }}
             />
+          ) : cameraPermissionUi === 'loading' || cameraPermissionUi === 'requesting' ? (
+            <View style={[styles.camera, styles.cameraDenied]} accessibilityLabel="Requesting camera access">
+              <ActivityIndicator size="large" color={colors.textSecondary} />
+              <Text style={[styles.deniedTitle, { marginTop: spacing.md }]}>
+                {cameraPermissionUi === 'requesting' ? 'Requesting camera access' : 'Preparing camera'}
+              </Text>
+              <Text style={styles.deniedText}>
+                ProteinQuest needs the camera to photograph your meal. You can also upload from your library.
+              </Text>
+            </View>
           ) : (
             <View style={[styles.camera, styles.cameraDenied]}>
-              <Ionicons name="videocam-off-outline" size={32} color={colors.textTertiary} />
-              <Text style={styles.deniedTitle}>Camera unavailable</Text>
-              <Text style={styles.deniedText}>
-                {permission?.canAskAgain === false
-                  ? 'Camera access was denied. Enable it in settings, or upload a photo instead.'
-                  : 'Grant camera access to scan your meal, or upload from your library.'}
+              <Ionicons name="videocam-outline" size={32} color={colors.textTertiary} />
+              <Text style={styles.deniedTitle}>
+                {cameraPermissionUi === 'blocked' ? 'Camera access is off' : 'Allow camera access'}
               </Text>
-              {permission?.canAskAgain !== false ? (
+              <Text style={styles.deniedText}>
+                {cameraPermissionUi === 'blocked'
+                  ? 'Enable Camera for ProteinQuest in Settings, or upload a photo from your library instead.'
+                  : 'ProteinQuest uses the camera to photograph meals and estimate protein. You can also upload from your library.'}
+              </Text>
+              {cameraPermissionUi === 'blocked' ? (
                 <Button
-                  title="Allow camera"
+                  title="Open Settings"
                   variant="secondary"
-                  onPress={requestPermission}
+                  onPress={() => {
+                    void Linking.openSettings();
+                  }}
                   style={{ marginTop: spacing.lg, alignSelf: 'center', minWidth: 180 }}
                 />
-              ) : null}
+              ) : (
+                <Button
+                  title="Continue"
+                  variant="secondary"
+                  onPress={() => {
+                    void ensureCameraPermission({ force: true });
+                  }}
+                  style={{ marginTop: spacing.lg, alignSelf: 'center', minWidth: 180 }}
+                />
+              )}
             </View>
           )}
 
