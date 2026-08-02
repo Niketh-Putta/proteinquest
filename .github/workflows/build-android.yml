@@ -74,7 +74,7 @@ jobs:
             fi
           done
 
-      - name: Build Android AAB (local + Play upload key via nikethputta EAS project)
+      - name: Build Android AAB on EAS cloud (avoids runner disk full)
         id: eas_build
         env:
           EAS_BUILD_NO_EXPO_GO_WARNING: 'true'
@@ -89,7 +89,6 @@ jobs:
             echo "::error::Missing EXPO_TOKEN_NIKETHPUTTA (nikethputta account with Play upload keystore Rr3MWJDvmn)"
             exit 1
           fi
-          mkdir -p store
           node scripts/patch-eas-project.mjs play
           for name in EXPO_PUBLIC_SUPABASE_URL EXPO_PUBLIC_SUPABASE_KEY EXPO_PUBLIC_REVENUECAT_IOS_KEY EXPO_PUBLIC_REVENUECAT_ANDROID_KEY; do
             val="${!name:-}"
@@ -98,21 +97,19 @@ jobs:
             fi
           done
           npx eas-cli whoami
-          npx eas-cli build --platform android --profile production --local --non-interactive --output store/proteinquest.aab
+          npx eas-cli build --platform android --profile production --non-interactive --wait
+          BUILD_ID="$(npx eas-cli build:list --platform android --limit 1 --json --non-interactive --status finished | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{const j=JSON.parse(s); console.log(j[0]?.id||"")}')"
+          echo "build_id=${BUILD_ID}" >> "$GITHUB_OUTPUT"
+          echo "EAS build finished: ${BUILD_ID}"
           node scripts/patch-eas-project.mjs restore
-          ls -lh store/proteinquest.aab
-          echo "build_id=play-signed-$(date +%s)" >> "$GITHUB_OUTPUT"
-
-      - name: Upload AAB artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: proteinquest-aab-${{ steps.eas_build.outputs.build_id }}
-          path: store/proteinquest.aab
-          retention-days: 30
 
       - name: Submit to Play production
         if: steps.play_creds.outputs.present == 'true'
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN_NIKETHPUTTA }}
         run: |
-          node scripts/upload-aab-to-play.mjs --track=production
+          set -euo pipefail
+          node scripts/patch-eas-project.mjs play
+          # service account written earlier for upload path; also used by eas submit
+          npx eas-cli submit --platform android --latest --profile production --non-interactive
+          node scripts/patch-eas-project.mjs restore
