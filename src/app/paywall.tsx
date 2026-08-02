@@ -16,6 +16,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { GlassPanel } from '@/components/GlassPanel';
+import { SkeletonCards } from '@/components/LoadingSkeleton';
 import { trackEvent } from '@/lib/analytics';
 import { APP_STORE_URL, PLAY_STORE_URL } from '@/lib/app-update';
 import { useContentColumn, useLayout } from '@/lib/layout';
@@ -79,7 +80,12 @@ function goBack() {
 function formatPrice(price: string): { amount: string; period: string } {
   const m = price.match(/^(.*?)(\s*\/?\s*(wk|yr|mo|week|year|month).*)$/i);
   if (!m) return { amount: price, period: '' };
-  const period = m[2].replace(/^\s*\/?\s*/, '/').replace(/\s+/g, '');
+  const unit = (m[3] || '').toLowerCase();
+  // Annual plan is framed as monthly value: show "/month" in the UI.
+  const period =
+    unit === 'mo' || unit === 'month'
+      ? '/month'
+      : m[2].replace(/^\s*\/?\s*/, '/').replace(/\s+/g, '');
   return { amount: m[1].trim(), period: period.startsWith('/') ? period : `/${period}` };
 }
 
@@ -182,14 +188,12 @@ export default function Paywall() {
     }
   }
 
-  async function handleDismiss() {
+  function handleDismiss() {
     trackEvent('paywall_dismiss', {});
-    try {
-      await saveProfile({ paywall_dismissed: true });
-    } catch {
-      /* non-fatal */
-    }
     goBack();
+    void saveProfile({ paywall_dismissed: true }).catch(() => {
+      /* non-fatal */
+    });
   }
 
   function renderPlan(plan: PaymentPlan) {
@@ -326,11 +330,7 @@ export default function Paywall() {
 
           <Text style={styles.sectionLabel}>CHOOSE A PLAN</Text>
           <View style={styles.plans}>
-            {loadingPlans ? (
-              <Text style={styles.offeringsWarning}>Loading subscription plans…</Text>
-            ) : (
-              provider.plans.map(renderPlan)
-            )}
+            {loadingPlans ? <SkeletonCards count={2} /> : provider.plans.map(renderPlan)}
           </View>
 
           {offeringsDown ? (

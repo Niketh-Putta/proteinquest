@@ -181,6 +181,8 @@ export default function Onboarding() {
     }
     setSaving(true);
     setError(null);
+    // Enter forge theatre immediately; persist while the animation runs.
+    setStep('forging');
     try {
       const progress = emptyDragonProgress();
       await saveProfile({
@@ -202,8 +204,8 @@ export default function Onboarding() {
       trackEvent('onboarding_complete', { dragon_id: dragonId });
       // Meal reminders default ON (opt-out in Settings).
       void setMealRemindersEnabled(true).catch(() => {});
-      setStep('forging');
     } catch (e: any) {
+      setStep('goal');
       setError(e.message ?? 'Could not save. Please try again.');
     } finally {
       setSaving(false);

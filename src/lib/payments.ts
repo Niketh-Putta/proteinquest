@@ -44,8 +44,8 @@ export const PLANS: PaymentPlan[] = [
   {
     id: 'pro_yearly',
     title: 'Yearly',
-    price: '$4.99/mo',
-    caption: 'Billed as $59.99 annually',
+    price: '$5.00/mo',
+    caption: 'Billed as $59.99 Annually',
   },
 ];
 

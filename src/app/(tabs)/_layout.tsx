@@ -30,13 +30,18 @@ function ScanTabBar({ state, navigation }: TabBarProps) {
       router.push('/(tabs)/today');
       return;
     }
+    // Open scan immediately so the tap feels instant; quota may redirect to paywall after.
     if (profile && !hasUnlimitedScans(profile)) {
+      router.push('/scan');
       Promise.all([countTodayPhotoScans(), countLifetimeMeals()])
         .then(([used, life]) => {
-          if (shouldOpenPaywallFromScanTap(profile, used, life)) router.push('/paywall');
-          else router.push('/scan');
+          if (shouldOpenPaywallFromScanTap(profile, used, life)) {
+            router.replace('/paywall');
+          }
         })
-        .catch(() => router.push('/scan'));
+        .catch(() => {
+          /* stay on scan; scan screen rechecks */
+        });
       return;
     }
     router.push('/scan');

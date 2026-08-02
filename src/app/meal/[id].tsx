@@ -18,12 +18,15 @@ import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { GlassPanel } from '@/components/GlassPanel';
+import { SkeletonList, SkeletonMedia } from '@/components/LoadingSkeleton';
 import { ModalMotionLayer } from '@/components/ModalMotionLayer';
 import { MealPhotoPreview } from '@/components/MealPhotoPreview';
 import { PageCanvas } from '@/components/PageCanvas';
 import { fetchLogById, getFoodPhotoUrl, updateLog } from '@/lib/api';
 import { getLocalMealPhoto } from '@/lib/local-meal-photo';
 import { useContentColumn, useLayout } from '@/lib/layout';
+import { prefetchFoodCatalog } from '@/lib/food-catalog-prefetch';
+import { leaveThen, prefetchRoute } from '@/lib/navigate-responsive';
 import {
   CALORIE_OVERRIDE_BUFFER,
   PROTEIN_OVERRIDE_BUFFER_G,
@@ -133,6 +136,11 @@ export default function MealDetailScreen() {
   const [saveConfirmModalVisible, setSaveConfirmModalVisible] = useState(false);
 
   useEffect(() => {
+    prefetchRoute('/scan-ingredient' as never);
+    void prefetchFoodCatalog();
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
     async function load() {
       if (!id) {
@@ -160,13 +168,16 @@ export default function MealDetailScreen() {
         setAnchorCalories(calories);
         setProteinOverride(String(Math.round(protein)));
         setCalorieOverride(calories > 0 ? String(Math.round(calories)) : '');
+        if (!cancelled) setLoading(false);
+        // Paint meal chrome first; resolve photo after so the page feels instant.
         const uri =
           (await getFoodPhotoUrl(row.image_path)) ?? getLocalMealPhoto(row.id);
         if (!cancelled) setPhotoUri(uri);
       } catch {
-        if (!cancelled) setError('Could not load this meal');
-      } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setError('Could not load this meal');
+          setLoading(false);
+        }
       }
     }
     void load();
@@ -278,23 +289,19 @@ export default function MealDetailScreen() {
 
     setSaving(true);
     setError(null);
-    try {
-      await updateLog(log.id, {
+    setSaveConfirmOpen(false);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    // Leave immediately; persist after the transition so Save feels instant.
+    leaveThen(leave, () =>
+      updateLog(log.id, {
         foodName: foodName.trim() || 'Meal',
         proteinG,
         calories: calorieClamp.value,
         items,
-      });
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-      // Prefer back so Today stays mounted (keeps thumbs/dragon warm).
-      leave();
-    } catch (e) {
-      const msg =
-        e instanceof Error && e.message ? e.message : 'Could not save changes. Try again.';
-      setError(msg);
-    } finally {
-      setSaving(false);
-    }
+      }).catch((e) => {
+        if (__DEV__) console.warn('[meal] background save failed:', e);
+      })
+    );
   }
 
   const requestClose = useCallback(() => {
@@ -399,9 +406,22 @@ export default function MealDetailScreen() {
         ) : null}
 
         {loading ? (
-          <View style={styles.center}>
-            <ActivityIndicator color={colors.accent} />
-          </View>
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={[
+              styles.resultScroll,
+              column,
+              { paddingLeft: headerPadLeft, paddingRight: headerPadRight },
+            ]}>
+            <View
+              style={[
+                styles.resultImageWrap,
+                { maxWidth: Math.min(stageMaxWidth, isTablet || isDesktop ? 480 : 420) },
+              ]}>
+              <SkeletonMedia />
+            </View>
+            <SkeletonList rows={5} />
+          </ScrollView>
         ) : !log ? (
           <View style={styles.center}>
             <Text style={styles.emptyText}>Meal not found</Text>
@@ -622,9 +642,14 @@ export default function MealDetailScreen() {
 
               <Pressable
                 onPress={() => {
+                  prefetchRoute('/scan-ingredient' as never);
+                  router.push('/scan-ingredient' as never);
                   dismissMealKeyboard();
                   Haptics.selectionAsync().catch(() => {});
-                  router.push('/scan-ingredient' as never);
+                }}
+                onPressIn={() => {
+                  prefetchRoute('/scan-ingredient' as never);
+                  void prefetchFoodCatalog();
                 }}
                 style={({ pressed }) => [
                   styles.addIngredientRow,

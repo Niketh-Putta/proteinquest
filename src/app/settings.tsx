@@ -27,6 +27,7 @@ import { FeedToast } from '@/components/FeedToast';
 import { SubscriptionBillingInfo } from '@/components/SubscriptionBillingInfo';
 import { DragonEvolutionGallery } from '@/components/DragonEvolutionGallery';
 import { GoalEditor } from '@/components/GoalEditor';
+import { prefetchRoute } from '@/lib/navigate-responsive';
 import {
   DRAGONS,
   buildDragonNames,
@@ -259,12 +260,14 @@ export default function SettingsScreen({ embedded = false }: { embedded?: boolea
   async function handleSubmit(updates: Partial<Profile>) {
     setSaving(true);
     setError(null);
+    setSavedFlash(true);
+    // Leave immediately so save feels instant; persist in the background.
+    if (!embedded) goHome();
     try {
       await saveProfile(updates);
-      setSavedFlash(true);
-      setTimeout(goHome, 700);
     } catch (e: any) {
       setError(e.message ?? 'Could not save. Please try again.');
+      setSavedFlash(false);
     } finally {
       setSaving(false);
     }
@@ -372,7 +375,10 @@ export default function SettingsScreen({ embedded = false }: { embedded?: boolea
                 <Ionicons name="checkmark-circle" size={20} color={colors.accent} />
               ) : null}
             </Pressable>
-            <Pressable onPress={() => router.push('/league')} style={styles.leagueLink}>
+            <Pressable
+              onPressIn={() => prefetchRoute('/league')}
+              onPress={() => router.push('/league')}
+              style={styles.leagueLink}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.leagueLinkTitle}>Protein League</Text>
                 <Text style={styles.leagueLinkHint}>See your rank and who&apos;s ahead</Text>
@@ -444,6 +450,7 @@ export default function SettingsScreen({ embedded = false }: { embedded?: boolea
             {!profile?.is_premium ? (
               <View style={styles.upgradeGlow}>
                 <Pressable
+                  onPressIn={() => prefetchRoute('/paywall')}
                   onPress={() => router.push('/paywall')}
                   android_ripple={{ color: 'rgba(255, 249, 247, 0.18)' }}
                   accessibilityRole="button"
@@ -465,7 +472,7 @@ export default function SettingsScreen({ embedded = false }: { embedded?: boolea
                     <View style={styles.upgradeCopy}>
                       <Text style={styles.upgradeTitle}>Upgrade to Pro</Text>
                       <Text style={styles.upgradeHint}>
-                        Unlimited scans · from $4.99/mo, billed annually
+                        Unlimited scans · weekly or yearly Pro
                       </Text>
                     </View>
                     <Ionicons name="chevron-forward" size={18} color={colors.onAccent} />

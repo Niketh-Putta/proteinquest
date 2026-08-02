@@ -1,7 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 
+import { SkeletonCards } from '@/components/LoadingSkeleton';
 import {
   formatBillingDate,
   getSubscriptionBillingDetails,
@@ -64,9 +65,8 @@ export function SubscriptionBillingInfo({ userId, isPro }: Props) {
 
   if (loading) {
     return (
-      <View style={styles.box}>
-        <ActivityIndicator color={colors.accent} size="small" />
-        <Text style={styles.loadingText}>Loading subscription details…</Text>
+      <View style={styles.box} accessibilityLabel="Loading subscription details">
+        <SkeletonCards count={1} />
       </View>
     );
   }
@@ -148,11 +148,6 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.xs,
-  },
-  loadingText: {
-    fontFamily: fonts.body,
-    fontSize: 12,
-    color: colors.textSecondary,
   },
   errorText: {
     fontFamily: fonts.body,

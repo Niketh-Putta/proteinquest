@@ -3,6 +3,7 @@ import React, { useCallback, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { SkeletonCards, SkeletonList } from '@/components/LoadingSkeleton';
 import { PageCanvas } from '@/components/PageCanvas';
 import { fetchDailyTotals } from '@/lib/api';
 import { goalHitStreakDays } from '@/lib/character';
@@ -22,10 +23,24 @@ export default function TrendsScreen() {
   const heroNumSize = Math.round(72 * typeScale);
   const plotHeight = isDesktop ? 200 : 168;
   const [totals, setTotals] = useState<Record<string, number>>({});
+  const [booting, setBooting] = useState(true);
 
   useFocusEffect(
     useCallback(() => {
-      fetchDailyTotals(WINDOW).then(setTotals).catch(console.error);
+      let active = true;
+      fetchDailyTotals(WINDOW)
+        .then((data) => {
+          if (!active) return;
+          setTotals(data);
+          setBooting(false);
+        })
+        .catch((e) => {
+          console.error(e);
+          if (active) setBooting(false);
+        });
+      return () => {
+        active = false;
+      };
     }, []),
   );
 
@@ -90,6 +105,13 @@ export default function TrendsScreen() {
           </Text>
         </View>
 
+        {booting ? (
+          <View style={{ gap: spacing.md }}>
+            <SkeletonCards count={1} />
+            <SkeletonList rows={3} />
+          </View>
+        ) : (
+          <>
         <View style={styles.heroBlock}>
           <View style={styles.heroRow}>
             <Text
@@ -189,6 +211,8 @@ export default function TrendsScreen() {
             <Text style={styles.metricLabel}>this week</Text>
           </View>
         </View>
+          </>
+        )}
       </ScrollView>
     </SafeAreaView>
     </PageCanvas>

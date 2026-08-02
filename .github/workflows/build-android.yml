@@ -13,6 +13,7 @@ on:
       - 'package-lock.json'
       - 'scripts/download-eas-aab.mjs'
       - 'scripts/upload-aab-to-play.mjs'
+      - 'scripts/patch-eas-project.mjs'
       - '.github/workflows/build-android.yml'
 
 concurrency:
@@ -35,14 +36,17 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Verify EXPO_TOKEN is configured
+      - name: Verify Expo token for Play-signed build
         env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_TOKEN_NIKETHPUTTA: ${{ secrets.EXPO_TOKEN_NIKETHPUTTA }}
+          EXPO_TOKEN_FALLBACK: ${{ secrets.EXPO_TOKEN }}
         run: |
+          export EXPO_TOKEN="${EXPO_TOKEN_NIKETHPUTTA:-$EXPO_TOKEN_FALLBACK}"
           if [ -z "$EXPO_TOKEN" ]; then
-            echo "::error::Missing GitHub secret EXPO_TOKEN. Add it at repo Settings → Secrets and variables → Actions, then re-run this workflow."
+            echo "::error::Missing EXPO_TOKEN_NIKETHPUTTA (or EXPO_TOKEN). Needed for Play-signed Android build."
             exit 1
           fi
+          npx eas-cli whoami
 
       - name: Configure Google Play service account
         id: play_creds
@@ -61,12 +65,14 @@ jobs:
 
       - name: Sync EAS production env vars
         env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_TOKEN_NIKETHPUTTA: ${{ secrets.EXPO_TOKEN_NIKETHPUTTA }}
+          EXPO_TOKEN_FALLBACK: ${{ secrets.EXPO_TOKEN }}
           EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
           EXPO_PUBLIC_SUPABASE_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_KEY }}
           EXPO_PUBLIC_REVENUECAT_IOS_KEY: ${{ secrets.EXPO_PUBLIC_REVENUECAT_IOS_KEY }}
           EXPO_PUBLIC_REVENUECAT_ANDROID_KEY: ${{ secrets.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY }}
         run: |
+          export EXPO_TOKEN="${EXPO_TOKEN_NIKETHPUTTA:-$EXPO_TOKEN_FALLBACK}"
           for name in EXPO_PUBLIC_SUPABASE_URL EXPO_PUBLIC_SUPABASE_KEY EXPO_PUBLIC_REVENUECAT_IOS_KEY EXPO_PUBLIC_REVENUECAT_ANDROID_KEY; do
             val="${!name:-}"
             if [ -n "$val" ]; then
@@ -74,19 +80,32 @@ jobs:
             fi
           done
 
-      - name: Build Android AAB (local + Play upload key via nikethputta EAS project)
+      - name: Free disk space (local AAB fills the runner)
+        run: |
+          set -euo pipefail
+          df -h
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android/sdk/ndk-bundle /usr/local/share/boost /opt/ghc /usr/local/graalvm /usr/local/lib/android/sdk/ndk || true
+          sudo rm -rf /opt/hostedtoolcache/CodeQL /opt/hostedtoolcache/go /opt/hostedtoolcache/Python || true
+          sudo docker system prune -af || true
+          # Keep only current Node; drop unused tool caches.
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"/Ruby "$AGENT_TOOLSDIRECTORY"/Java_Temurin-Hotspot_jdk/8* || true
+          df -h
+
+      - name: Build Android AAB (EAS cloud + Play upload key via nikethputta)
         id: eas_build
         env:
           EAS_BUILD_NO_EXPO_GO_WARNING: 'true'
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN_NIKETHPUTTA }}
+          EXPO_TOKEN_NIKETHPUTTA: ${{ secrets.EXPO_TOKEN_NIKETHPUTTA }}
+          EXPO_TOKEN_FALLBACK: ${{ secrets.EXPO_TOKEN }}
           EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
           EXPO_PUBLIC_SUPABASE_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_KEY }}
           EXPO_PUBLIC_REVENUECAT_IOS_KEY: ${{ secrets.EXPO_PUBLIC_REVENUECAT_IOS_KEY }}
           EXPO_PUBLIC_REVENUECAT_ANDROID_KEY: ${{ secrets.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY }}
         run: |
           set -euo pipefail
+          export EXPO_TOKEN="${EXPO_TOKEN_NIKETHPUTTA:-$EXPO_TOKEN_FALLBACK}"
           if [ -z "$EXPO_TOKEN" ]; then
-            echo "::error::Missing EXPO_TOKEN_NIKETHPUTTA (nikethputta account with Play upload keystore Rr3MWJDvmn)"
+            echo "::error::Missing EXPO_TOKEN_NIKETHPUTTA (nikethputta account with Play upload keystore)"
             exit 1
           fi
           mkdir -p store
@@ -98,10 +117,14 @@ jobs:
             fi
           done
           npx eas-cli whoami
-          npx eas-cli build --platform android --profile production --local --non-interactive --output store/proteinquest.aab
+          # Cloud build avoids GitHub runner "No space left on device" during packageReleaseBundle.
+          npx eas-cli build --platform android --profile production --non-interactive --wait --json > store/eas-android.json
+          BUILD_ID="$(node -e "const j=require('./store/eas-android.json'); const b=Array.isArray(j)?j[0]:j; if(!b?.id){console.error(JSON.stringify(j).slice(0,500)); process.exit(1)}; process.stdout.write(b.id);")"
+          echo "EAS build id: $BUILD_ID"
+          node scripts/download-eas-aab.mjs "$BUILD_ID" --out=store/proteinquest.aab
           node scripts/patch-eas-project.mjs restore
           ls -lh store/proteinquest.aab
-          echo "build_id=play-signed-$(date +%s)" >> "$GITHUB_OUTPUT"
+          echo "build_id=$BUILD_ID" >> "$GITHUB_OUTPUT"
 
       - name: Upload AAB artifact
         uses: actions/upload-artifact@v4

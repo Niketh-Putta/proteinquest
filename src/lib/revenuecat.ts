@@ -74,10 +74,17 @@ export interface RevenueCatPlan {
   packageIdentifier: string;
 }
 
+type StoreProductLike = {
+  identifier: string;
+  priceString?: string;
+  price?: number;
+  currencyCode?: string;
+};
+
 type PurchasesOfferingLike = {
   identifier: string;
   availablePackages: Array<{
-    product: { identifier: string; priceString?: string };
+    product: StoreProductLike;
     packageType: string;
     identifier: string;
   }>;
@@ -104,7 +111,7 @@ function productMatchesPlan(productId: string, plan: 'weekly' | 'yearly'): boole
 }
 
 function isWeeklyOrYearlyPackage(p: {
-  product: { identifier: string; priceString?: string };
+  product: StoreProductLike;
   packageType: string;
   identifier: string;
 }): boolean {
@@ -122,7 +129,7 @@ function isWeeklyOrYearlyPackage(p: {
 
 /** Package is purchasable only when StoreKit/Play returned a real price. */
 function isPurchasablePackage(p: {
-  product: { identifier: string; priceString?: string };
+  product: StoreProductLike;
   packageType: string;
   identifier: string;
 }): boolean {
@@ -209,6 +216,65 @@ export async function getOfferingsStatus(): Promise<OfferingsStatus> {
   }
 }
 
+function withPeriod(priceString: string, period: 'wk' | 'mo' | 'yr'): string {
+  const raw = priceString.trim();
+  if (!raw) return raw;
+  if (/\/\s*(wk|yr|mo|week|year|month)\b/i.test(raw)) return raw;
+  return `${raw}/${period}`;
+}
+
+/** Parse a locale-ish amount from a store priceString (best-effort fallback). */
+function parseAmountFromPriceString(priceString: string): number | null {
+  const m = priceString.replace(/\u00a0/g, ' ').match(/-?[\d]+(?:[.,]\d{1,2})?/);
+  if (!m) return null;
+  const raw = m[0];
+  const normalized =
+    raw.includes(',') && raw.includes('.')
+      ? raw.replace(/,/g, '')
+      : raw.includes(',')
+        ? raw.replace(',', '.')
+        : raw;
+  const n = Number.parseFloat(normalized);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Format monthly equivalent while keeping the store currency look when possible. */
+function formatMonthlyEquivalent(product: StoreProductLike): string {
+  const annualString = product.priceString?.trim() ?? '';
+  const annual =
+    typeof product.price === 'number' && Number.isFinite(product.price)
+      ? product.price
+      : parseAmountFromPriceString(annualString);
+  if (annual == null || annual <= 0) {
+    return withPeriod(annualString || '$59.99', 'mo');
+  }
+  const monthly = annual / 12;
+  const currency = product.currencyCode?.trim();
+  if (currency) {
+    try {
+      const formatted = new Intl.NumberFormat(undefined, {
+        style: 'currency',
+        currency,
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }).format(monthly);
+      return withPeriod(formatted, 'mo');
+    } catch {
+      /* fall through */
+    }
+  }
+  const m = annualString.match(/^([^\d-]*)(-?[\d.,]+)(.*)$/);
+  if (m) {
+    const decimals = m[2].includes(',') && !m[2].includes('.') ? 2 : (m[2].split('.')[1]?.length ?? 2);
+    const body = monthly.toFixed(Math.min(2, Math.max(0, decimals))).replace(
+      '.',
+      m[2].includes(',') && !m[2].includes('.') ? ',' : '.'
+    );
+    return withPeriod(`${m[1]}${body}${m[3]}`.trim(), 'mo');
+  }
+  return withPeriod(monthly.toFixed(2), 'mo');
+}
+
 /** Fetch current offering packages mapped to our plan IDs. Static copy only when RC is unconfigured. */
 export async function getRevenueCatPlans(): Promise<RevenueCatPlan[]> {
   const fallback: RevenueCatPlan[] = [
@@ -222,8 +288,9 @@ export async function getRevenueCatPlans(): Promise<RevenueCatPlan[]> {
     {
       id: REVENUECAT_PRODUCT_IDS.yearly,
       title: 'Yearly',
-      price: '$4.99/mo',
-      caption: 'Billed as $59.99 annually',
+      // Show value as monthly; caption carries the annual charge.
+      price: '$5.00/mo',
+      caption: 'Billed as $59.99 Annually',
       packageIdentifier: '$rc_annual',
     },
   ];
@@ -249,15 +316,17 @@ export async function getRevenueCatPlans(): Promise<RevenueCatPlan[]> {
         pkg.identifier === '$rc_weekly';
 
       if (!isYearly && !isWeekly) continue;
-      if (!pkg.product.priceString?.trim()) continue;
+      const priceString = pkg.product.priceString?.trim();
+      if (!priceString) continue;
 
-      // Marketing UI copy in USD; Apple/Google still show localized store price at purchase.
+      // Live App Store / Play localized price so paywall matches the purchase sheet.
+      // Yearly is framed as monthly value + annual billing caption.
       mapped.push({
         id: isYearly ? REVENUECAT_PRODUCT_IDS.yearly : REVENUECAT_PRODUCT_IDS.weekly,
         title: isYearly ? 'Yearly' : 'Weekly',
-        price: isYearly ? '$4.99/mo' : '$9.99/wk',
+        price: isYearly ? formatMonthlyEquivalent(pkg.product) : withPeriod(priceString, 'wk'),
         caption: isYearly
-          ? 'Billed as $59.99 annually'
+          ? `Billed as ${priceString} Annually`
           : 'Full Pro access. Cancel anytime.',
         packageIdentifier: pkg.identifier,
       });

@@ -91,7 +91,7 @@ export default function TermsScreen() {
             ProteinQuest Pro is an auto-renewing subscription that unlocks unlimited AI scans.
           </Bullet>
           <Bullet>
-            Weekly plan: $9.99 per week. Yearly plan: $4.99/month, billed as $59.99 annually.
+            Weekly and yearly Pro plans. Price shown in your local currency in the app and store.
           </Bullet>
           <Bullet>
             Payment is charged to your Apple ID or Google Play account at confirmation of purchase.

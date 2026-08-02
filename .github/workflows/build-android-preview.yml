@@ -7,8 +7,13 @@ on:
     branches: [main]
     paths:
       - 'src/app/paywall.tsx'
+      - 'src/app/settings.tsx'
+      - 'src/app/scan-ingredient.tsx'
+      - 'src/app/scan.tsx'
+      - 'src/app/meal/**'
       - 'src/lib/payments.ts'
       - 'src/lib/revenuecat.ts'
+      - 'app.json'
       - '.github/workflows/build-android-preview.yml'
 
 jobs:
@@ -32,6 +37,7 @@ jobs:
           EXPO_PUBLIC_REVENUECAT_IOS_KEY: ${{ secrets.EXPO_PUBLIC_REVENUECAT_IOS_KEY }}
           EXPO_PUBLIC_REVENUECAT_ANDROID_KEY: ${{ secrets.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY }}
         run: |
+          mkdir -p store
           npx eas-cli build --platform android --profile preview --non-interactive --wait --json > store/eas-preview.json
           BUILD_ID="$(node -e "const j=require('./store/eas-preview.json'); const b=Array.isArray(j)?j[0]:j; process.stdout.write(b?.id||'');")"
           echo "build_id=$BUILD_ID" >> "$GITHUB_ENV"

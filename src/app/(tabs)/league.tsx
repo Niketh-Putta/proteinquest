@@ -21,6 +21,7 @@ import Svg, {
   Polygon,
   Stop,
 } from 'react-native-svg';
+import { SkeletonCards, SkeletonList } from '@/components/LoadingSkeleton';
 import { PageCanvas } from '@/components/PageCanvas';
 import { trackEvent } from '@/lib/analytics';
 import { confirmDestructive } from '@/lib/confirm';
@@ -621,59 +622,79 @@ export default function LeagueTab() {
           ) : null}
 
           <View style={styles.podium}>
-            <PodiumColumn entry={podium[1]} place={2} youArt={youDragonArt} onRemove={confirmRemove} />
-            <PodiumColumn entry={podium[0]} place={1} youArt={youDragonArt} onRemove={confirmRemove} />
-            <PodiumColumn entry={podium[2]} place={3} youArt={youDragonArt} onRemove={confirmRemove} />
+            {loading && podium.every((p) => !p) ? (
+              <View style={{ flex: 1 }}>
+                <SkeletonCards count={3} />
+              </View>
+            ) : (
+              <>
+                <PodiumColumn entry={podium[1]} place={2} youArt={youDragonArt} onRemove={confirmRemove} />
+                <PodiumColumn entry={podium[0]} place={1} youArt={youDragonArt} onRemove={confirmRemove} />
+                <PodiumColumn entry={podium[2]} place={3} youArt={youDragonArt} onRemove={confirmRemove} />
+              </>
+            )}
           </View>
 
           <View style={styles.list}>
-            {rest.map((entry, i) => (
-              <Animated.View
-                key={entry.id}
-                entering={FadeInDown.delay(40 * Math.min(i, 8)).duration(260)}
-                style={[styles.row, entry.isYou && styles.rowYou]}>
-                <Text style={[styles.rowRank, entry.isYou && { color: RED.bright }]}>
-                  {entry.position}
-                </Text>
-                <Avatar entry={entry} size={36} dragonArt={entry.isYou ? youDragonArt : undefined} />
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text
-                    style={[styles.rowName, entry.isYou && { color: RED.bright }]}
-                    numberOfLines={1}>
-                    {handleLabel(entry)}
+            {loading && rest.length === 0 ? (
+              <SkeletonList rows={8} />
+            ) : (
+              rest.map((entry, i) => (
+                <Animated.View
+                  key={entry.id}
+                  entering={FadeInDown.delay(40 * Math.min(i, 8)).duration(260)}
+                  style={[styles.row, entry.isYou && styles.rowYou]}>
+                  <Text style={[styles.rowRank, entry.isYou && { color: RED.bright }]}>
+                    {entry.position}
                   </Text>
-                  <Text style={styles.rowSub} numberOfLines={1}>
-                    {entry.rank.label}
+                  <Avatar entry={entry} size={36} dragonArt={entry.isYou ? youDragonArt : undefined} />
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text
+                      style={[styles.rowName, entry.isYou && { color: RED.bright }]}
+                      numberOfLines={1}>
+                      {handleLabel(entry)}
+                    </Text>
+                    <Text style={styles.rowSub} numberOfLines={1}>
+                      {entry.rank.label}
+                    </Text>
+                  </View>
+                  <Text style={styles.rowLevel}>lvl {entry.level}</Text>
+                  <Text style={styles.rowXp}>
+                    {formatXp(entry.xp)} <Text style={styles.rowXpUnit}>XP</Text>
                   </Text>
-                </View>
-                <Text style={styles.rowLevel}>lvl {entry.level}</Text>
-                <Text style={styles.rowXp}>
-                  {formatXp(entry.xp)} <Text style={styles.rowXpUnit}>XP</Text>
-                </Text>
-                {canRemove(entry) ? (
-                  <Pressable
-                    onPress={() => challengeFriend(entry.id)}
-                    disabled={duelBusy}
-                    hitSlop={8}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Duel ${entry.displayName}`}
-                    style={({ pressed }) => [styles.rowDuel, pressableWeb, pressed && { opacity: 0.7 }]}>
-                    <Ionicons name="flash" size={14} color={colors.accent} />
-                  </Pressable>
-                ) : null}
-                {canRemove(entry) ? (
-                  <Pressable
-                    onPress={() => confirmRemove(entry)}
-                    disabled={removingId === entry.id}
-                    hitSlop={8}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Remove ${entry.displayName}`}
-                    style={({ pressed }) => [styles.rowRemove, pressableWeb, pressed && { opacity: 0.7 }]}>
-                    <Ionicons name="close" size={16} color={colors.textTertiary} />
-                  </Pressable>
-                ) : null}
-              </Animated.View>
-            ))}
+                  {canRemove(entry) ? (
+                    <Pressable
+                      onPress={() => challengeFriend(entry.id)}
+                      disabled={duelBusy}
+                      hitSlop={8}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Duel ${entry.displayName}`}
+                      style={({ pressed }) => [
+                        styles.rowDuel,
+                        pressableWeb,
+                        pressed && { opacity: 0.7 },
+                      ]}>
+                      <Ionicons name="flash" size={14} color={colors.accent} />
+                    </Pressable>
+                  ) : null}
+                  {canRemove(entry) ? (
+                    <Pressable
+                      onPress={() => confirmRemove(entry)}
+                      disabled={removingId === entry.id}
+                      hitSlop={8}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Remove ${entry.displayName}`}
+                      style={({ pressed }) => [
+                        styles.rowRemove,
+                        pressableWeb,
+                        pressed && { opacity: 0.7 },
+                      ]}>
+                      <Ionicons name="close" size={16} color={colors.textTertiary} />
+                    </Pressable>
+                  ) : null}
+                </Animated.View>
+              ))
+            )}
           </View>
 
           <Text style={styles.footnote}>
