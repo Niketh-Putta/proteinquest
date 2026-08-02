@@ -1,7 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
-import React, { useCallback, useDeferredValue, useEffect, useMemo, useState, startTransition } from 'react';
+import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, startTransition } from 'react';
 import {
+  InteractionManager,
   Platform,
   Pressable,
   ScrollView,
@@ -10,21 +11,23 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { GlassPanel } from '@/components/GlassPanel';
 import { PageCanvas } from '@/components/PageCanvas';
 import {
-  allCatalogFoods,
   commonCatalogFoods,
   type CatalogFood,
   filterRecentCatalogFoods,
+  getSortedBrowseCatalog,
+  isHeavyFoodCatalogLoaded,
   loadRecentFoods,
   pushRecentFood,
   refreshRemoteFoodCatalog,
   searchCatalogExact,
   searchCatalogSimilar,
+  warmFoodCatalog,
 } from '@/lib/food-catalog';
 import { useContentColumn } from '@/lib/layout';
 import { colors, fonts, layout, pressableWeb, radius, spacing, textInputWeb } from '@/theme';
@@ -93,6 +96,31 @@ export default function ScanIngredientScreen() {
   const [recent, setRecent] = useState<CatalogFood[]>([]);
   const [browseLimit, setBrowseLimit] = useState(BROWSE_PAGE);
   const [catalogTick, setCatalogTick] = useState(0);
+  const [catalogReady, setCatalogReady] = useState(() => isHeavyFoodCatalogLoaded());
+  const [browseReady, setBrowseReady] = useState(false);
+  const searchRef = useRef<TextInput>(null);
+
+  useEffect(() => {
+    let alive = true;
+    void warmFoodCatalog()
+      .then(() => {
+        if (!alive) return;
+        setCatalogReady(true);
+        setCatalogTick((n) => n + 1);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // Don't open keyboard during the push transition (keyboard fight = laggy tap).
+  useEffect(() => {
+    const handle = InteractionManager.runAfterInteractions(() => {
+      searchRef.current?.focus();
+    });
+    return () => handle.cancel();
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -109,6 +137,24 @@ export default function ScanIngredientScreen() {
       };
     }, []),
   );
+
+  // Sort/filter full browse list after interactions so search + COMMON paint first.
+  useEffect(() => {
+    if (!catalogReady) {
+      setBrowseReady(false);
+      return;
+    }
+    let alive = true;
+    const handle = InteractionManager.runAfterInteractions(() => {
+      startTransition(() => {
+        if (alive) setBrowseReady(true);
+      });
+    });
+    return () => {
+      alive = false;
+      handle.cancel();
+    };
+  }, [catalogReady, catalogTick]);
 
   const trimmedQuery = query.trim();
   const deferredTrimmed = deferredQuery.trim();
@@ -154,20 +200,19 @@ export default function ScanIngredientScreen() {
     return commonBase.filter((f) => !recentNames.has(f.name.toLowerCase()));
   }, [recent, commonBase]);
 
-  /** Full catalogue browse under COMMON so users can keep scrolling. Skip while searching. */
+  /** Full catalogue browse under COMMON. Skip while searching or until warm. */
   const browseMore = useMemo(() => {
-    if (searching) return [] as CatalogFood[];
+    if (searching || !browseReady) return [] as CatalogFood[];
     const skip = new Set([
       ...recent.map((r) => r.name.toLowerCase()),
       ...commonBase.map((f) => f.name.toLowerCase()),
     ]);
-    return allCatalogFoods()
-      .filter((f) => !skip.has(f.name.toLowerCase()))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [searching, recent, commonBase, catalogTick]);
+    return getSortedBrowseCatalog().filter((f) => !skip.has(f.name.toLowerCase()));
+  }, [searching, browseReady, recent, commonBase, catalogTick]);
 
   const browseVisible = browseMore.slice(0, browseLimit);
   const browseRemaining = Math.max(0, browseMore.length - browseLimit);
+  const showBrowseSkeleton = !searching && (!catalogReady || !browseReady);
 
   const loadMoreBrowse = useCallback(() => {
     setBrowseLimit((n) => Math.min(n + BROWSE_PAGE, browseMore.length));
@@ -212,11 +257,12 @@ export default function ScanIngredientScreen() {
                 loadMoreBrowse();
               }
             }}>
-          <Animated.View entering={FadeIn.duration(240)} style={styles.searchWrap}>
+          <View style={styles.searchWrap}>
             <View style={styles.searchIcon} pointerEvents="none">
               <Ionicons name="search" size={18} color={colors.textTertiary} />
             </View>
             <TextInput
+              ref={searchRef}
               style={[styles.searchInput, textInputWeb]}
               value={query}
               onChangeText={setQuery}
@@ -224,12 +270,11 @@ export default function ScanIngredientScreen() {
               placeholderTextColor={colors.textTertiary}
               autoCapitalize="sentences"
               autoCorrect
-              autoFocus
               returnKeyType="search"
               clearButtonMode="while-editing"
               accessibilityLabel="Search food"
             />
-          </Animated.View>
+          </View>
 
           {searching ? (
             <Animated.View entering={FadeInDown.duration(280)} style={styles.searchResults}>
@@ -333,6 +378,11 @@ export default function ScanIngredientScreen() {
                       isLast={i === browseVisible.length - 1 && browseRemaining === 0}
                     />
                   ))}
+                  {showBrowseSkeleton ? (
+                    <View style={styles.loadMore}>
+                      <Text style={styles.loadMoreText}>Loading more foods…</Text>
+                    </View>
+                  ) : null}
                   {browseRemaining > 0 ? (
                     <Pressable
                       onPress={loadMoreBrowse}

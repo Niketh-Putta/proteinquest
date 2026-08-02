@@ -25,6 +25,9 @@ function canUseNativeGlass(): boolean {
   }
 }
 
+/** Resolve once — avoid re-require on every GlassPanel render. */
+const NATIVE_GLASS = canUseNativeGlass();
+
 /**
  * Cross-platform glass panel: real Liquid Glass on supported iOS,
  * translucent frosted surface everywhere else (incl. web backdrop-filter).
@@ -38,7 +41,7 @@ export function GlassPanel({
 }: Props) {
   const hero = modal || emphasized;
 
-  if (canUseNativeGlass()) {
+  if (NATIVE_GLASS) {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { GlassView } = require('expo-glass-effect') as typeof import('expo-glass-effect');
     return (

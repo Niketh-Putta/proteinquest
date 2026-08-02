@@ -36,11 +36,13 @@ import {
   parseNutritionNumber,
   sanitizeNutritionDraft,
 } from '@/lib/parse-nutrition-number';
+import { prefetchFoodCatalog } from '@/lib/food-catalog-prefetch';
 import {
   consumePendingIngredientEdit,
   registerIngredientEditApplier,
   type ScanIngredientEdit,
 } from '@/lib/scan-ingredient-edit';
+import { prefetchRoute, pushThen } from '@/lib/navigate-responsive';
 import type { FoodItem, ProteinLog } from '@/lib/types';
 import {
   colors,
@@ -131,6 +133,12 @@ export default function MealDetailScreen() {
   const [error, setError] = useState<string | null>(null);
   const [saveConfirmOpen, setSaveConfirmOpen] = useState(false);
   const [saveConfirmModalVisible, setSaveConfirmModalVisible] = useState(false);
+
+  useEffect(() => {
+    void import('@/lib/food-catalog')
+      .then((m) => m.warmFoodCatalog())
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -621,10 +629,16 @@ export default function MealDetailScreen() {
               </View>
 
               <Pressable
+                onPressIn={() => {
+                  prefetchRoute(() => import('@/app/scan-ingredient'));
+                  prefetchFoodCatalog();
+                }}
                 onPress={() => {
-                  dismissMealKeyboard();
-                  Haptics.selectionAsync().catch(() => {});
-                  router.push('/scan-ingredient' as never);
+                  pushThen('/scan-ingredient', () => {
+                    dismissMealKeyboard();
+                    Haptics.selectionAsync().catch(() => {});
+                    prefetchFoodCatalog();
+                  });
                 }}
                 style={({ pressed }) => [
                   styles.addIngredientRow,

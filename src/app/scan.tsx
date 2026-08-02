@@ -87,11 +87,13 @@ import {
 } from '@/lib/camera-permission';
 import { todayISODate } from '@/lib/protein';
 import { getRetention, markCareDay, rollLootDrop } from '@/lib/retention';
+import { prefetchFoodCatalog } from '@/lib/food-catalog-prefetch';
 import {
     consumePendingIngredientEdit,
     registerIngredientEditApplier,
     type ScanIngredientEdit,
 } from '@/lib/scan-ingredient-edit';
+import { prefetchRoute, pushThen } from '@/lib/navigate-responsive';
 import { useSession } from '@/lib/session';
 import type { Analysis } from '@/lib/types';
 import { bindUnmirroredWebCameraPreview } from '@/lib/web-camera-preview';
@@ -818,6 +820,10 @@ export default function ScanScreen() {
   /** Refresh the free-scan pill only — never auto-open paywall on focus (dismiss must stick). */
   useFocusEffect(
     useCallback(() => {
+      void import('@/lib/food-catalog')
+        .then((m) => m.warmFoodCatalog())
+        .catch(() => {});
+      prefetchRoute(() => import('@/app/scan-ingredient'));
       if (!needsScanQuota) {
         setScansLeft(null);
         return;
@@ -2254,10 +2260,17 @@ export default function ScanScreen() {
             </View>
 
             <Pressable
+              onPressIn={() => {
+                prefetchRoute(() => import('@/app/scan-ingredient'));
+                prefetchFoodCatalog();
+              }}
               onPress={() => {
-                dismissMealKeyboard();
-                Haptics.selectionAsync().catch(() => {});
-                router.push('/scan-ingredient' as never);
+                // Navigate first — keyboard dismiss + catalog warm must not block the tap.
+                pushThen('/scan-ingredient', () => {
+                  dismissMealKeyboard();
+                  Haptics.selectionAsync().catch(() => {});
+                  prefetchFoodCatalog();
+                });
               }}
               style={({ pressed }) => [
                 styles.addIngredientRow,

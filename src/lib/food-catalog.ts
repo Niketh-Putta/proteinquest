@@ -1,18 +1,12 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { BRAND_FOODS } from './food-catalog-brands';
-import { EXTRA_FOODS } from './food-catalog-extra';
-import { MEAL_FOODS } from './food-catalog-meals';
-import { MEAL_FOODS_2 } from './food-catalog-meals-2';
-import { MEGA_FOODS } from './food-catalog-mega';
-import { MORE_FOODS } from './food-catalog-more';
-import { MORE_FOODS_2 } from './food-catalog-more-2';
-import { MORE_FOODS_3 } from './food-catalog-more-3';
-import { MORE_FOODS_4 } from './food-catalog-more-4';
-import { MORE_FOODS_5 } from './food-catalog-more-5';
-import { UNIQUE_FOODS } from './food-catalog-unique';
-import { WORLD_FOODS } from './food-catalog-world';
 import { supabase } from './supabase';
+
+/**
+ * Heavy catalog chunks (~700KB) are loaded lazily via `loadHeavyFoodCatalog` /
+ * `warmFoodCatalog` so Add Ingredient can paint COMMON + search shell first.
+ * Do not statically import those modules here — that blocks native navigation.
+ */
 
 /** Searchable food entries for Add Ingredient. Values are per default portion (qty 1). */
 export type CatalogFood = {
@@ -325,19 +319,111 @@ export const FOOD_CATALOG: CatalogFood[] = [
   { name: 'Sushi', portion: '1 piece', protein_g: 1.7, calories_g: 33, estimated_grams: 25 },
   { name: 'Dumpling', portion: '1 dumpling', protein_g: 2, calories_g: 50, estimated_grams: 25 },
   { name: 'Momo', portion: '1 momo', protein_g: 1.6, calories_g: 44, estimated_grams: 24 },
-  ...EXTRA_FOODS,
-  ...MORE_FOODS,
-  ...MORE_FOODS_2,
-  ...MORE_FOODS_3,
-  ...MORE_FOODS_4,
-  ...MORE_FOODS_5,
-  ...UNIQUE_FOODS,
-  ...WORLD_FOODS,
-  ...BRAND_FOODS,
-  ...MEAL_FOODS,
-  ...MEAL_FOODS_2,
-  ...MEGA_FOODS,
 ];
+
+/** Extended bundled rows (MORE_*, MEGA, brands, …). Null until lazy load finishes. */
+let heavyFoods: CatalogFood[] | null = null;
+let heavyLoadPromise: Promise<CatalogFood[]> | null = null;
+
+let mergedAllCache: CatalogFood[] | null = null;
+let mergedAllRemoteRef: CatalogFood[] | null = null;
+let mergedAllHeavyRef: CatalogFood[] | null = null;
+
+let mergedCommonCache: CatalogFood[] | null = null;
+let mergedCommonRemoteRef: CatalogFood[] | null = null;
+
+let sortedBrowseCache: CatalogFood[] | null = null;
+let sortedBrowseRemoteRef: CatalogFood[] | null = null;
+let sortedBrowseHeavyRef: CatalogFood[] | null = null;
+
+function invalidateCatalogCaches() {
+  mergedAllCache = null;
+  mergedAllRemoteRef = null;
+  mergedAllHeavyRef = null;
+  mergedCommonCache = null;
+  mergedCommonRemoteRef = null;
+  sortedBrowseCache = null;
+  sortedBrowseRemoteRef = null;
+  sortedBrowseHeavyRef = null;
+  indexedList = null;
+  namePrefix2 = null;
+  indexedRemoteRef = null;
+}
+
+export function isHeavyFoodCatalogLoaded(): boolean {
+  return heavyFoods != null;
+}
+
+/** Dynamically import large catalog chunks (safe to call often). */
+export function loadHeavyFoodCatalog(): Promise<CatalogFood[]> {
+  if (heavyFoods) return Promise.resolve(heavyFoods);
+  if (heavyLoadPromise) return heavyLoadPromise;
+
+  heavyLoadPromise = (async () => {
+    const [
+      extra,
+      more,
+      more2,
+      more3,
+      more4,
+      more5,
+      more6,
+      unique,
+      world,
+      brands,
+      meals,
+      meals2,
+      mega,
+    ] = await Promise.all([
+      import('./food-catalog-extra'),
+      import('./food-catalog-more'),
+      import('./food-catalog-more-2'),
+      import('./food-catalog-more-3'),
+      import('./food-catalog-more-4'),
+      import('./food-catalog-more-5'),
+      import('./food-catalog-more-6'),
+      import('./food-catalog-unique'),
+      import('./food-catalog-world'),
+      import('./food-catalog-brands'),
+      import('./food-catalog-meals'),
+      import('./food-catalog-meals-2'),
+      import('./food-catalog-mega'),
+    ]);
+    heavyFoods = [
+      ...extra.EXTRA_FOODS,
+      ...more.MORE_FOODS,
+      ...more2.MORE_FOODS_2,
+      ...more3.MORE_FOODS_3,
+      ...more4.MORE_FOODS_4,
+      ...more5.MORE_FOODS_5,
+      ...more6.MORE_FOODS_6,
+      ...unique.UNIQUE_FOODS,
+      ...world.WORLD_FOODS,
+      ...brands.BRAND_FOODS,
+      ...meals.MEAL_FOODS,
+      ...meals2.MEAL_FOODS_2,
+      ...mega.MEGA_FOODS,
+    ];
+    invalidateCatalogCaches();
+    return heavyFoods;
+  })().finally(() => {
+    heavyLoadPromise = null;
+  });
+
+  return heavyLoadPromise;
+}
+
+/**
+ * Prefetch heavy chunks, remote rows, search index, and sorted browse list.
+ * Call from session / scan / meal so Add Ingredient opens warm.
+ */
+export async function warmFoodCatalog(): Promise<void> {
+  await loadHeavyFoodCatalog();
+  await refreshRemoteFoodCatalog();
+  allCatalogFoods();
+  getSortedBrowseCatalog();
+  getIndexedFoods();
+}
 
 function normalize(s: string): string {
   return s
@@ -887,6 +973,7 @@ export async function refreshRemoteFoodCatalog(opts?: {
       if (cached.length) {
         remoteFoods = cached;
         remoteLoadedAt = Date.now();
+        invalidateCatalogCaches();
       }
     }
 
@@ -903,6 +990,7 @@ export async function refreshRemoteFoodCatalog(opts?: {
         .filter((f): f is CatalogFood => !!f);
       remoteFoods = next;
       remoteLoadedAt = Date.now();
+      invalidateCatalogCaches();
       void writeRemoteCache(next);
       return next;
     } catch (e) {
@@ -918,18 +1006,51 @@ export async function refreshRemoteFoodCatalog(opts?: {
 
 /** Merge bundled + remote. Remote wins on same name (fix macros / portion live). */
 export function allCatalogFoods(): CatalogFood[] {
+  if (
+    mergedAllCache &&
+    mergedAllRemoteRef === remoteFoods &&
+    mergedAllHeavyRef === heavyFoods
+  ) {
+    return mergedAllCache;
+  }
   const byName = new Map<string, CatalogFood>();
   for (const food of FOOD_CATALOG) {
     byName.set(normalize(food.name), food);
   }
+  if (heavyFoods) {
+    for (const food of heavyFoods) {
+      byName.set(normalize(food.name), food);
+    }
+  }
   for (const food of remoteFoods) {
     byName.set(normalize(food.name), food);
   }
-  return [...byName.values()];
+  mergedAllCache = [...byName.values()];
+  mergedAllRemoteRef = remoteFoods;
+  mergedAllHeavyRef = heavyFoods;
+  return mergedAllCache;
+}
+
+/** Alphabetically sorted catalog for browse-more (cached). */
+export function getSortedBrowseCatalog(): CatalogFood[] {
+  if (
+    sortedBrowseCache &&
+    sortedBrowseRemoteRef === remoteFoods &&
+    sortedBrowseHeavyRef === heavyFoods
+  ) {
+    return sortedBrowseCache;
+  }
+  sortedBrowseCache = [...allCatalogFoods()].sort((a, b) => a.name.localeCompare(b.name));
+  sortedBrowseRemoteRef = remoteFoods;
+  sortedBrowseHeavyRef = heavyFoods;
+  return sortedBrowseCache;
 }
 
 /** COMMON staples + remote rows flagged is_common. */
 export function commonCatalogFoods(): CatalogFood[] {
+  if (mergedCommonCache && mergedCommonRemoteRef === remoteFoods) {
+    return mergedCommonCache;
+  }
   const byName = new Map<string, CatalogFood>();
   for (const food of COMMON_FOODS) {
     byName.set(normalize(food.name), food);
@@ -938,7 +1059,9 @@ export function commonCatalogFoods(): CatalogFood[] {
     if (!food.is_common) continue;
     byName.set(normalize(food.name), food);
   }
-  return [...byName.values()];
+  mergedCommonCache = [...byName.values()];
+  mergedCommonRemoteRef = remoteFoods;
+  return mergedCommonCache;
 }
 
 /** Phase A only: exact / prefix / substring / synonym (no edit-distance). */

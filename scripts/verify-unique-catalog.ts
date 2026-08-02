@@ -22,6 +22,10 @@ function bundle() {
     .replace(
       /from ['"]\.\/(food-catalog[^'"]+)['"]/g,
       (_m, file: string) => `from ${JSON.stringify(path.join(root, 'src/lib', file))}`,
+    )
+    .replace(
+      /import\(['"]\.\/(food-catalog[^'"]+)['"]\)/g,
+      (_m, file: string) => `import(${JSON.stringify(path.join(root, 'src/lib', file))})`,
     );
   writeFileSync(entry, absRewritten);
   execFileSync(
@@ -50,7 +54,11 @@ function bundle() {
 async function main() {
   const outfile = bundle();
   const mod = await import(pathToFileURL(outfile).href);
-  const { searchCatalog } = mod as { searchCatalog: (q: string) => { name: string }[] };
+  const { searchCatalog, loadHeavyFoodCatalog } = mod as {
+    searchCatalog: (q: string) => { name: string }[];
+    loadHeavyFoodCatalog: () => Promise<unknown>;
+  };
+  await loadHeavyFoodCatalog();
   const uniqueSrc = readFileSync(path.join(root, 'src/lib/food-catalog-unique.ts'), 'utf8');
   const uniqueCount = (uniqueSrc.match(/^\s*f\(/gm) || []).length;
   console.log(`UNIQUE_FOODS entries: ${uniqueCount}`);

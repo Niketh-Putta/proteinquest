@@ -281,7 +281,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (loading) return;
     void import('@/lib/food-catalog')
-      .then((m) => m.refreshRemoteFoodCatalog())
+      .then((m) => m.warmFoodCatalog())
       .catch(() => {});
     void import('@/lib/paywall-config')
       .then((m) => m.refreshPaywallConfig())
