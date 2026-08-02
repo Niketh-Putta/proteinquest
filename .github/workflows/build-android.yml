@@ -98,9 +98,7 @@ jobs:
           done
           npx eas-cli whoami
           npx eas-cli build --platform android --profile production --non-interactive --wait
-          BUILD_ID="$(npx eas-cli build:list --platform android --limit 1 --json --non-interactive --status finished | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{const j=JSON.parse(s); console.log(j[0]?.id||"")}')"
-          echo "build_id=${BUILD_ID}" >> "$GITHUB_OUTPUT"
-          echo "EAS build finished: ${BUILD_ID}"
+          echo "build_id=latest" >> "$GITHUB_OUTPUT"
           node scripts/patch-eas-project.mjs restore
 
       - name: Submit to Play production
@@ -110,6 +108,5 @@ jobs:
         run: |
           set -euo pipefail
           node scripts/patch-eas-project.mjs play
-          # service account written earlier for upload path; also used by eas submit
           npx eas-cli submit --platform android --latest --profile production --non-interactive
           node scripts/patch-eas-project.mjs restore

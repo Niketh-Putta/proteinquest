@@ -1,0 +1,44 @@
+# Submit an already-finished EAS Android build to Play production.
+name: Submit Android to Play
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_id:
+        description: EAS Android build UUID
+        required: true
+        type: string
+
+jobs:
+  submit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Configure Google Play service account
+        env:
+          GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          if [ -z "$GOOGLE_PLAY_SERVICE_ACCOUNT_JSON" ]; then
+            echo "::error::Missing GOOGLE_PLAY_SERVICE_ACCOUNT_JSON"
+            exit 1
+          fi
+          mkdir -p store
+          printf '%s' "$GOOGLE_PLAY_SERVICE_ACCOUNT_JSON" > store/google-play-service-account.json
+
+      - name: Submit AAB to Play production
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN_NIKETHPUTTA }}
+        run: |
+          set -euo pipefail
+          node scripts/patch-eas-project.mjs play
+          npx eas-cli submit --platform android --id "${{ inputs.build_id }}" --profile production --non-interactive
+          node scripts/patch-eas-project.mjs restore
