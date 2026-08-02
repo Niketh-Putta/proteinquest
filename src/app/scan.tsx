@@ -1095,11 +1095,7 @@ export default function ScanScreen() {
   // Prefetch Add Ingredient route + catalog so push paints skeleton immediately.
   useEffect(() => {
     if (phase !== 'result') return;
-    try {
-      router.prefetch('/scan-ingredient' as never);
-    } catch {
-      /* ignore */
-    }
+    prefetchRoute('/scan-ingredient' as never);
     void prefetchFoodCatalog();
   }, [phase]);
 
