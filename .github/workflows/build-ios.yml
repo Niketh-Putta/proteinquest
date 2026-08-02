@@ -16,8 +16,7 @@ on:
         default: false
         type: boolean
   push:
-    # Feature branch: full App Store upload + review submit.
-    branches: [main, cursor/live-paywall-prices-4928]
+    branches: [main]
     paths:
       - 'src/**'
       - 'app.json'
