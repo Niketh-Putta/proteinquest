@@ -74,10 +74,20 @@ export interface RevenueCatPlan {
   packageIdentifier: string;
 }
 
+type PurchasesProductLike = {
+  identifier: string;
+  priceString?: string;
+  /** iOS: price in account currency. Android: same. */
+  price?: number;
+  currencyCode?: string;
+  subscriptionPeriod?: string;
+  title?: string;
+};
+
 type PurchasesOfferingLike = {
   identifier: string;
   availablePackages: Array<{
-    product: { identifier: string; priceString?: string };
+    product: PurchasesProductLike;
     packageType: string;
     identifier: string;
   }>;
@@ -209,6 +219,41 @@ export async function getOfferingsStatus(): Promise<OfferingsStatus> {
   }
 }
 
+/** Round amount up to next whole unit then back off by 0.01 → always ends in .99 */
+function roundToNinetyNine(amount: number): number {
+  return Math.ceil(amount) - 0.01;
+}
+
+function formatCurrency(amount: number, currency: string): string {
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(amount);
+  } catch {
+    return amount.toFixed(2);
+  }
+}
+
+function formatWeeklyPrice(product: PurchasesProductLike): string {
+  const currency = product.currencyCode ?? 'USD';
+  const amount = product.price ?? 9.99;
+  return `${formatCurrency(roundToNinetyNine(amount), currency)}/wk`;
+}
+
+function formatYearlyPlan(product: PurchasesProductLike): { price: string; caption: string } {
+  const currency = product.currencyCode ?? 'USD';
+  const annualAmount = product.price ?? 59.99;
+  const annualRounded = roundToNinetyNine(annualAmount);
+  const monthlyRounded = roundToNinetyNine(annualAmount / 12);
+  return {
+    price: `${formatCurrency(monthlyRounded, currency)}/mo`,
+    caption: `Billed as ${formatCurrency(annualRounded, currency)} annually`,
+  };
+}
+
 /** Fetch current offering packages mapped to our plan IDs. Static copy only when RC is unconfigured. */
 export async function getRevenueCatPlans(): Promise<RevenueCatPlan[]> {
   const fallback: RevenueCatPlan[] = [
@@ -249,16 +294,18 @@ export async function getRevenueCatPlans(): Promise<RevenueCatPlan[]> {
         pkg.identifier === '$rc_weekly';
 
       if (!isYearly && !isWeekly) continue;
-      if (!pkg.product.priceString?.trim()) continue;
+      const livePrice = pkg.product.priceString?.trim();
+      if (!livePrice) continue;
 
-      // Marketing UI copy in USD; Apple/Google still show localized store price at purchase.
+      const { price, caption } = isYearly
+        ? formatYearlyPlan(pkg.product)
+        : { price: formatWeeklyPrice(pkg.product), caption: 'Full Pro access. Cancel anytime.' };
+
       mapped.push({
         id: isYearly ? REVENUECAT_PRODUCT_IDS.yearly : REVENUECAT_PRODUCT_IDS.weekly,
         title: isYearly ? 'Yearly' : 'Weekly',
-        price: isYearly ? '$4.99/mo' : '$9.99/wk',
-        caption: isYearly
-          ? 'Billed as $59.99 annually'
-          : 'Full Pro access. Cancel anytime.',
+        price,
+        caption,
         packageIdentifier: pkg.identifier,
       });
     }
