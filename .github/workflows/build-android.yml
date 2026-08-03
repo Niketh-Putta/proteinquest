@@ -105,9 +105,11 @@ jobs:
             echo "::error::Missing EXPO_TOKEN"
             exit 1
           fi
+          cp app.json app.json.bak
           cp eas.json eas.json.bak
-          trap 'mv eas.json.bak eas.json' EXIT
-          node -e 'const fs=require("fs");const p="eas.json";const j=JSON.parse(fs.readFileSync(p,"utf8"));j.build.production.credentialsSource="local";fs.writeFileSync(p,JSON.stringify(j,null,2)+"\n");'
+          trap 'mv app.json.bak app.json; mv eas.json.bak eas.json' EXIT
+          node -e 'const fs=require("fs");const p="eas.json";const j=JSON.parse(fs.readFileSync(p,"utf8"));j.cli=j.cli||{};j.cli.appVersionSource="local";j.build=j.build||{};j.build.production=j.build.production||{};j.build.production.credentialsSource="local";fs.writeFileSync(p,JSON.stringify(j,null,2)+"\n");'
+          node -e 'const fs=require("fs");const p="app.json";const j=JSON.parse(fs.readFileSync(p,"utf8"));j.expo=j.expo||{};j.expo.android=j.expo.android||{};j.expo.android.versionCode=Math.max(129,Number(j.expo.android.versionCode||0));fs.writeFileSync(p,JSON.stringify(j,null,2)+"\n");'
           node scripts/patch-eas-project.mjs restore
           for name in EXPO_PUBLIC_SUPABASE_URL EXPO_PUBLIC_SUPABASE_KEY EXPO_PUBLIC_REVENUECAT_IOS_KEY EXPO_PUBLIC_REVENUECAT_ANDROID_KEY; do
             val="${!name:-}"
@@ -119,6 +121,7 @@ jobs:
           npx eas-cli build --platform android --profile production --non-interactive --wait
           echo "build_id=latest" >> "$GITHUB_OUTPUT"
           trap - EXIT
+          mv app.json.bak app.json
           mv eas.json.bak eas.json
 
       - name: Submit to Play production
