@@ -321,8 +321,8 @@ function CharacterCardInner({
 
         <View style={styles.bars}>
           <View style={styles.barHeader}>
-            <Text style={styles.barLabel}>XP · {dragonName}</Text>
-            <Text style={styles.barLabel}>
+            <Text style={styles.barLabel}>XP</Text>
+            <Text style={styles.barValue} numberOfLines={1}>
               {formatXp(xpIntoLevel)} / {formatXp(xpForNext)}
             </Text>
           </View>
@@ -579,6 +579,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 8,
   },
   barLabel: {
     fontFamily: fonts.mono,
@@ -586,6 +587,16 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
     color: colors.textTertiary,
     textTransform: 'uppercase',
+    flexShrink: 0,
+  },
+  barValue: {
+    fontFamily: fonts.mono,
+    fontSize: 9,
+    letterSpacing: 0.6,
+    color: colors.textTertiary,
+    textTransform: 'uppercase',
+    flexShrink: 1,
+    textAlign: 'right',
   },
   barTrack: {
     height: 4,
