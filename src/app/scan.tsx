@@ -3379,7 +3379,7 @@ const styles = StyleSheet.create({
   },
   discardBackdrop: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(6, 5, 10, 0.4)',
+    backgroundColor: 'rgba(6, 5, 10, 0.72)',
     ...(Platform.OS === 'web'
       ? ({
           backdropFilter: 'blur(6px) saturate(1.15)',

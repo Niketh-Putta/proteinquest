@@ -31,6 +31,7 @@ const NATIVE_GLASS = canUseNativeGlass();
 /**
  * Cross-platform glass panel: real Liquid Glass on supported iOS,
  * translucent frosted surface everywhere else (incl. web backdrop-filter).
+ * `modal` / `solid` confirm cards stay fully opaque so content never bleeds through.
  */
 export function GlassPanel({
   children,
@@ -39,7 +40,10 @@ export function GlassPanel({
   modal = false,
   solid = false,
 }: Props) {
-  const hero = modal || emphasized;
+  // Confirm/delete dialogs must fully obscure UI underneath — never use glass / blur.
+  if (modal || solid) {
+    return <View style={[styles.base, styles.fallbackModal, style]}>{children}</View>;
+  }
 
   if (NATIVE_GLASS) {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -47,15 +51,9 @@ export function GlassPanel({
     return (
       <GlassView
         style={[styles.base, style]}
-        glassEffectStyle={hero ? 'clear' : 'regular'}
-        tintColor={
-          modal
-            ? 'rgba(255,255,255,0.16)'
-            : emphasized
-              ? 'rgba(255,255,255,0.12)'
-              : 'rgba(255,255,255,0.08)'
-        }
-        isInteractive={hero}>
+        glassEffectStyle={emphasized ? 'clear' : 'regular'}
+        tintColor={emphasized ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.08)'}
+        isInteractive={emphasized}>
         {children}
       </GlassView>
     );
@@ -66,9 +64,8 @@ export function GlassPanel({
       style={[
         styles.base,
         styles.fallback,
-        modal && styles.fallbackModal,
-        emphasized && !modal && styles.fallbackEmphasized,
-        modal && !solid ? webBlurModal : emphasized ? webBlurEmphasized : webBlurStyle,
+        emphasized && styles.fallbackEmphasized,
+        emphasized ? webBlurEmphasized : webBlurStyle,
         style,
       ]}>
       {children}
@@ -89,14 +86,6 @@ const webBlurEmphasized: ViewStyle | null =
     ? ({
         backdropFilter: 'blur(40px) saturate(1.55)',
         WebkitBackdropFilter: 'blur(40px) saturate(1.55)',
-      } as ViewStyle)
-    : null;
-
-const webBlurModal: ViewStyle | null =
-  Platform.OS === 'web'
-    ? ({
-        backdropFilter: 'blur(27px) saturate(1.4)',
-        WebkitBackdropFilter: 'blur(27px) saturate(1.4)',
       } as ViewStyle)
     : null;
 
@@ -126,11 +115,11 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 12 },
   },
   fallbackModal: {
-    backgroundColor: 'rgba(28, 24, 36, 0.60)',
+    backgroundColor: '#18171F',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.22)',
-    shadowColor: '#FF7A59',
-    shadowOpacity: 0.18,
+    borderColor: 'rgba(255,255,255,0.18)',
+    shadowColor: '#000',
+    shadowOpacity: 0.45,
     shadowRadius: 28,
     shadowOffset: { width: 0, height: 12 },
   },

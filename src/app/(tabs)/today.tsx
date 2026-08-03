@@ -1211,7 +1211,7 @@ const styles = StyleSheet.create({
   },
   confirmBackdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(6, 5, 10, 0.55)',
+    backgroundColor: 'rgba(6, 5, 10, 0.72)',
     ...(Platform.OS === 'web'
       ? ({
           backdropFilter: 'blur(22px) saturate(1.4)',
