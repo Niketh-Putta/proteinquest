@@ -32,7 +32,12 @@ export function replaceThen(href: Href, after?: () => void): void {
 /**
  * Best-effort warm of a route module so the first push does not wait on JS parse.
  * Expo Router has no stable prefetch API here; dynamic import is enough.
+ * Web bundlers sometimes return a non-Promise module object — never call .catch on it.
  */
 export function prefetchRoute(routeModule: () => Promise<unknown>): void {
-  void routeModule().catch(() => {});
+  try {
+    void Promise.resolve(routeModule()).catch(() => {});
+  } catch {
+    // ignore sync import failures
+  }
 }
