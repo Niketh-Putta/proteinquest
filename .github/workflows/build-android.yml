@@ -89,7 +89,7 @@ jobs:
             echo "::error::Missing EXPO_TOKEN"
             exit 1
           fi
-          node scripts/patch-eas-project.mjs play
+          node scripts/patch-eas-project.mjs restore
           for name in EXPO_PUBLIC_SUPABASE_URL EXPO_PUBLIC_SUPABASE_KEY EXPO_PUBLIC_REVENUECAT_IOS_KEY EXPO_PUBLIC_REVENUECAT_ANDROID_KEY; do
             val="${!name:-}"
             if [ -n "$val" ]; then
@@ -107,6 +107,6 @@ jobs:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
           set -euo pipefail
-          node scripts/patch-eas-project.mjs play
+          node scripts/patch-eas-project.mjs restore
           npx eas-cli submit --platform android --latest --profile production --non-interactive
           node scripts/patch-eas-project.mjs restore
