@@ -381,8 +381,13 @@ export function loadHeavyFoodCatalog(): Promise<CatalogFood[]> {
 
     const merged: CatalogFood[] = [];
     for (const load of loaders) {
-      const { foods } = await load();
-      merged.push(...foods);
+      try {
+        const { foods } = await load();
+        // Avoid push(...huge) — large spreads can crash Hermes on Android.
+        for (let i = 0; i < foods.length; i++) merged.push(foods[i]!);
+      } catch (e) {
+        console.warn('Food catalog chunk failed to load:', e);
+      }
       await yieldToUi();
     }
     heavyFoods = merged;
@@ -398,7 +403,7 @@ export function loadHeavyFoodCatalog(): Promise<CatalogFood[]> {
 /** Yield so Android can flush taps / frames between heavy catalog steps. */
 function yieldToUi(): Promise<void> {
   return new Promise((resolve) => {
-    setTimeout(resolve, Platform.OS === 'android' ? 32 : 0);
+    setTimeout(resolve, Platform.OS === 'android' ? 48 : 0);
   });
 }
 

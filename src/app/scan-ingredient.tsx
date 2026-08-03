@@ -32,6 +32,12 @@ import {
 import { useContentColumn } from '@/lib/layout';
 import { colors, fonts, layout, pressableWeb, radius, spacing, textInputWeb } from '@/theme';
 
+const IS_ANDROID = Platform.OS === 'android';
+/** Reanimated layout entering crashes / OOM-kills some Android devices on this screen. */
+const Enter = IS_ANDROID ? View : Animated.View;
+const enterProps = (delay = 0) =>
+  IS_ANDROID ? {} : { entering: FadeInDown.delay(delay).duration(280) };
+
 function openAdjust(food: CatalogFood) {
   void pushRecentFood(food);
   const q = new URLSearchParams({
@@ -87,7 +93,7 @@ function FoodRow({
   );
 }
 
-const BROWSE_PAGE = Platform.OS === 'android' ? 36 : 80;
+const BROWSE_PAGE = IS_ANDROID ? 36 : 80;
 
 export default function ScanIngredientScreen() {
   const column = useContentColumn('form');
@@ -96,27 +102,40 @@ export default function ScanIngredientScreen() {
   const [recent, setRecent] = useState<CatalogFood[]>([]);
   const [browseLimit, setBrowseLimit] = useState(BROWSE_PAGE);
   const [catalogTick, setCatalogTick] = useState(0);
-  const [catalogReady, setCatalogReady] = useState(() => isHeavyFoodCatalogLoaded());
+  // COMMON/base catalog is always available — never block first paint on heavy chunks.
+  const [heavyReady, setHeavyReady] = useState(() => isHeavyFoodCatalogLoaded());
   const [browseReady, setBrowseReady] = useState(false);
   const searchRef = useRef<TextInput>(null);
 
   useEffect(() => {
     let alive = true;
-    // Sequential chunk load only — never full warm/index on open.
-    void loadHeavyFoodCatalog()
-      .then(() => {
+    let delayTimer: ReturnType<typeof setTimeout> | undefined;
+    // Defer heavy imports until after the push animation — loading on mount OOMs Android.
+    const handle = InteractionManager.runAfterInteractions(() => {
+      if (!alive) return;
+      delayTimer = setTimeout(() => {
         if (!alive) return;
-        setCatalogReady(true);
-        setCatalogTick((n) => n + 1);
-      })
-      .catch(() => {});
+        void loadHeavyFoodCatalog()
+          .then(() => {
+            if (!alive) return;
+            setHeavyReady(true);
+            setCatalogTick((n) => n + 1);
+          })
+          .catch((e) => {
+            console.warn('Heavy food catalog failed:', e);
+          });
+      }, IS_ANDROID ? 450 : 80);
+    });
     return () => {
       alive = false;
+      handle.cancel();
+      if (delayTimer) clearTimeout(delayTimer);
     };
   }, []);
 
-  // Don't open keyboard during the push transition (keyboard fight = laggy tap).
+  // Autofocus fights the Android transition and can kill the activity — tap to search instead.
   useEffect(() => {
+    if (IS_ANDROID) return;
     const handle = InteractionManager.runAfterInteractions(() => {
       searchRef.current?.focus();
     });
@@ -126,15 +145,24 @@ export default function ScanIngredientScreen() {
   useFocusEffect(
     useCallback(() => {
       let alive = true;
+      let delayTimer: ReturnType<typeof setTimeout> | undefined;
       void loadRecentFoods().then((list) => {
         if (alive) setRecent(list);
       });
-      // Pull remote catalogue (no app rebuild needed when you add rows in Supabase).
-      void refreshRemoteFoodCatalog().then(() => {
-        if (alive) setCatalogTick((n) => n + 1);
+      // Remote catalogue after paint — never race the open transition.
+      const handle = InteractionManager.runAfterInteractions(() => {
+        if (!alive) return;
+        delayTimer = setTimeout(() => {
+          if (!alive) return;
+          void refreshRemoteFoodCatalog().then(() => {
+            if (alive) setCatalogTick((n) => n + 1);
+          });
+        }, IS_ANDROID ? 600 : 120);
       });
       return () => {
         alive = false;
+        handle.cancel();
+        if (delayTimer) clearTimeout(delayTimer);
       };
     }, []),
   );
@@ -142,11 +170,11 @@ export default function ScanIngredientScreen() {
   // Sort/filter full browse list after interactions so search + COMMON paint first.
   // Android: skip auto full-browse — COMMON + search only (full sort freezes taps).
   useEffect(() => {
-    if (!catalogReady) {
+    if (!heavyReady) {
       setBrowseReady(false);
       return;
     }
-    if (Platform.OS === 'android') {
+    if (IS_ANDROID) {
       setBrowseReady(false);
       return;
     }
@@ -160,7 +188,7 @@ export default function ScanIngredientScreen() {
       alive = false;
       handle.cancel();
     };
-  }, [catalogReady, catalogTick]);
+  }, [heavyReady, catalogTick]);
 
   const trimmedQuery = query.trim();
   const deferredTrimmed = deferredQuery.trim();
@@ -229,7 +257,7 @@ export default function ScanIngredientScreen() {
     return browseVisible.length >= browseLimit;
   }, [searching, browseReady, browseVisible.length, browseLimit]);
 
-  const showBrowseSkeleton = !searching && (!catalogReady || !browseReady);
+  const showBrowseSkeleton = !searching && !IS_ANDROID && (!heavyReady || !browseReady);
 
   const loadMoreBrowse = useCallback(() => {
     setBrowseLimit((n) => n + BROWSE_PAGE);
@@ -294,7 +322,7 @@ export default function ScanIngredientScreen() {
           </View>
 
           {searching ? (
-            <Animated.View entering={FadeInDown.duration(280)} style={styles.searchResults}>
+            <Enter {...enterProps(0)} style={styles.searchResults}>
               {searchPending && exactResults.length === 0 && similarResults.length === 0 ? (
                 <Text style={styles.searchPending}>Searching…</Text>
               ) : null}
@@ -357,11 +385,11 @@ export default function ScanIngredientScreen() {
                   ) : null}
                 </>
               )}
-            </Animated.View>
+            </Enter>
           ) : (
             <>
               {recent.length > 0 ? (
-                <Animated.View entering={FadeInDown.delay(40).duration(280)}>
+                <Enter {...enterProps(40)}>
                   <SectionLabel label="RECENT" />
                   <GlassPanel style={styles.listCard}>
                     {recent.map((food, i) => (
@@ -373,10 +401,10 @@ export default function ScanIngredientScreen() {
                       />
                     ))}
                   </GlassPanel>
-                </Animated.View>
+                </Enter>
               ) : null}
 
-              <Animated.View entering={FadeInDown.delay(80).duration(280)}>
+              <Enter {...enterProps(80)}>
                 <SectionLabel label="COMMON" />
                 <GlassPanel style={styles.listCard}>
                   {common.map((food, i) => (
@@ -410,7 +438,7 @@ export default function ScanIngredientScreen() {
                     </Pressable>
                   ) : null}
                 </GlassPanel>
-              </Animated.View>
+              </Enter>
             </>
           )}
           </ScrollView>

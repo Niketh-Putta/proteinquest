@@ -10,19 +10,7 @@ on:
         required: false
         default: false
         type: boolean
-  push:
-    branches: [main]
-    paths:
-      - 'src/**'
-      - 'app.json'
-      - 'eas.json'
-      - 'package.json'
-      - 'package-lock.json'
-      - '.github/workflows/build-ios.yml'
-      - 'scripts/setup-expo-ios-credentials.cjs'
-      - 'scripts/validate-asc-key.mjs'
-      - 'scripts/submit-ios-version.mjs'
-      - 'scripts/asc-upload-screenshots.mjs'
+  # No push trigger — Android hotfixes must not auto-build iOS.
       - 'scripts/generate-app-store-screenshots.mjs'
       - 'scripts/prepare-app-store-screenshots.mjs'
       - 'store/app-store-listing.json'

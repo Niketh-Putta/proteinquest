@@ -79,11 +79,11 @@ export default function RootLayout() {
                 />
                 <Stack.Screen
                   name="scan-ingredient"
-                  options={{ presentation: 'card', animation: 'slide_from_right' }}
+                  options={{ presentation: 'fullScreenModal', animation: 'slide_from_right' }}
                 />
                 <Stack.Screen
                   name="scan-adjust"
-                  options={{ presentation: 'card', animation: 'slide_from_right' }}
+                  options={{ presentation: 'fullScreenModal', animation: 'slide_from_right' }}
                 />
                 <Stack.Screen
                   name="meal/[id]"
