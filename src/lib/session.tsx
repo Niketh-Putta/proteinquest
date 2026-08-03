@@ -195,29 +195,31 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           return;
         }
 
-        // No saved session — need network for guest sign-in, but cap the wait.
-        setAuthMessage('Connecting…');
-        let nextSession = await withTimeout(ensureAuthSession(), AUTH_COLD_START_MS, null);
-        if (!nextSession && mounted) {
-          await new Promise((resolve) => setTimeout(resolve, AUTH_RETRY_MS));
-          if (!mounted) return;
-          resetAnonymousSignupAttempt();
-          nextSession = await withTimeout(ensureAuthSession(), AUTH_COLD_START_MS, null);
+        // No saved session — open UI immediately (intro), auth guest in background.
+        // Blocking here used to hold splash/index spinner for up to ~20s.
+        if (mounted) {
+          setLoading(false);
+          setAuthMessage(null);
         }
-
-        if (!nextSession) {
-          nextSession = await readPersistedSession();
-        }
-
-        if (!mounted) return;
-        setSession(nextSession);
-        if (nextSession) {
+        void (async () => {
+          let nextSession = await withTimeout(ensureAuthSession(), AUTH_COLD_START_MS, null);
+          if (!nextSession && mountedRef.current) {
+            await new Promise((resolve) => setTimeout(resolve, AUTH_RETRY_MS));
+            if (!mountedRef.current) return;
+            resetAnonymousSignupAttempt();
+            nextSession = await withTimeout(ensureAuthSession(), AUTH_COLD_START_MS, null);
+          }
+          if (!nextSession) nextSession = await readPersistedSession();
+          if (!mountedRef.current || !nextSession) return;
+          setSession(nextSession);
           const p = await withTimeout(loadProfile(nextSession.user.id), PROFILE_BOOTSTRAP_MS, null);
+          if (!mountedRef.current) return;
           if (p) {
             applyProfile(p);
             await saveCachedProfile(p);
           }
-        }
+        })();
+        return;
       } catch (e) {
         console.error('Auth init failed:', e);
         if (mounted) {

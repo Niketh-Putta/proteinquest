@@ -16,7 +16,7 @@ import { View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { MealRemindersBootstrap } from '@/components/MealRemindersBootstrap';
-import { SessionProvider, useSession } from '@/lib/session';
+import { SessionProvider } from '@/lib/session';
 import { trackPageVisitOnce } from '@/lib/track-visit';
 import { colors } from '@/theme';
 
@@ -29,11 +29,11 @@ function SplashGate({
   fontsLoaded: boolean;
   children: React.ReactNode;
 }) {
-  const { loading } = useSession();
-
+  // Hide as soon as fonts are ready — never wait on auth network.
+  // Waiting on session made first open feel stuck on splash for seconds.
   useEffect(() => {
-    if (fontsLoaded && !loading) SplashScreen.hideAsync().catch(() => {});
-  }, [fontsLoaded, loading]);
+    if (fontsLoaded) SplashScreen.hideAsync().catch(() => {});
+  }, [fontsLoaded]);
 
   return <>{children}</>;
 }

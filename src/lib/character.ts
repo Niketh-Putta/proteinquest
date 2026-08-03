@@ -207,11 +207,14 @@ const DRAGON_ART_LOADERS: Record<DragonId, ArtLoader[]> = {
 };
 
 /** Eager-loaded baby forms only — used by DailyDragonPicker previews. */
-const PREVIEW_ART: Record<DragonId, ImageSourcePropType> = {
-  fire: require('@/assets/character/dragons/fire-1.png'),
-  ice: require('@/assets/character/dragons/ice-1.png'),
-  forest: require('@/assets/character/dragons/forest-1.png'),
-};
+const previewArtCache: Partial<Record<DragonId, ImageSourcePropType>> = {};
+
+function getPreviewArt(dragonId: DragonId): ImageSourcePropType {
+  if (!previewArtCache[dragonId]) {
+    previewArtCache[dragonId] = DRAGON_ART_LOADERS[dragonId][0]();
+  }
+  return previewArtCache[dragonId]!;
+}
 
 const artCache: Partial<Record<DragonId, ImageSourcePropType[]>> = {};
 
@@ -265,7 +268,9 @@ export const DRAGONS: DragonType[] = [
     title: 'Fire Dragon',
     element: 'Fire',
     accent: '#FF6B3D',
-    previewArt: PREVIEW_ART.fire,
+    get previewArt() {
+      return getPreviewArt('fire');
+    },
     stages: buildStages('fire'),
     motto: 'Burn bright. Eat protein.',
   },
@@ -275,7 +280,9 @@ export const DRAGONS: DragonType[] = [
     title: 'Ice Dragon',
     element: 'Ice',
     accent: '#5BC8F5',
-    previewArt: PREVIEW_ART.ice,
+    get previewArt() {
+      return getPreviewArt('ice');
+    },
     stages: buildStages('ice'),
     motto: 'Stay cool. Stay consistent.',
   },
@@ -285,7 +292,9 @@ export const DRAGONS: DragonType[] = [
     title: 'Forest Dragon',
     element: 'Forest',
     accent: '#5AD67A',
-    previewArt: PREVIEW_ART.forest,
+    get previewArt() {
+      return getPreviewArt('forest');
+    },
     stages: buildStages('forest'),
     motto: 'Grow roots. Grow muscle.',
   },

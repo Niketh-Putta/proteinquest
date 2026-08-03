@@ -49,8 +49,10 @@ import { setPreferredName } from '@/lib/xp';
 import type { DragonId } from '@/lib/types';
 import { colors, displayLH, fonts, layout, noTextCaret, pressableWeb, spacing, textInputWeb } from '@/theme';
 
-const HERO_ART = require('@/assets/character/dragons/fire-5.png');
+/** Compressed intro hero (~145KB webp) — full fire-5.png is 2.8MB and stalls first paint. */
+const HERO_ART = require('@/assets/character/dragons/fire-5-intro.webp');
 const EMBERS_VIDEO = require('@/assets/video/embers.mp4');
+const IS_ANDROID = Platform.OS === 'android';
 
 type Phase = 'hero' | 'name' | 'dragons' | 'benefits' | 'manifesto';
 
@@ -73,10 +75,11 @@ const MANIFESTO = [
   { lead: 'Your body', rest: ' is your character.' },
 ];
 
-/** Slow Ken Burns drift + lateral parallax on the full-bleed hero art. */
+/** Slow Ken Burns drift — iOS/web only. Android stays static for instant decode. */
 function KenBurnsHero() {
   const t = useSharedValue(0);
   useEffect(() => {
+    if (IS_ANDROID) return;
     t.value = withRepeat(
       withSequence(
         withTiming(1, { duration: 18000, easing: Easing.inOut(Easing.quad) }),
@@ -86,23 +89,47 @@ function KenBurnsHero() {
     );
   }, [t]);
 
-  const style = useAnimatedStyle(() => ({
-    transform: [
-      { scale: interpolate(t.value, [0, 1], [1.08, 1.22]) },
-      { translateX: interpolate(t.value, [0, 1], [0, -18]) },
-      { translateY: interpolate(t.value, [0, 1], [0, -10]) },
-    ],
-  }));
+  const style = useAnimatedStyle(() =>
+    IS_ANDROID
+      ? { transform: [{ scale: 1.1 }] }
+      : {
+          transform: [
+            { scale: interpolate(t.value, [0, 1], [1.08, 1.22]) },
+            { translateX: interpolate(t.value, [0, 1], [0, -18]) },
+            { translateY: interpolate(t.value, [0, 1], [0, -10]) },
+          ],
+        },
+  );
 
   return (
     <Animated.View style={[StyleSheet.absoluteFill, style]}>
-      <Image source={HERO_ART} style={StyleSheet.absoluteFill} contentFit="cover" />
+      <Image
+        source={HERO_ART}
+        style={StyleSheet.absoluteFill}
+        contentFit="cover"
+        priority="high"
+        cachePolicy="memory-disk"
+        recyclingKey="intro-hero"
+      />
     </Animated.View>
   );
 }
 
-/** Looping ember-spark video overlay (black bg blends into the dark scene). */
+/** Looping ember video — deferred / skipped on Android (3MB decode freezes first frame). */
 function EmberOverlay() {
+  const [mountVideo, setMountVideo] = useState(false);
+
+  useEffect(() => {
+    if (IS_ANDROID) return;
+    const t = setTimeout(() => setMountVideo(true), 900);
+    return () => clearTimeout(t);
+  }, []);
+
+  if (!mountVideo) return null;
+  return <EmberOverlayPlayer />;
+}
+
+function EmberOverlayPlayer() {
   const player = useVideoPlayer(EMBERS_VIDEO, (p) => {
     p.loop = true;
     p.muted = true;
@@ -473,7 +500,7 @@ export default function IntroScreen() {
             </View>
 
             <Animated.View
-              entering={FadeInDown.delay(900).duration(800)}
+              entering={FadeInDown.delay(IS_ANDROID ? 120 : 400).duration(500)}
               style={[styles.heroFooter, { paddingBottom: footerGap }]}>
               <Button title="Get started" onPress={next} />
               <Text style={styles.heroTagline}>ARE YOU READY TO LEVEL UP?</Text>
