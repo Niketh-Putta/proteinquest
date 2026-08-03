@@ -280,16 +280,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (loading) return;
-    // Idle-only: importing the whole catalog on boot freezes Android taps.
-    const timer = setTimeout(() => {
-      void import('@/lib/food-catalog-prefetch')
-        .then((m) => m.warmFoodCatalogIdle())
-        .catch(() => {});
-    }, 4000);
+    // Never warm the multi-megabyte food catalog on boot — freezes every Android tap.
     void import('@/lib/paywall-config')
       .then((m) => m.refreshPaywallConfig())
       .catch(() => {});
-    return () => clearTimeout(timer);
   }, [loading]);
 
   useEffect(() => {

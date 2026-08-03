@@ -29,7 +29,6 @@ import {
   searchCatalogSimilar,
   loadHeavyFoodCatalog,
 } from '@/lib/food-catalog';
-import { warmFoodCatalogIdle } from '@/lib/food-catalog-prefetch';
 import { useContentColumn } from '@/lib/layout';
 import { colors, fonts, layout, pressableWeb, radius, spacing, textInputWeb } from '@/theme';
 
@@ -103,7 +102,7 @@ export default function ScanIngredientScreen() {
 
   useEffect(() => {
     let alive = true;
-    // Import chunks only first so the screen paints; full index later idle.
+    // Sequential chunk load only — never full warm/index on open.
     void loadHeavyFoodCatalog()
       .then(() => {
         if (!alive) return;
@@ -111,7 +110,6 @@ export default function ScanIngredientScreen() {
         setCatalogTick((n) => n + 1);
       })
       .catch(() => {});
-    warmFoodCatalogIdle();
     return () => {
       alive = false;
     };
@@ -142,8 +140,13 @@ export default function ScanIngredientScreen() {
   );
 
   // Sort/filter full browse list after interactions so search + COMMON paint first.
+  // Android: skip auto full-browse — COMMON + search only (full sort freezes taps).
   useEffect(() => {
     if (!catalogReady) {
+      setBrowseReady(false);
+      return;
+    }
+    if (Platform.OS === 'android') {
       setBrowseReady(false);
       return;
     }

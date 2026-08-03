@@ -1,22 +1,12 @@
 /**
- * Warm heavy food-catalog chunks without blocking the current press handler.
- * Safe to call from idle / after navigation — NOT from onPressIn on Android.
+ * Cheap route-only hint. Do NOT load catalog chunks from here — that freezes
+ * the whole Android UI while Hermes parses ~600KB of food modules.
  */
 export function prefetchFoodCatalog(): void {
-  void import('@/lib/food-catalog')
-    .then((m) => m.prefetchHeavyFoodCatalogChunks())
-    .catch(() => {});
+  // intentionally empty — kept for call-site compatibility
 }
 
-/** Full warm (merge/sort/index) — only after interactions, never on press. */
+/** @deprecated Prefer loadHeavy only on the ingredient screen. */
 export function warmFoodCatalogIdle(): void {
-  void import('@/lib/food-catalog')
-    .then(async (m) => {
-      const { InteractionManager } = await import('react-native');
-      await new Promise<void>((resolve) => {
-        InteractionManager.runAfterInteractions(() => resolve());
-      });
-      await m.warmFoodCatalog();
-    })
-    .catch(() => {});
+  // No-op: full catalog warm must never run in the background of the main app.
 }

@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 
 import { supabase } from './supabase';
 
@@ -355,56 +356,36 @@ export function isHeavyFoodCatalogLoaded(): boolean {
   return heavyFoods != null;
 }
 
-/** Dynamically import large catalog chunks (safe to call often). */
+/** Dynamically import large catalog chunks one-by-one (safe to call often). */
 export function loadHeavyFoodCatalog(): Promise<CatalogFood[]> {
   if (heavyFoods) return Promise.resolve(heavyFoods);
   if (heavyLoadPromise) return heavyLoadPromise;
 
   heavyLoadPromise = (async () => {
-    const [
-      extra,
-      more,
-      more2,
-      more3,
-      more4,
-      more5,
-      more6,
-      unique,
-      world,
-      brands,
-      meals,
-      meals2,
-      mega,
-    ] = await Promise.all([
-      import('./food-catalog-extra'),
-      import('./food-catalog-more'),
-      import('./food-catalog-more-2'),
-      import('./food-catalog-more-3'),
-      import('./food-catalog-more-4'),
-      import('./food-catalog-more-5'),
-      import('./food-catalog-more-6'),
-      import('./food-catalog-unique'),
-      import('./food-catalog-world'),
-      import('./food-catalog-brands'),
-      import('./food-catalog-meals'),
-      import('./food-catalog-meals-2'),
-      import('./food-catalog-mega'),
-    ]);
-    heavyFoods = [
-      ...extra.EXTRA_FOODS,
-      ...more.MORE_FOODS,
-      ...more2.MORE_FOODS_2,
-      ...more3.MORE_FOODS_3,
-      ...more4.MORE_FOODS_4,
-      ...more5.MORE_FOODS_5,
-      ...more6.MORE_FOODS_6,
-      ...unique.UNIQUE_FOODS,
-      ...world.WORLD_FOODS,
-      ...brands.BRAND_FOODS,
-      ...meals.MEAL_FOODS,
-      ...meals2.MEAL_FOODS_2,
-      ...mega.MEGA_FOODS,
+    // Sequential imports — Promise.all of 13 megachunks freezes Android Hermes for seconds.
+    const loaders: Array<() => Promise<{ foods: CatalogFood[] }>> = [
+      async () => ({ foods: (await import('./food-catalog-extra')).EXTRA_FOODS }),
+      async () => ({ foods: (await import('./food-catalog-more')).MORE_FOODS }),
+      async () => ({ foods: (await import('./food-catalog-more-2')).MORE_FOODS_2 }),
+      async () => ({ foods: (await import('./food-catalog-more-3')).MORE_FOODS_3 }),
+      async () => ({ foods: (await import('./food-catalog-more-4')).MORE_FOODS_4 }),
+      async () => ({ foods: (await import('./food-catalog-more-5')).MORE_FOODS_5 }),
+      async () => ({ foods: (await import('./food-catalog-more-6')).MORE_FOODS_6 }),
+      async () => ({ foods: (await import('./food-catalog-unique')).UNIQUE_FOODS }),
+      async () => ({ foods: (await import('./food-catalog-world')).WORLD_FOODS }),
+      async () => ({ foods: (await import('./food-catalog-brands')).BRAND_FOODS }),
+      async () => ({ foods: (await import('./food-catalog-meals')).MEAL_FOODS }),
+      async () => ({ foods: (await import('./food-catalog-meals-2')).MEAL_FOODS_2 }),
+      async () => ({ foods: (await import('./food-catalog-mega')).MEGA_FOODS }),
     ];
+
+    const merged: CatalogFood[] = [];
+    for (const load of loaders) {
+      const { foods } = await load();
+      merged.push(...foods);
+      await yieldToUi();
+    }
+    heavyFoods = merged;
     invalidateCatalogCaches();
     return heavyFoods;
   })().finally(() => {
@@ -417,7 +398,7 @@ export function loadHeavyFoodCatalog(): Promise<CatalogFood[]> {
 /** Yield so Android can flush taps / frames between heavy catalog steps. */
 function yieldToUi(): Promise<void> {
   return new Promise((resolve) => {
-    setTimeout(resolve, 0);
+    setTimeout(resolve, Platform.OS === 'android' ? 32 : 0);
   });
 }
 

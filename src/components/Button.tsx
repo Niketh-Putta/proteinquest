@@ -35,6 +35,8 @@ export function Button({ title, onPress, variant = 'primary', disabled, loading,
   const flatStyle = StyleSheet.flatten(style);
   const cornerRadius =
     typeof flatStyle?.borderRadius === 'number' ? flatStyle.borderRadius : radius.button;
+  // Reanimated press springs fight Android touch responder under JS load.
+  const usePressScale = Platform.OS !== 'android';
 
   // IMPORTANT: the touch target is a plain <Pressable>, and the press-scale
   // animation lives on an inner <Animated.View>. Wrapping the Pressable itself
@@ -52,10 +54,11 @@ export function Button({ title, onPress, variant = 'primary', disabled, loading,
         borderless: false,
       }}
       onPressIn={() => {
-        if (isDisabled) return;
+        if (isDisabled || !usePressScale) return;
         scale.value = withSpring(0.985, { damping: 18, stiffness: 400 });
       }}
       onPressOut={() => {
+        if (!usePressScale) return;
         scale.value = withSpring(1, { damping: 14, stiffness: 300 });
       }}
       style={[

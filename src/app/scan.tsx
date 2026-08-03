@@ -868,7 +868,7 @@ export default function ScanScreen() {
       setAnalyzeProgress(Math.min(0.92, stepBase + timeBoost));
     };
     tick();
-    const t = setInterval(tick, 80);
+    const t = setInterval(tick, Platform.OS === 'android' ? 250 : 80);
     return () => clearInterval(t);
   }, [phase]);
 
