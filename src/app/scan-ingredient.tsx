@@ -107,10 +107,12 @@ export default function ScanIngredientScreen() {
   const [browseReady, setBrowseReady] = useState(false);
   const searchRef = useRef<TextInput>(null);
 
+  // iOS: warm heavy catalog after transition. Android: NEVER on mount — Hermes parse of
+  // ~600KB food modules OOMs / kills the activity (Add button "stops and closes").
   useEffect(() => {
+    if (IS_ANDROID) return;
     let alive = true;
     let delayTimer: ReturnType<typeof setTimeout> | undefined;
-    // Defer heavy imports until after the push animation — loading on mount OOMs Android.
     const handle = InteractionManager.runAfterInteractions(() => {
       if (!alive) return;
       delayTimer = setTimeout(() => {
@@ -124,7 +126,7 @@ export default function ScanIngredientScreen() {
           .catch((e) => {
             console.warn('Heavy food catalog failed:', e);
           });
-      }, IS_ANDROID ? 450 : 80);
+      }, 80);
     });
     return () => {
       alive = false;
@@ -150,6 +152,12 @@ export default function ScanIngredientScreen() {
         if (alive) setRecent(list);
       });
       // Remote catalogue after paint — never race the open transition.
+      // Android: skip on open (network + JSON parse adds crash risk); refresh on search instead.
+      if (IS_ANDROID) {
+        return () => {
+          alive = false;
+        };
+      }
       const handle = InteractionManager.runAfterInteractions(() => {
         if (!alive) return;
         delayTimer = setTimeout(() => {
@@ -157,7 +165,7 @@ export default function ScanIngredientScreen() {
           void refreshRemoteFoodCatalog().then(() => {
             if (alive) setCatalogTick((n) => n + 1);
           });
-        }, IS_ANDROID ? 600 : 120);
+        }, 120);
       });
       return () => {
         alive = false;
@@ -207,6 +215,41 @@ export default function ScanIngredientScreen() {
   }, [deferredTrimmed, catalogTick]);
 
   const [similarResults, setSimilarResults] = useState<CatalogFood[]>([]);
+
+  // Android: only pull heavy chunks after the user actually searches (2+ chars),
+  // and only after interactions — open stays COMMON + base FOOD_CATALOG forever-safe.
+  useEffect(() => {
+    if (!IS_ANDROID) return;
+    if (heavyReady) return;
+    if (deferredTrimmed.length < 2) return;
+    let alive = true;
+    let delayTimer: ReturnType<typeof setTimeout> | undefined;
+    const handle = InteractionManager.runAfterInteractions(() => {
+      if (!alive) return;
+      delayTimer = setTimeout(() => {
+        if (!alive) return;
+        void loadHeavyFoodCatalog()
+          .then(() => {
+            if (!alive) return;
+            setHeavyReady(true);
+            setCatalogTick((n) => n + 1);
+          })
+          .catch((e) => {
+            console.warn('Heavy food catalog failed:', e);
+          });
+        void refreshRemoteFoodCatalog()
+          .then(() => {
+            if (alive) setCatalogTick((n) => n + 1);
+          })
+          .catch(() => {});
+      }, 700);
+    });
+    return () => {
+      alive = false;
+      handle.cancel();
+      if (delayTimer) clearTimeout(delayTimer);
+    };
+  }, [deferredTrimmed, heavyReady]);
 
   useEffect(() => {
     if (!deferredTrimmed) {

@@ -11,11 +11,6 @@ on:
         default: false
         type: boolean
   # No push trigger — Android hotfixes must not auto-build iOS.
-      - 'scripts/generate-app-store-screenshots.mjs'
-      - 'scripts/prepare-app-store-screenshots.mjs'
-      - 'store/app-store-listing.json'
-      - 'store/screenshots/iphone67/**'
-      - 'store/screenshots/ipad13/**'
 
 concurrency:
   group: ios-production

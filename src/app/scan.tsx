@@ -2258,6 +2258,8 @@ export default function ScanScreen() {
 
             <Pressable
               onPress={() => {
+                // Free multi-MB base64 before push — otherwise Android OOM-kills on Add.
+                setImageBase64(null);
                 // Navigate immediately. Catalog warm / keyboard must never run on press.
                 router.push('/scan-ingredient' as never);
                 runAfterNav(() => {
