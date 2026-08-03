@@ -59,6 +59,7 @@ import {
 } from '@/lib/character';
 import { clearNeedsFirstScan, needsFirstScan } from '@/lib/first-scan';
 import { useLayout } from '@/lib/layout';
+import { useSpecialDeviceLayout } from '@/lib/special-device';
 import { rememberLocalMealPhoto } from '@/lib/local-meal-photo';
 import {
     CALORIE_OVERRIDE_BUFFER,
@@ -451,6 +452,9 @@ export default function ScanScreen() {
     isDesktop,
     isTablet,
   } = useLayout();
+  const special = useSpecialDeviceLayout();
+  /** Always 1 on normal phones — special fold/split/cover only. */
+  const ss = special.specialScale;
   const { width: screenW, height: screenH } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const [cameraViewport, setCameraViewport] = useState({
@@ -472,16 +476,20 @@ export default function ScanScreen() {
   const compactH = !tinyH && (vh < 740 || (landscape && vh < 520));
   const tallH = vh >= 900 && !landscape;
   /** Scale UI from a phone reference; dampen on huge tablets so chrome doesn't balloon. */
-  const uiScale = Math.min(
-    isDesktop ? 1.08 : isTablet ? 1.05 : 1.12,
-    Math.max(0.76, Math.min(shortSide / 390, vh / (landscape ? 420 : 780))),
-  );
+  const uiScale =
+    Math.min(
+      isDesktop ? 1.08 : isTablet ? 1.05 : 1.12,
+      Math.max(0.76, Math.min(shortSide / 390, vh / (landscape ? 420 : 780))),
+    ) * ss;
   /** Vertical rhythm: tighter on short screens, airier on tall phones (not huge voids). */
-  const stackGapMd = tinyH || landscape ? 8 : compactH ? 12 : tallH ? 18 : 14;
-  const stackGapLg = tinyH || landscape ? 10 : compactH ? 14 : tallH ? 22 : 18;
-  const heroPadV = tinyH || landscape ? 2 : compactH ? 4 : tallH ? spacing.md : spacing.sm;
-  /** Drop brand lockup below the close row (was negative lift / too high). */
-  const brandDrop = tinyH || landscape ? 4 : compactH ? 10 : tallH ? 18 : 14;
+  const stackGapMdRaw = tinyH || landscape ? 8 : compactH ? 12 : tallH ? 18 : 14;
+  const stackGapLgRaw = tinyH || landscape ? 10 : compactH ? 14 : tallH ? 22 : 18;
+  const stackGapMd = special.isSpecial ? Math.max(2, Math.round(stackGapMdRaw * ss)) : stackGapMdRaw;
+  const stackGapLg = special.isSpecial ? Math.max(2, Math.round(stackGapLgRaw * ss)) : stackGapLgRaw;
+  const heroPadVRaw = tinyH || landscape ? 2 : compactH ? 4 : tallH ? spacing.md : spacing.sm;
+  const brandDropRaw = tinyH || landscape ? 4 : compactH ? 10 : tallH ? 18 : 14;
+  const heroPadV = special.isSpecial ? Math.max(0, Math.round(heroPadVRaw * ss)) : heroPadVRaw;
+  const brandDrop = special.isSpecial ? Math.max(0, Math.round(brandDropRaw * ss)) : brandDropRaw;
   const heroBelow = stackGapMd;
   const headerTop =
     Math.max(insets.top, Platform.OS === 'web' ? 20 : 12) + (tinyH ? spacing.xs : spacing.sm);
@@ -611,10 +619,15 @@ export default function ScanScreen() {
   const bottomGap = tinyH || landscape ? stackGapMd : tallH ? stackGapLg + 4 : stackGapLg;
   const availableForFinder = Math.max(
     tinyH ? 112 : 128,
-    vh - topReserve - botReserve - chromeGap - bottomGap,
+    vh -
+      topReserve -
+      botReserve -
+      chromeGap -
+      bottomGap +
+      (special.isSpecial ? special.specialGapCut * 2 : 0),
   );
   const viewfinderSize = Math.max(
-    tinyH ? 112 : 128,
+    special.isUltraCompact ? 96 : tinyH ? 112 : 128,
     Math.min(stageWidth - sideGutter * 2, availableForFinder, finderCap),
   );
   /**

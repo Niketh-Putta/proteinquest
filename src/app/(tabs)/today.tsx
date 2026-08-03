@@ -49,6 +49,7 @@ import {
 } from '@/lib/character';
 import { hungerFromLastMealAt, hungerVoice } from '@/lib/dragon-hunger';
 import { contentColumnStyle, flexFill, flexScroll, useLayout, useTabBarScrollInset } from '@/lib/layout';
+import { useSpecialDeviceLayout } from '@/lib/special-device';
 import { needsFirstScan } from '@/lib/first-scan';
 import { scheduleStreakAtRiskNudge } from '@/lib/meal-reminders';
 import { hasUnlimitedScans, isPro, remainingFreeScans } from '@/lib/paywall-gate';
@@ -137,7 +138,7 @@ const thumbStyles = StyleSheet.create({
 
 export default function TodayScreen() {
   const {
-    ringSize,
+    ringSize: ringSizeBase,
     horizontalPad,
     contentMaxWidth,
     heroLayout,
@@ -145,8 +146,15 @@ export default function TodayScreen() {
     asideWidth,
     titleSize,
     isNarrow,
+    characterScale,
   } = useLayout();
-  const tabBarScrollInset = useTabBarScrollInset(isNarrow);
+  const special = useSpecialDeviceLayout();
+  // specialScale is 1 on normal phones — ring size unchanged.
+  const ringSize = Math.round(ringSizeBase * special.specialScale);
+  const characterScaleAdj = special.isSpecial
+    ? characterScale * special.specialScale
+    : undefined;
+  const tabBarScrollInset = useTabBarScrollInset(isNarrow) - special.specialGapCut;
   const insets = useSafeAreaInsets();
   const { fed, protein, loot, freeze, food } = useLocalSearchParams<{
     fed?: string;
@@ -567,24 +575,26 @@ export default function TodayScreen() {
             </Text>
           </View>
           <View style={styles.headerDivider} accessibilityElementsHidden importantForAccessibility="no-hide-descendants" />
-          <WeekDateStrip
-            selectedISO={viewedISO}
-            goalG={goal}
-            totals={dayTotals}
-            liveISO={viewedISO}
-            liveProteinG={consumed}
-            compact={isNarrow}
-            onSelect={(iso) => {
-              const today = todayISODate();
-              if (iso > today) return;
-              if (iso === viewedISO) return;
-              trackEvent('today_day_selected', {
-                date: iso,
-                is_today: iso === today,
-              });
-              setViewedISO(iso);
-            }}
-          />
+          {!special.isUltraCompact ? (
+            <WeekDateStrip
+              selectedISO={viewedISO}
+              goalG={goal}
+              totals={dayTotals}
+              liveISO={viewedISO}
+              liveProteinG={consumed}
+              compact={isNarrow || special.isSquatWindow}
+              onSelect={(iso) => {
+                const today = todayISODate();
+                if (iso > today) return;
+                if (iso === viewedISO) return;
+                trackEvent('today_day_selected', {
+                  date: iso,
+                  is_today: iso === today,
+                });
+                setViewedISO(iso);
+              }}
+            />
+          ) : null}
         </View>
 
         {profile ? (
@@ -667,6 +677,8 @@ export default function TodayScreen() {
                 fedPulse={fedPulse}
                 onFeedPress={openFeed}
                 dailyTotals={dayTotals}
+                scale={characterScaleAdj}
+                showSwitcher={!special.isUltraCompact}
               />
             </Animated.View>
           ) : null}
@@ -915,6 +927,8 @@ export default function TodayScreen() {
                     fedPulse={fedPulse}
                     onFeedPress={openFeed}
                     dailyTotals={dayTotals}
+                    scale={characterScaleAdj}
+                    showSwitcher={!special.isUltraCompact}
                   />
                 </View>
               ) : null}

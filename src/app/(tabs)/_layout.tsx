@@ -13,6 +13,7 @@ import {
 import { countLifetimeMeals, countTodayPhotoScans } from '@/lib/api';
 import { todayISODate } from '@/lib/protein';
 import { useSession } from '@/lib/session';
+import { useSpecialDeviceLayout } from '@/lib/special-device';
 import { colors, fonts, noTextCaret, pressableWeb, spacing } from '@/theme';
 
 interface TabBarProps {
@@ -23,6 +24,7 @@ interface TabBarProps {
 function ScanTabBar({ state, navigation }: TabBarProps) {
   const insets = useSafeAreaInsets();
   const { contentMaxWidth, isWide } = useLayout();
+  const special = useSpecialDeviceLayout();
   const { profile } = useSession();
 
   function openScan() {
@@ -53,18 +55,31 @@ function ScanTabBar({ state, navigation }: TabBarProps) {
   };
 
   return (
-    <View style={[styles.barOuter, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+    <View
+      style={[
+        styles.barOuter,
+        {
+          paddingBottom: Math.max(insets.bottom, special.isSquatWindow ? 6 : 12),
+          paddingTop: special.isSquatWindow ? 4 : 10,
+        },
+        special.isUltraCompact && { paddingHorizontal: spacing.md },
+      ]}>
       <View
-        style={[styles.bar, isWide && { maxWidth: contentMaxWidth, alignSelf: 'center', width: '100%' }]}>
+        style={[
+          styles.bar,
+          isWide && { maxWidth: contentMaxWidth, alignSelf: 'center', width: '100%' },
+        ]}>
         <TabButton
           tab={tabs.today}
           active={state.index === 0}
           onPress={() => navigation.navigate('today')}
+          compact={special.isSpecial}
         />
         <TabButton
           tab={tabs.trends}
           active={state.index === 1}
           onPress={openTrends}
+          compact={special.isSpecial}
         />
 
         <Pressable
@@ -72,27 +87,31 @@ function ScanTabBar({ state, navigation }: TabBarProps) {
           onPress={openScan}
           style={({ pressed }) => [
             styles.scanTab,
+            special.isSquatWindow && styles.scanTabCompact,
             pressableWeb,
             pressed && { transform: [{ scale: 0.94 }] },
           ]}>
-          <View style={styles.scanBtn}>
-            <Ionicons name="add" size={28} color={colors.onAccent} />
+          <View style={[styles.scanBtn, special.isSquatWindow && styles.scanBtnCompact]}>
+            <Ionicons name="add" size={special.isSquatWindow ? 24 : 28} color={colors.onAccent} />
           </View>
-          <Text selectable={false} style={styles.scanLabel}>
-            Add
-          </Text>
+          {!special.isUltraCompact ? (
+            <Text selectable={false} style={styles.scanLabel}>
+              Add
+            </Text>
+          ) : null}
         </Pressable>
 
         <TabButton
           tab={tabs.league}
           active={state.index === 2}
           onPress={() => navigation.navigate('league')}
+          compact={special.isSpecial}
         />
-
         <TabButton
           tab={tabs.profile}
           active={state.index === 3}
           onPress={() => navigation.navigate('profile')}
+          compact={special.isSpecial}
         />
       </View>
     </View>
@@ -103,19 +122,29 @@ function TabButton({
   tab,
   active,
   onPress,
+  compact = false,
 }: {
   tab: { label: string; icon: keyof typeof Ionicons.glyphMap };
   active: boolean;
   onPress: () => void;
+  /** Only true on fold/split/cover — normal phones keep labels. */
+  compact?: boolean;
 }) {
   return (
-    <Pressable accessibilityRole="button" onPress={onPress} style={[styles.tab, pressableWeb]}>
-      <Ionicons name={tab.icon} size={20} color={active ? colors.text : colors.textTertiary} />
-      <Text
-        selectable={false}
-        style={[styles.tabLabel, active && styles.tabLabelActive]}>
-        {tab.label}
-      </Text>
+    <Pressable
+      accessibilityRole="button"
+      onPress={onPress}
+      style={[styles.tab, compact && styles.tabCompact, pressableWeb]}>
+      <Ionicons
+        name={tab.icon}
+        size={compact ? 18 : 20}
+        color={active ? colors.text : colors.textTertiary}
+      />
+      {!compact ? (
+        <Text selectable={false} style={[styles.tabLabel, active && styles.tabLabelActive]}>
+          {tab.label}
+        </Text>
+      ) : null}
       {active ? <View style={styles.tabIndicator} /> : null}
     </Pressable>
   );
@@ -155,6 +184,7 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   tab: { flex: 1, alignItems: 'center', gap: 4, minHeight: 44, paddingBottom: 2 },
+  tabCompact: { gap: 0, minHeight: 40 },
   tabLabel: {
     ...noTextCaret,
     fontFamily: fonts.mono,
@@ -178,6 +208,10 @@ const styles = StyleSheet.create({
     minHeight: 44,
     paddingBottom: 2,
   },
+  scanTabCompact: {
+    gap: 0,
+    minHeight: 40,
+  },
   scanBtn: {
     width: 64,
     height: 64,
@@ -190,6 +224,12 @@ const styles = StyleSheet.create({
     marginTop: -22,
     borderWidth: 3,
     borderColor: colors.bg,
+  },
+  scanBtnCompact: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    marginTop: -14,
   },
   scanLabel: {
     ...noTextCaret,

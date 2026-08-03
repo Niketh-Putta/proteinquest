@@ -44,6 +44,7 @@ import {
 import { trackEvent } from '@/lib/analytics';
 import { DRAGONS, buildDragonNames, normalizeDragonName, warmDragonPreviewArt } from '@/lib/character';
 import { useLayout, usePinnedFooterGap, useStickyFooterClearance } from '@/lib/layout';
+import { useSpecialDeviceLayout } from '@/lib/special-device';
 import { useSession } from '@/lib/session';
 import { setPreferredName } from '@/lib/xp';
 import type { DragonId } from '@/lib/types';
@@ -305,6 +306,7 @@ function PhaseProgress({ index, total }: { index: number; total: number }) {
 export default function IntroScreen() {
   const { saveProfile, loading: sessionLoading, session } = useSession();
   const { horizontalPad, formMaxWidth, height, width, isDesktop } = useLayout();
+  const special = useSpecialDeviceLayout();
   const insets = useSafeAreaInsets();
   const isCompact = height < 700 || width < 390;
   const isTiny = height < 640 || width < 360;
@@ -324,7 +326,9 @@ export default function IntroScreen() {
 
   const phaseIndex = PHASES.indexOf(phase);
   const namingDragon = DRAGONS[dragonIndex];
-  const dragonPortraitSize = isTiny ? 88 : isCompact ? 112 : 160;
+  const dragonPortraitSizeBase = isTiny ? 88 : isCompact ? 112 : 160;
+  // specialScale is 1 on normal phones — portrait size unchanged.
+  const dragonPortraitSize = Math.round(dragonPortraitSizeBase * special.specialScale);
 
   // Baby dragon PNGs are ~2MB each — warm all three as soon as intro mounts so
   // the naming step never paints an empty frame.
