@@ -42,7 +42,7 @@ import {
   isDisplayNameTakenError,
 } from '@/lib/display-name';
 import { trackEvent } from '@/lib/analytics';
-import { DRAGONS, buildDragonNames, normalizeDragonName } from '@/lib/character';
+import { DRAGONS, buildDragonNames, normalizeDragonName, warmDragonPreviewArt } from '@/lib/character';
 import { useLayout, usePinnedFooterGap, useStickyFooterClearance } from '@/lib/layout';
 import { useSession } from '@/lib/session';
 import { setPreferredName } from '@/lib/xp';
@@ -326,6 +326,16 @@ export default function IntroScreen() {
   const namingDragon = DRAGONS[dragonIndex];
   const dragonPortraitSize = isTiny ? 88 : isCompact ? 112 : 160;
 
+  // Baby dragon PNGs are ~2MB each — warm all three as soon as intro mounts so
+  // the naming step never paints an empty frame.
+  useEffect(() => {
+    warmDragonPreviewArt();
+  }, []);
+
+  useEffect(() => {
+    if (phase === 'name' || phase === 'dragons') warmDragonPreviewArt();
+  }, [phase]);
+
   function scrollNameFieldIntoView() {
     // Keep the name input above the pinned Continue / Next dragon CTA.
     requestAnimationFrame(() => {
@@ -600,11 +610,12 @@ export default function IntroScreen() {
                       isTiny && styles.dragonRevealTiny,
                     ]}>
                     <DragonPortrait
-                      art={namingDragon.stages[0].art}
+                      art={namingDragon.previewArt}
                       accent={namingDragon.accent}
                       level={1}
                       dragonId={namingDragon.id}
                       size={dragonPortraitSize}
+                      priority="high"
                     />
                   </View>
                   <Pressable onPress={Keyboard.dismiss} accessibilityRole="none">

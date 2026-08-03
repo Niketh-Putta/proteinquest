@@ -1,5 +1,6 @@
+import { Image } from 'expo-image';
 import React from 'react';
-import { Image, Platform, StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
 import type { ImageSourcePropType } from 'react-native';
 
 import { microProgress } from '@/lib/character';
@@ -13,6 +14,8 @@ interface Props {
   dragonId: DragonId;
   size?: number;
   showGlow?: boolean;
+  /** Prefer for intro / first-paint surfaces so the portrait is not blank while decoding. */
+  priority?: 'low' | 'normal' | 'high';
 }
 
 export function DragonPortrait({
@@ -22,6 +25,7 @@ export function DragonPortrait({
   dragonId,
   size = 200,
   showGlow = true,
+  priority = 'high',
 }: Props) {
   const micro = microProgress(level, dragonId);
   const stretchComp = (micro.scaleY - 1) * (size * 0.15);
@@ -52,7 +56,15 @@ export function DragonPortrait({
           ],
         }}>
         <View style={[styles.frame, { borderColor: `${accent}50`, width: size, height: size }]}>
-          <Image source={art} style={{ width: size, height: size, borderRadius: radius.character }} />
+          <Image
+            source={art}
+            style={{ width: size, height: size, borderRadius: radius.character }}
+            contentFit="cover"
+            priority={priority}
+            cachePolicy="memory-disk"
+            transition={0}
+            recyclingKey={`dragon-${dragonId}-${level}`}
+          />
         </View>
       </View>
     </View>

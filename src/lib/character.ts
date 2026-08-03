@@ -220,15 +220,30 @@ const artCache: Partial<Record<DragonId, ImageSourcePropType[]>> = {};
 
 export function getDragonArt(dragonId: DragonId, stageIndex: number): ImageSourcePropType {
   if (!artCache[dragonId]) {
-    artCache[dragonId] = DRAGON_ART_LOADERS[dragonId].map((load) => load());
+    artCache[dragonId] = [];
   }
-  return artCache[dragonId]![stageIndex];
+  const cached = artCache[dragonId]!;
+  // Load only the requested stage — mapping all 5 PNGs (~10MB+) blocks first paint on intro.
+  if (cached[stageIndex] == null) {
+    cached[stageIndex] = DRAGON_ART_LOADERS[dragonId][stageIndex]!();
+  }
+  return cached[stageIndex]!;
 }
 
 /** Eager-load all stages for a dragon so Today/scan don't hitch on first paint. */
 export function warmDragonArt(dragonId: DragonId): void {
-  if (!artCache[dragonId]) {
-    artCache[dragonId] = DRAGON_ART_LOADERS[dragonId].map((load) => load());
+  const loaders = DRAGON_ART_LOADERS[dragonId];
+  if (!artCache[dragonId]) artCache[dragonId] = [];
+  const cached = artCache[dragonId]!;
+  for (let i = 0; i < loaders.length; i++) {
+    if (cached[i] == null) cached[i] = loaders[i]!();
+  }
+}
+
+/** Warm baby (stage 0) art for every dragon — cheap enough for intro naming. */
+export function warmDragonPreviewArt(): void {
+  for (const id of Object.keys(DRAGON_ART_LOADERS) as DragonId[]) {
+    getPreviewArt(id);
   }
 }
 
