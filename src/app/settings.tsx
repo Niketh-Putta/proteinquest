@@ -50,6 +50,7 @@ import {
   setMealRemindersEnabled,
 } from '@/lib/meal-reminders';
 import { todayISODate } from '@/lib/protein';
+import { getRevenueCatPlans } from '@/lib/revenuecat';
 import { useSession } from '@/lib/session';
 import type { DragonId, Profile } from '@/lib/types';
 import { setPreferredName } from '@/lib/xp';
@@ -94,6 +95,7 @@ export default function SettingsScreen({ embedded = false }: { embedded?: boolea
   const [dragonNameDrafts, setDragonNameDrafts] = useState<Partial<Record<DragonId, string>>>({});
   const [dragonNamesSaved, setDragonNamesSaved] = useState(false);
   const [nameToast, setNameToast] = useState<string | null>(null);
+  const [upgradeHint, setUpgradeHint] = useState('Unlimited scans · billed annually');
   const nameInputRef = useRef<TextInput>(null);
   const nameHydrated = useRef(false);
   const dragonNamesHydrated = useRef(false);
@@ -101,6 +103,23 @@ export default function SettingsScreen({ embedded = false }: { embedded?: boolea
   useEffect(() => {
     isMealRemindersEnabled().then(setRemindersOn).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (profile?.is_premium) return;
+    let alive = true;
+    void getRevenueCatPlans()
+      .then((plans) => {
+        if (!alive) return;
+        const yearly = plans.find((p) => p.id === 'pro_yearly');
+        if (yearly?.price) {
+          setUpgradeHint(`Unlimited scans · from ${yearly.price}, billed annually`);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [profile?.is_premium]);
 
   async function toggleReminders(next: boolean) {
     setRemindersBusy(true);
@@ -464,9 +483,7 @@ export default function SettingsScreen({ embedded = false }: { embedded?: boolea
                     </View>
                     <View style={styles.upgradeCopy}>
                       <Text style={styles.upgradeTitle}>Upgrade to Pro</Text>
-                      <Text style={styles.upgradeHint}>
-                        Unlimited scans · from $4.99/mo, billed annually
-                      </Text>
+                      <Text style={styles.upgradeHint}>{upgradeHint}</Text>
                     </View>
                     <Ionicons name="chevron-forward" size={18} color={colors.onAccent} />
                   </LinearGradient>

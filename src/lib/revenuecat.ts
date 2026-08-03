@@ -224,6 +224,11 @@ function roundToNinetyNine(amount: number): number {
   return Math.ceil(amount) - 0.01;
 }
 
+/** Honest monthly equivalent of an annual price — never round *up* into a higher .99. */
+function monthlyFromAnnual(annualAmount: number): number {
+  return Math.floor((annualAmount / 12) * 100) / 100;
+}
+
 function formatCurrency(amount: number, currency: string): string {
   try {
     return new Intl.NumberFormat(undefined, {
@@ -247,9 +252,10 @@ function formatYearlyPlan(product: PurchasesProductLike): { price: string; capti
   const currency = product.currencyCode ?? 'USD';
   const annualAmount = product.price ?? 59.99;
   const annualRounded = roundToNinetyNine(annualAmount);
-  const monthlyRounded = roundToNinetyNine(annualAmount / 12);
+  // £52.99/12 ≈ £4.42 — roundToNinetyNine would wrongly show £4.99
+  const monthly = monthlyFromAnnual(annualRounded);
   return {
-    price: `${formatCurrency(monthlyRounded, currency)}/mo`,
+    price: `${formatCurrency(monthly, currency)}/mo`,
     caption: `Billed as ${formatCurrency(annualRounded, currency)} annually`,
   };
 }
