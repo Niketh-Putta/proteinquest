@@ -27,8 +27,9 @@ import {
   refreshRemoteFoodCatalog,
   searchCatalogExact,
   searchCatalogSimilar,
-  warmFoodCatalog,
+  loadHeavyFoodCatalog,
 } from '@/lib/food-catalog';
+import { warmFoodCatalogIdle } from '@/lib/food-catalog-prefetch';
 import { useContentColumn } from '@/lib/layout';
 import { colors, fonts, layout, pressableWeb, radius, spacing, textInputWeb } from '@/theme';
 
@@ -87,7 +88,7 @@ function FoodRow({
   );
 }
 
-const BROWSE_PAGE = 100;
+const BROWSE_PAGE = Platform.OS === 'android' ? 36 : 80;
 
 export default function ScanIngredientScreen() {
   const column = useContentColumn('form');
@@ -102,13 +103,15 @@ export default function ScanIngredientScreen() {
 
   useEffect(() => {
     let alive = true;
-    void warmFoodCatalog()
+    // Import chunks only first so the screen paints; full index later idle.
+    void loadHeavyFoodCatalog()
       .then(() => {
         if (!alive) return;
         setCatalogReady(true);
         setCatalogTick((n) => n + 1);
       })
       .catch(() => {});
+    warmFoodCatalogIdle();
     return () => {
       alive = false;
     };
@@ -186,7 +189,7 @@ export default function ScanIngredientScreen() {
         if (cancelled) return;
         setSimilarResults(searchCatalogSimilar(deferredTrimmed, exactResults));
       });
-    }, 0);
+    }, Platform.OS === 'android' ? 180 : 60);
     return () => {
       cancelled = true;
       clearTimeout(timer);
@@ -200,23 +203,34 @@ export default function ScanIngredientScreen() {
     return commonBase.filter((f) => !recentNames.has(f.name.toLowerCase()));
   }, [recent, commonBase]);
 
-  /** Full catalogue browse under COMMON. Skip while searching or until warm. */
-  const browseMore = useMemo(() => {
+  /** Take first N browse rows without filtering the entire sorted catalog up front. */
+  const browseVisible = useMemo(() => {
     if (searching || !browseReady) return [] as CatalogFood[];
     const skip = new Set([
       ...recent.map((r) => r.name.toLowerCase()),
       ...commonBase.map((f) => f.name.toLowerCase()),
     ]);
-    return getSortedBrowseCatalog().filter((f) => !skip.has(f.name.toLowerCase()));
-  }, [searching, browseReady, recent, commonBase, catalogTick]);
+    const sorted = getSortedBrowseCatalog();
+    const out: CatalogFood[] = [];
+    for (const f of sorted) {
+      if (skip.has(f.name.toLowerCase())) continue;
+      out.push(f);
+      if (out.length >= browseLimit) break;
+    }
+    return out;
+  }, [searching, browseReady, recent, commonBase, catalogTick, browseLimit]);
 
-  const browseVisible = browseMore.slice(0, browseLimit);
-  const browseRemaining = Math.max(0, browseMore.length - browseLimit);
+  const browseHasMore = useMemo(() => {
+    if (searching || !browseReady) return false;
+    // Cheap probe: if we filled the page, assume more may exist.
+    return browseVisible.length >= browseLimit;
+  }, [searching, browseReady, browseVisible.length, browseLimit]);
+
   const showBrowseSkeleton = !searching && (!catalogReady || !browseReady);
 
   const loadMoreBrowse = useCallback(() => {
-    setBrowseLimit((n) => Math.min(n + BROWSE_PAGE, browseMore.length));
-  }, [browseMore.length]);
+    setBrowseLimit((n) => n + BROWSE_PAGE);
+  }, []);
 
   return (
     <PageCanvas>
@@ -251,7 +265,7 @@ export default function ScanIngredientScreen() {
             contentContainerStyle={styles.scroll}
             scrollEventThrottle={160}
             onScroll={(e) => {
-              if (searching || browseRemaining <= 0) return;
+              if (searching || !browseHasMore) return;
               const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
               if (layoutMeasurement.height + contentOffset.y >= contentSize.height - 480) {
                 loadMoreBrowse();
@@ -375,7 +389,7 @@ export default function ScanIngredientScreen() {
                       key={`b-${food.name}`}
                       food={food}
                       icon="nutrition-outline"
-                      isLast={i === browseVisible.length - 1 && browseRemaining === 0}
+                      isLast={i === browseVisible.length - 1 && !browseHasMore}
                     />
                   ))}
                   {showBrowseSkeleton ? (
@@ -383,15 +397,13 @@ export default function ScanIngredientScreen() {
                       <Text style={styles.loadMoreText}>Loading more foods…</Text>
                     </View>
                   ) : null}
-                  {browseRemaining > 0 ? (
+                  {browseHasMore ? (
                     <Pressable
                       onPress={loadMoreBrowse}
                       style={({ pressed }) => [styles.loadMore, pressableWeb, pressed && { opacity: 0.8 }]}
                       accessibilityRole="button"
                       accessibilityLabel="Load more foods">
-                      <Text style={styles.loadMoreText}>
-                        Scroll for more · {browseRemaining.toLocaleString()} left
-                      </Text>
+                      <Text style={styles.loadMoreText}>Scroll for more</Text>
                     </Pressable>
                   ) : null}
                 </GlassPanel>

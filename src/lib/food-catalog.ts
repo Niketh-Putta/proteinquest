@@ -348,6 +348,7 @@ function invalidateCatalogCaches() {
   indexedList = null;
   namePrefix2 = null;
   indexedRemoteRef = null;
+  indexedHeavyRef = null;
 }
 
 export function isHeavyFoodCatalogLoaded(): boolean {
@@ -413,16 +414,33 @@ export function loadHeavyFoodCatalog(): Promise<CatalogFood[]> {
   return heavyLoadPromise;
 }
 
+/** Yield so Android can flush taps / frames between heavy catalog steps. */
+function yieldToUi(): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, 0);
+  });
+}
+
 /**
- * Prefetch heavy chunks, remote rows, search index, and sorted browse list.
- * Call from session / scan / meal so Add Ingredient opens warm.
+ * Prefetch heavy chunks, then build caches in UI-yielding steps.
+ * Never call from onPressIn — that freezes Android taps.
  */
 export async function warmFoodCatalog(): Promise<void> {
   await loadHeavyFoodCatalog();
-  await refreshRemoteFoodCatalog();
+  await yieldToUi();
+  // Remote refresh is nicety; do not block index build on network.
+  void refreshRemoteFoodCatalog().catch(() => {});
+  await yieldToUi();
   allCatalogFoods();
+  await yieldToUi();
   getSortedBrowseCatalog();
+  await yieldToUi();
   getIndexedFoods();
+}
+
+/** Cheap idle warm: import chunks only, no sync merge/sort/index. */
+export async function prefetchHeavyFoodCatalogChunks(): Promise<void> {
+  await loadHeavyFoodCatalog();
 }
 
 function normalize(s: string): string {
@@ -566,6 +584,7 @@ type IndexedFood = {
 
 let indexedList: IndexedFood[] | null = null;
 let indexedRemoteRef: CatalogFood[] | null = null;
+let indexedHeavyRef: CatalogFood[] | null = null;
 /** First 2 chars of food name → entries (speeds prefix search). */
 let namePrefix2: Map<string, IndexedFood[]> | null = null;
 
@@ -620,7 +639,13 @@ function buildIndexedFood(food: CatalogFood): IndexedFood {
 }
 
 function getIndexedFoods(): IndexedFood[] {
-  if (indexedList && indexedRemoteRef === remoteFoods) return indexedList;
+  if (
+    indexedList &&
+    indexedRemoteRef === remoteFoods &&
+    indexedHeavyRef === heavyFoods
+  ) {
+    return indexedList;
+  }
   const foods = allCatalogFoods();
   const next = foods.map(buildIndexedFood);
   const prefix2 = new Map<string, IndexedFood[]>();
@@ -634,6 +659,7 @@ function getIndexedFoods(): IndexedFood[] {
   indexedList = next;
   namePrefix2 = prefix2;
   indexedRemoteRef = remoteFoods;
+  indexedHeavyRef = heavyFoods;
   return indexedList;
 }
 

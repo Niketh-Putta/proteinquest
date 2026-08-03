@@ -87,13 +87,12 @@ import {
 } from '@/lib/camera-permission';
 import { todayISODate } from '@/lib/protein';
 import { getRetention, markCareDay, rollLootDrop } from '@/lib/retention';
-import { prefetchFoodCatalog } from '@/lib/food-catalog-prefetch';
 import {
     consumePendingIngredientEdit,
     registerIngredientEditApplier,
     type ScanIngredientEdit,
 } from '@/lib/scan-ingredient-edit';
-import { prefetchRoute, pushThen } from '@/lib/navigate-responsive';
+import { prefetchRoute, runAfterNav } from '@/lib/navigate-responsive';
 import { useSession } from '@/lib/session';
 import type { Analysis } from '@/lib/types';
 import { bindUnmirroredWebCameraPreview } from '@/lib/web-camera-preview';
@@ -820,9 +819,7 @@ export default function ScanScreen() {
   /** Refresh the free-scan pill only — never auto-open paywall on focus (dismiss must stick). */
   useFocusEffect(
     useCallback(() => {
-      void import('@/lib/food-catalog')
-        .then((m) => m.warmFoodCatalog())
-        .catch(() => {});
+      // Route prefetch only — full catalog warm freezes Android taps.
       prefetchRoute(() => import('@/app/scan-ingredient'));
       if (!needsScanQuota) {
         setScansLeft(null);
@@ -2260,18 +2257,15 @@ export default function ScanScreen() {
             </View>
 
             <Pressable
-              onPressIn={() => {
-                prefetchRoute(() => import('@/app/scan-ingredient'));
-                prefetchFoodCatalog();
-              }}
               onPress={() => {
-                // Navigate first — keyboard dismiss + catalog warm must not block the tap.
-                pushThen('/scan-ingredient', () => {
+                // Navigate immediately. Catalog warm / keyboard must never run on press.
+                router.push('/scan-ingredient' as never);
+                runAfterNav(() => {
                   dismissMealKeyboard();
                   Haptics.selectionAsync().catch(() => {});
-                  prefetchFoodCatalog();
                 });
               }}
+              hitSlop={8}
               style={({ pressed }) => [
                 styles.addIngredientRow,
                 pressableWeb,
@@ -2279,10 +2273,12 @@ export default function ScanScreen() {
               ]}
               accessibilityRole="button"
               accessibilityLabel="Add ingredient">
-              <View style={styles.addIngredientIcon}>
+              <View style={styles.addIngredientIcon} pointerEvents="none">
                 <Ionicons name="add" size={18} color={colors.accent} />
               </View>
-              <Text style={styles.addIngredientText}>Add ingredient</Text>
+              <Text style={styles.addIngredientText} pointerEvents="none">
+                Add ingredient
+              </Text>
             </Pressable>
           </Animated.View>
 
