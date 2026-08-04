@@ -63,3 +63,4 @@ credentials.json
 store/ios-creds-tmp/
 store/android-release.keystore
 store/android-keystore.pass.json
+pq-play-upload.keystore
