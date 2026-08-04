@@ -31,7 +31,9 @@ export const CALORIE_DENSITY_TABLE: CalorieDensityEntry[] = [
   { keywords: ['roti', 'chapati', 'chapathi', 'phulka'], kcalPer100g: 297 },
   { keywords: ['naan', 'paratha'], kcalPer100g: 310 },
   { keywords: ['biryani', 'pulao', 'pilaf'], kcalPer100g: 170 },
-  { keywords: ['gongura', 'sorrel', 'palak', 'methi', 'fenugreek leaves', 'kale', 'spinach', 'broccoli', 'greens', 'salad greens', 'sabzi', 'vegetable curry'], kcalPer100g: 45 },
+  // Oily Andhra gongura curry/pachadi is denser than steamed greens.
+  { keywords: ['gongura pachadi', 'gongura curry', 'gongura', 'sorrel'], kcalPer100g: 90 },
+  { keywords: ['palak', 'methi', 'fenugreek leaves', 'kale', 'spinach', 'broccoli', 'greens', 'salad greens', 'sabzi', 'vegetable curry'], kcalPer100g: 45 },
   { keywords: ['rice', 'white rice', 'brown rice', 'jeera rice', 'steamed rice'], kcalPer100g: 130 },
   { keywords: ['pasta', 'noodle', 'noodles'], kcalPer100g: 131 },
   { keywords: ['bread', 'toast', 'bun', 'roll'], kcalPer100g: 265 },

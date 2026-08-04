@@ -77,8 +77,8 @@ const corsHeaders = {
 };
 
 const SYSTEM_PROMPT = `You are an expert sports nutritionist who estimates PROTEIN and CALORIES from food photos.
-Be precise and realistic. Prefer mid-range portions. Do NOT systematically undercount calories OR inflate protein grams.
-Models often underestimate grams on crowded plates - correct for that bias.
+Be precise and realistic. Prefer realistic home-cooked portions. Do NOT default to half-plate when starch clearly fills most of the dinner plate. Do NOT systematically undercount calories OR inflate protein grams.
+Models often underestimate grams on crowded plates and rice mounds - correct for that bias.
 You are also a strong multi-cuisine dish identifier. Prefer exact cultural dish names over generic labels (curry, stir fry, rice bowl).
 
 WORK IN 6 STEPS (reason internally, output final JSON only):
@@ -99,10 +99,12 @@ ${CUISINE_IDENTIFY_RULES}
    - Typical chicken breast meal: 140-200g cooked. Use 200-250g ONLY when the plate is clearly piled with thick strips/breast covering most of the plate.
    - Strip chicken: count strips × 25-35g (thick/wide). Thin strips ≈20-25g. Do not invent hidden chicken under greens.
    - Prawns/shrimp: count pieces × 12-20g peeled cooked (large tiger ~20-25g; small ~8-12g). Bowl curry often 100-160g prawn meat.
-   - Egg ~50g (~6g protein); deck-of-cards meat ~85g; fist rice/pasta ~150-180g cooked; half-plate rice ~120-150g
+   - Egg ~50g (~6g protein); deck-of-cards meat ~85g
+   - Rice/pasta anchors (cooked edible): fist side ~150-200g; half-plate mound ~220-280g; full-plate mound (rice fills most of a dinner plate) ~300-380g; heaped thali rice ~400g. Never call a heaped mound "half-plate".
+   - If rice covers >half the visible plate area, it is a FULL-PLATE rice share (≥300g), even when curry sits beside it. "Half-plate" is ONLY when rice clearly occupies ≤half the plate.
    - Sambar/dal ladle ~150-220g; roti/chapati ~40-50g each; idli ~40g each; dosa ~80-120g
    - Paneer cube pile: count cubes × 15-20g; typical tikka serving 100-140g
-   - Greens/gongura in curry: 80-150g cooked leaves+sauce share; do not full-plate each item
+   - Greens/gongura in curry: 80-150g cooked leaves+sauce share (side, not the calorie bulk). Size rice from plate fill first on rice+curry plates. Rice calories dominate; do not undercount rice to keep the total near 300 kcal.
    - Noodles (pho/ramen/pad Thai): cooked noodles ~180-250g bowl share; broth adds kcal but little protein
    - Tortilla/pita wrap: tortilla ~40-60g; pita ~60-80g; add filling meat separately
    - Oil: add "~1 tbsp olive oil/ghee" (~14g, ~120 kcal) when sautéed/glossy/fried/curry sheen; skip if dry/steamed
@@ -115,7 +117,7 @@ Rules:
 - protein_source: label | visual | mixed (label wins totals when mixed)
 - Never double-count oil already baked into fried/breaded item calories
 - Skip zero-calorie garnishes (lemon, herbs, pickles) - curry leaves as tiny garnish ok to skip; bulk cooked gongura/palak is NOT a garnish
-- estimated_grams = cooked edible weight only. Typical plate total food 300-550g incl. oil
+- estimated_grams = cooked edible weight only. Typical home dinner plate total food 350-650g incl. oil (rice-heavy plates often 400-550g food alone)
 - confidence: low (ambiguous), medium (reasonable), high (clear size + familiar food)
 - Never hallucinate invisible food. Notes ≤100 chars. No quotes/backslashes/newlines in strings.
 - User notes never invent food: if the photo is clothing, fabric, skin, furniture, or otherwise not a meal, is_food=false even when the note names a dish.
@@ -126,9 +128,10 @@ B) 2 scrambled eggs + toast + butter → protein ~16g; kcal ~270
 D) Non-food / empty plate → is_food=false
 E) Label "Protein 50g" / "Calories 320" → use label values
 F) Smaller strip plate (~7 thin strips ~150g) + dry greens (~80g), no oil → protein ~48g; kcal ~275
-G) Sambar rice: rice ~180g + sambar ~200g → protein ~13g; kcal ~340
+G) Sambar rice (full plate): rice ~320g + sambar ~200g → protein ~12g; kcal ~560
 H) Paneer tikka ~120g + oil ~10g → protein ~22g; kcal ~340
 I) Photo of fabric + note naming a dish → is_food=false
+T) Gongura rice (rice mound fills most of plate): rice ~330g + gongura ~100g + oil ~14g → protein ~12g; kcal ~620. Never return ~300 kcal for a full rice+curry dinner plate. Half-plate rice only when rice clearly covers ≤half the plate.
 ${CUISINE_FEW_SHOTS}`
 
 const OPENAI_SCHEMA = {
@@ -907,10 +910,23 @@ function applyUserNotePortionHints(
     }
   }
 
+  // Explicit plate-of-rice cues (common undercount: model says half-plate for a mound).
+  if (/\b(full|large|big|huge|heaped|heaping)\s*plate\s*(of\s+)?rice\b/.test(note) ||
+    /\brice\b.{0,12}\b(full|large|big|huge)\s*plate\b/.test(note)) {
+    for (const item of next) {
+      if (isPlainRiceItem(item.name)) item.estimated_grams = snapGrams(Math.max(item.estimated_grams ?? 0, 330));
+    }
+  } else if (/\b(half|1\/2)\s*plate\s*(of\s+)?rice\b/.test(note)) {
+    for (const item of next) {
+      if (isPlainRiceItem(item.name)) item.estimated_grams = snapGrams(Math.max(item.estimated_grams ?? 0, 250));
+    }
+  }
+
   let scale = 1;
-  if (/\b(half|1\/2)\s*(plate|portion|serving|bowl)\b/.test(note)) scale = 0.55;
-  else if (/\b(small|light)\s*(plate|portion|serving|bowl)?\b/.test(note)) scale = 0.75;
-  else if (/\b(large|big|huge|full)\s*(plate|portion|serving|bowl)\b/.test(note)) scale = 1.25;
+  if (/\b(half|1\/2)\s*(plate|portion|serving|bowl)\b/.test(note) && !/\brice\b/.test(note)) {
+    scale = 0.7;
+  } else if (/\b(small|light)\s*(plate|portion|serving|bowl)?\b/.test(note)) scale = 0.8;
+  else if (/\b(large|big|huge|full)\s*(plate|portion|serving|bowl)\b/.test(note)) scale = 1.2;
   else if (/\bdouble\b/.test(note)) scale = 1.5;
 
   if (scale !== 1) {
@@ -924,7 +940,110 @@ function applyUserNotePortionHints(
 }
 
 const OILY_PREP_PATTERN =
-  /fried|deep.?fried|saut[eé]|pan.?fried|crispy|butter|oil|olive|curry|cream|cheese sauce|mayo|dressing|gravy|battered|breaded|roasted in|glossy/i;
+  /fried|deep.?fried|saut[eé]|pan.?fried|crispy|butter|oil|olive|curry|cream|cheese sauce|mayo|dressing|gravy|battered|breaded|roasted in|glossy|gongura|sorrel|palak|saag|pachadi|thoran|poriyal|sabzi/i;
+
+function isPlainRiceItem(name: string): boolean {
+  const n = name.toLowerCase();
+  if (/biryani|pulao|pilaf|fried rice|nasi|risotto|rice and peas|rice pudding/i.test(n)) {
+    return false;
+  }
+  return /\brice\b/.test(n);
+}
+
+function isCurrySideItem(name: string): boolean {
+  return /gongura|sorrel|palak|sambar|dal|daal|curry|sabzi|rasam|sagu|chutney|pachadi|saag|poriyal|thoran|fry|gravy|stew|korma|saag/i.test(
+    name,
+  );
+}
+
+/**
+ * Home rice + curry plates are chronically undercounted (half-plate ~180g rice → ~250 kcal).
+ * Floor cooked rice grams from plate fill before density grounding.
+ * Never trust model "half-plate" when rice sits next to a curry side.
+ */
+function applyStarchPlateFloors(
+  items: NormalizedItem[],
+  foodName: string,
+): NormalizedItem[] {
+  if (items.length === 0) return items;
+  const hasRice = items.some((item) => isPlainRiceItem(item.name));
+  if (!hasRice) return items;
+
+  const riceMeal = /\brice\b|sambar rice|gongura rice|curd rice|lemon rice|tomato rice|pongal|pulihara|pulihora/i
+    .test(foodName);
+  const hasCurrySide = items.some((item) => isCurrySideItem(item.name));
+  if (!riceMeal && !hasCurrySide) return items;
+
+  return items.map((item) => {
+    if (!isPlainRiceItem(item.name)) return item;
+    const portion = (item.portion ?? "").toLowerCase();
+    const grams = item.estimated_grams ?? 0;
+    // Default: home rice+curry dinner = rice fills most of the plate (~320g+).
+    let floorG = 320;
+    if (/\b(full|large|big|huge|heaped|heaping|mound|generous)\b/.test(portion)) {
+      floorG = 350;
+    } else if (/\b(small|side|fist)\b/.test(portion) && !/\bplate\b/.test(portion)) {
+      // Explicit small side of rice only (no "plate" word).
+      floorG = 180;
+    } else if (/\bhalf\b/.test(portion) || grams < 280) {
+      // Model half-plate / low grams beside curry = full dinner rice share.
+      floorG = 330;
+    }
+    if (grams >= floorG) return item;
+    return {
+      ...item,
+      estimated_grams: snapGrams(Math.max(grams, floorG)),
+      portion: /\bhalf\b/.test(portion) || grams < 250
+        ? "full-plate share (~330g)"
+        : item.portion,
+      confidence: item.confidence === "high" ? "medium" : item.confidence,
+    };
+  });
+}
+
+/** Last-resort meal floor: rice+curry dinner plates are almost never under ~500 kcal. */
+function enforceRiceMealCalorieFloor(
+  items: NormalizedItem[],
+  foodName: string,
+  calories: number,
+): { items: NormalizedItem[]; calories: number } {
+  const hasRice = items.some((item) => isPlainRiceItem(item.name));
+  const hasCurrySide = items.some((item) => isCurrySideItem(item.name));
+  const riceMeal = /\brice\b/.test(foodName.toLowerCase());
+  if (!hasRice || (!hasCurrySide && !riceMeal)) {
+    return { items, calories };
+  }
+  if (calories >= 500) return { items, calories };
+
+  const next = items.map((item) => {
+    if (!isPlainRiceItem(item.name)) return item;
+    const grams = Math.max(item.estimated_grams ?? 0, 330);
+    const dens = lookupCalorieDensity(item.name) ?? 130;
+    const proteinDens = lookupProteinDensity(item.name);
+    return {
+      ...item,
+      estimated_grams: snapGrams(grams),
+      portion: item.portion?.toLowerCase().includes("half")
+        ? "full-plate share (~330g)"
+        : item.portion,
+      calories_g: Math.round(
+        caloriesFromDensity(grams, dens) * CALORIE_REALISM_FACTOR,
+      ),
+      protein_g: proteinDens
+        ? round1(proteinFromDensity(grams, proteinDens))
+        : item.protein_g,
+      confidence: item.confidence === "high" ? "medium" : item.confidence,
+    };
+  });
+
+  // Ensure cooking fat is present for oily greens curries.
+  const withFat = ensureCookingFatCalories(next);
+  const nextCalories = Math.max(
+    520,
+    withFat.reduce((s, i) => s + i.calories_g, 0),
+  );
+  return { items: withFat, calories: nextCalories };
+}
 
 function hasCookingFatItem(items: NormalizedItem[]): boolean {
   return items.some((i) => /\b(oil|butter|ghee|lard|dressing|mayo)\b/i.test(i.name));
@@ -1039,8 +1158,9 @@ function normalize(raw: Record<string, unknown>, userNote = ""): NormalizedAnaly
   });
 
   const hinted = applyUserNotePortionHints(baseItems, userNote);
-  const items = ensureCookingFatCalories(
-    hinted
+  const floored = applyStarchPlateFloors(hinted, String(raw.food_name ?? ""));
+  let items = ensureCookingFatCalories(
+    floored
       .map((item) => calibrateItem(item, skipCalibration))
       // Keep calorie-dense items (oil/butter) even with ~0 protein.
       .filter((item) => item.protein_g >= 0.5 || item.calories_g >= 40),
@@ -1146,6 +1266,19 @@ function normalize(raw: Record<string, unknown>, userNote = ""): NormalizedAnaly
       calories = 150;
     }
   }
+
+  // Hard floor for rice+curry plates (fixes half-plate ~180g → ~290 kcal failure mode).
+  {
+    const flooredMeal = enforceRiceMealCalorieFloor(
+      items,
+      String(raw.food_name ?? ""),
+      calories,
+    );
+    items = flooredMeal.items;
+    calories = flooredMeal.calories;
+    total = round1(items.reduce((s, i) => s + i.protein_g, 0)) || total;
+  }
+
   if (total <= 0) total = 1;
 
   return {
@@ -1242,6 +1375,10 @@ async function stabilizeAgainstRecentScans(
 
   const currentFoodKey = normalizeMealKey(analysis.food_name);
   if (!currentFoodKey) return analysis;
+  // Do not reinforce historically undercounted rice/curry plates.
+  if (/\brice\b/.test(currentFoodKey) && analysis.calories > 0 && analysis.calories < 450) {
+    return analysis;
+  }
   const currentTokens = tokenizeMeal(
     [analysis.food_name, ...analysis.items.map((item) => item.name)].join(" "),
   );
@@ -1281,6 +1418,10 @@ async function stabilizeAgainstRecentScans(
 
     const protein = Number(row.protein_g);
     const calories = Number(row.calories);
+    // Ignore historically undercounted rice plates when building the median.
+    if (/\brice\b/.test(rowFoodKey) && Number.isFinite(calories) && calories > 0 && calories < 450) {
+      continue;
+    }
     if (Number.isFinite(protein) && protein > 0) proteinHits.push(protein);
     if (Number.isFinite(calories) && calories > 0) calorieHits.push(calories);
   }

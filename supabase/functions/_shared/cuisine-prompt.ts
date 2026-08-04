@@ -45,14 +45,15 @@ PROTEIN SPECIES (do not default to chicken):
 /** Diverse few-shots (macros approximate; adapt to the plate). */
 export const CUISINE_FEW_SHOTS = `Cuisine few-shots (adapt; do not copy blindly):
 C) Gongura prawns (Andhra): prawns ~120g + gongura sauce ~180g + oil ~14g → food_name="Gongura prawns"; items prawns+gongura (NOT chicken); protein ~35g; kcal ~350-420
+S) Gongura rice (full plate): rice mound filling most of plate ~320g + gongura curry ~100g + oil/ghee ~14g → food_name="Gongura rice"; protein ~12g; kcal ~560-620. Never call a heaped rice plate "half-plate" or ~300 kcal.
 J) Palak paneer: paneer ~100g + palak gravy ~180g → "Palak paneer" (not "spinach curry")
 K) Chicken only when chunks clearly chicken (not C-shaped prawns) - Chettinad/Andhra chicken curry, butter chicken, etc.
 L) Mapo tofu (Sichuan): soft tofu ~180g + minced pork/beef ~60g + chili oil → "Mapo tofu" (not "tofu stir fry"); protein ~22g
-M) Chicken bibimbap: rice ~200g + beef/chicken ~80g + veg + egg + gochujang → "Bibimbap" (not "rice bowl")
-N) Pad kra pao gai: minced chicken ~140g + holy basil + chili + fried egg + rice ~180g → "Pad kra pao chicken"
+M) Chicken bibimbap: rice ~220g + beef/chicken ~80g + veg + egg + gochujang → "Bibimbap" (not "rice bowl")
+N) Pad kra pao gai: minced chicken ~140g + holy basil + chili + fried egg + rice ~200g → "Pad kra pao chicken"
 O) Chicken shawarma plate: carved chicken ~150g + rice/pita + salad/hummus → "Chicken shawarma" (not "grill plate")
 P) Beef tacos (~2): tortilla + carne asada/carnitas ~100g + salsa → name the taco style
-Q) Jerk chicken + rice and peas: jerk chicken ~160g + rice/peas ~180g → "Jerk chicken with rice and peas"
+Q) Jerk chicken + rice and peas: jerk chicken ~160g + rice/peas ~200g → "Jerk chicken with rice and peas"
 R) UK fish and chips: battered fish ~160g + chips ~180g → "Fish and chips"`;
 
 /** Short user-message nudge for vision calls (OpenAI / Gemini). */
@@ -63,7 +64,7 @@ export const CUISINE_USER_NUDGE =
 export const OPENAI_USER_ANALYZE_TEXT =
   "Analyze protein + calories. Prefer labels/OCR when present (set label_* fields). Else: " +
   CUISINE_USER_NUDGE +
-  " Distinguish prawn/shrimp vs chicken vs mutton vs fish vs paneer/tofu; name distinctive greens (gongura/sorrel, palak, methi) when supported; size the plate; estimate cooked grams; density math. Never call prawns chicken. Use any user note only when it matches the photo; reject dish notes on non-food images. Return JSON only.";
+  " Distinguish prawn/shrimp vs chicken vs mutton vs fish vs paneer/tofu; name distinctive greens (gongura/sorrel, palak, methi) when supported; size the plate (full-plate rice mound ~300-380g cooked, not half-plate); estimate cooked grams; density math; add cooking oil when curry/greens look glossy. Never call prawns chicken. Use any user note only when it matches the photo; reject dish notes on non-food images. Return JSON only.";
 
 /** Gemini attempt-0 user text. */
 export const GEMINI_USER_ANALYZE_TEXT =

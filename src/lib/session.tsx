@@ -398,21 +398,15 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       if (shouldForcePro(current)) return;
       const decision = resolvePremiumSync(current?.is_premium === true, isProNow);
       if (cancelled || !decision.changed) return;
-      await upsertProfile({
+      // Trust the DB row after upsert (triggers / complimentary Pro), not RC alone.
+      const saved = await upsertProfile({
         id: uid,
         is_premium: decision.is_premium,
         paywall_dismissed: decision.paywall_dismissed,
       });
       if (cancelled) return;
-      if (current) {
-        const merged: Profile = {
-          ...current,
-          is_premium: decision.is_premium,
-          paywall_dismissed: decision.paywall_dismissed,
-        };
-        await saveCachedProfile(merged);
-        applyProfile(merged);
-      }
+      await saveCachedProfile(saved);
+      applyProfile(saved);
     }
 
     (async () => {

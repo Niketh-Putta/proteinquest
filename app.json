@@ -2,7 +2,7 @@
   "expo": {
     "name": "ProteinQuest - Protein Tracker",
     "slug": "proteinquest",
-    "version": "1.0.32",
+    "version": "1.0.33",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "proteinquest",
@@ -10,8 +10,8 @@
     "backgroundColor": "#0C0B10",
     "ios": {
       "bundleIdentifier": "com.proteinquest.app",
-      "buildNumber": "64",
-      "supportsTablet": true,
+      "buildNumber": "73",
+      "supportsTablet": false,
       "entitlements": {
         "aps-environment": "production"
       },
@@ -36,7 +36,7 @@
         "com.android.vending.BILLING",
         "android.permission.POST_NOTIFICATIONS"
       ],
-      "versionCode": 117
+      "versionCode": 131
     },
     "web": {
       "output": "single",
