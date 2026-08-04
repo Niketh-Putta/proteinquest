@@ -108,7 +108,9 @@ jobs:
             echo "::error::Wrong upload keystore fingerprint (got $FINGERPRINT, need E0:BA:CA:...)"
             exit 1
           fi
-          KEYSTORE_PATH="$KEYSTORE_PATH" node -e 'const fs=require("fs");const out={android:{keystore:{keystorePath:process.env.KEYSTORE_PATH,keystorePassword:process.env.ANDROID_KEYSTORE_PASSWORD,keyAlias:process.env.ANDROID_KEY_ALIAS,keyPassword:process.env.ANDROID_KEY_PASSWORD}}};fs.writeFileSync("credentials.json",JSON.stringify(out,null,2)+"\n");console.log("Wrote credentials.json for",process.env.ANDROID_KEY_ALIAS);'
+          # PKCS12 rejects mismatched key/store passwords (EAS surfaces that as missing alias).
+          KEY_PASS="$ANDROID_KEYSTORE_PASSWORD"
+          KEYSTORE_PATH="$KEYSTORE_PATH" ANDROID_KEY_PASSWORD="$KEY_PASS" node -e 'const fs=require("fs");const out={android:{keystore:{keystorePath:process.env.KEYSTORE_PATH,keystorePassword:process.env.ANDROID_KEYSTORE_PASSWORD,keyAlias:process.env.ANDROID_KEY_ALIAS,keyPassword:process.env.ANDROID_KEY_PASSWORD}}};fs.writeFileSync("credentials.json",JSON.stringify(out,null,2)+"\n");console.log("Wrote credentials.json for",process.env.ANDROID_KEY_ALIAS,"(pkcs12 keyPass=storePass)");'
 
       - name: Build Android AAB on EAS cloud (avoids runner disk full)
         id: eas_build
