@@ -59,9 +59,40 @@ const PROFILE_BOOTSTRAP_MS = 4_000;
 const AUTH_VALIDATE_MS = 8_000;
 const PROFILE_VALIDATE_MS = 8_000;
 
+/** Complimentary Pro: survives RevenueCat “no entitlement” downgrades. */
+const FORCED_PRO_USER_IDS = new Set(['c1f09a00-e65f-4ad7-987c-83f601c11815']);
+
+function isForcedProDisplayName(name: string | null | undefined): boolean {
+  return (name ?? '').trim().toLowerCase() === 'bigger n';
+}
+
+function shouldForcePro(profile: Profile | null | undefined): boolean {
+  if (!profile) return false;
+  return FORCED_PRO_USER_IDS.has(profile.id) || isForcedProDisplayName(profile.display_name);
+}
+
+function withForcedPro(profile: Profile): Profile {
+  if (!shouldForcePro(profile)) return profile;
+  if (profile.is_premium && profile.paywall_dismissed) return profile;
+  return { ...profile, is_premium: true, paywall_dismissed: true };
+}
+
 async function loadProfile(userId: string): Promise<Profile | null> {
   try {
-    return await fetchProfile(userId);
+    const profile = await fetchProfile(userId);
+    if (!profile) return null;
+    if (!shouldForcePro(profile)) return profile;
+    if (profile.is_premium && profile.paywall_dismissed) return profile;
+    try {
+      const upgraded = await upsertProfile({
+        id: userId,
+        is_premium: true,
+        paywall_dismissed: true,
+      });
+      return upgraded;
+    } catch {
+      return withForcedPro(profile);
+    }
   } catch (e) {
     console.error('Failed to load profile:', e);
     return null;
@@ -97,7 +128,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       setProfile(null);
       return;
     }
-    setProfile((prev) => mergeProfiles(prev, incoming));
+    setProfile((prev) => mergeProfiles(prev, withForcedPro(incoming)));
   }, []);
 
   const refreshProfile = useCallback(async (userId: string) => {
@@ -364,6 +395,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
     async function syncPremiumFlag(isProNow: boolean) {
       const current = profileRef.current;
+      if (shouldForcePro(current)) return;
       const decision = resolvePremiumSync(current?.is_premium === true, isProNow);
       if (cancelled || !decision.changed) return;
       await upsertProfile({

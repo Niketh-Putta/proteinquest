@@ -717,7 +717,11 @@ export default function IntroScreen() {
               ) : null}
             </ScrollView>
 
-            <View style={[styles.footer, { paddingBottom: footerGap }]}>
+            <View
+              style={[
+                styles.footer,
+                { paddingBottom: footerGap + (phase === 'dragons' ? spacing.sm : spacing.lg) },
+              ]}>
               {error ? <Text style={styles.error}>{error}</Text> : null}
               {phase === 'name' ? (
                 <Button title="Continue" onPress={submitName} />

@@ -52,13 +52,17 @@ export const PLANS: PaymentPlan[] = [
 export { FREE_DAILY_SCANS } from './paywall-gate';
 export { getBillingManagementUrl } from './revenuecat';
 
-const stripeEnabled = process.env.EXPO_PUBLIC_STRIPE_ENABLED === 'true';
+// Stripe checkout is intentionally disabled for this app.
+const stripeEnabled = false;
 
 const stripeProvider: PaymentProvider = {
   name: 'stripe',
   isConfigured: stripeEnabled,
   plans: PLANS,
   async purchase(planId: string, opts?: { userId?: string; email?: string }) {
+    if (!stripeEnabled) {
+      throw new Error('Web checkout is disabled.');
+    }
     const origin = publicSiteOrigin();
     const { data, error } = await supabase.functions.invoke('create-checkout', {
       body: {

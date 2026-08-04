@@ -439,13 +439,30 @@ export async function countLifetimeMeals(): Promise<number> {
 }
 
 /** Records one AI analysis for free-tier daily scan limits (not a logged meal). */
-export async function recordPhotoScan(userId: string, date = todayISODate()): Promise<void> {
+export async function recordPhotoScan(
+  userId: string,
+  date = todayISODate(),
+  snapshot?: {
+    foodName?: string | null;
+    items?: FoodItem[] | null;
+    proteinG?: number | null;
+    calories?: number | null;
+    confidence?: Confidence | null;
+  },
+): Promise<void> {
+  const proteinG = Number(snapshot?.proteinG);
+  const caloriesN = Number(snapshot?.calories);
+  const safeProtein = Number.isFinite(proteinG) && proteinG > 0 ? Math.round(proteinG) : 0;
+  const safeCalories = Number.isFinite(caloriesN) && caloriesN > 0 ? Math.round(caloriesN) : null;
+
   const { error } = await supabase.from('protein_logs').insert({
     user_id: userId,
     logged_date: date,
-    food_name: 'Scan',
-    items: [],
-    protein_g: 0,
+    food_name: snapshot?.foodName?.trim() || 'Scan',
+    items: Array.isArray(snapshot?.items) ? snapshot?.items : [],
+    protein_g: safeProtein,
+    calories: safeCalories,
+    confidence: snapshot?.confidence ?? null,
     source: 'photo_scan',
   });
   if (error) throw error;

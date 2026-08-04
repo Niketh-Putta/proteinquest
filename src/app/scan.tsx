@@ -1021,7 +1021,13 @@ export default function ScanScreen() {
 
     if (needsScanQuota && session?.user.id) {
       setScansLeft(remainingFreeScans((opts?.usedNow ?? 0) + 1, profile));
-      void recordPhotoScan(session.user.id).catch(() => {});
+      void recordPhotoScan(session.user.id, todayISODate(), {
+        foodName: res.food_name,
+        items: res.items,
+        proteinG: safeProtein,
+        calories: safeCalories,
+        confidence: res.confidence,
+      }).catch(() => {});
     }
 
     setAnalyzeProgress(1);
@@ -1173,7 +1179,13 @@ export default function ScanScreen() {
 
       if (needsScanQuota && session?.user.id) {
         setScansLeft(remainingFreeScans((usedNow ?? 0) + 1, profile));
-        void recordPhotoScan(session.user.id).catch(() => {});
+        void recordPhotoScan(session.user.id, todayISODate(), {
+          foodName: res.food_name,
+          items: res.items,
+          proteinG: safeProtein,
+          calories: safeCalories,
+          confidence: res.confidence,
+        }).catch(() => {});
       }
 
       setAnalyzeProgress(1);

@@ -130,6 +130,23 @@ function defaultGramsPerUnit(unit: string): number {
   return 100;
 }
 
+function minimumPlausibleGramsPerUnit(unit: string, foodName: string): number {
+  const u = unit.toLowerCase();
+  const n = foodName.toLowerCase();
+  if (/bowl/.test(u)) {
+    if (/sambar|dal|dahl|curry|soup|stew|broth|ramen|pho|noodle/i.test(n)) return 120;
+    if (/rice|pasta|quinoa|beans|chickpeas|chole|rajma|khichdi/i.test(n)) return 90;
+    return 40;
+  }
+  if (/plate/.test(u)) return 90;
+  if (/cup/.test(u)) return 35;
+  if (/ladle/.test(u)) return 25;
+  if (/tablespoon|tbsp/.test(u)) return 8;
+  if (/teaspoon|tsp/.test(u)) return 3;
+  if (/piece|slice|stick|floret|spear|handful/.test(u)) return 8;
+  return 20;
+}
+
 function unitToggleIcon(unit: string): keyof typeof Ionicons.glyphMap {
   const u = unit.toLowerCase();
   if (/glass/.test(u)) return 'wine-outline';
@@ -233,10 +250,16 @@ export default function ScanAdjustScreen() {
       ? baseCalories / baseQty
       : baseCalories;
   const gramsPerUnit = useMemo(() => {
-    if (isAdd && baseGrams != null && baseGrams > 0) return baseGrams;
-    if (baseGrams != null && baseQty > 0) return baseGrams / baseQty;
-    return defaultGramsPerUnit(countUnit);
-  }, [isAdd, baseGrams, baseQty, countUnit]);
+    const fallback = defaultGramsPerUnit(countUnit);
+    const minimum = minimumPlausibleGramsPerUnit(countUnit, name);
+    if (isAdd && baseGrams != null && baseGrams > 0) return Math.max(baseGrams, minimum);
+    if (baseGrams != null && baseQty > 0) {
+      const inferred = baseGrams / baseQty;
+      if (!Number.isFinite(inferred) || inferred <= 0) return fallback;
+      return inferred < minimum ? Math.max(minimum, inferred) : inferred;
+    }
+    return Math.max(fallback, minimum);
+  }, [isAdd, baseGrams, baseQty, countUnit, name]);
 
   const options = sizeMode ? ADJUST_SIZES : QUANTITIES;
   const snapOffsets = useMemo(

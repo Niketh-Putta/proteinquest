@@ -238,7 +238,7 @@ Deno.serve(async (req) => {
         try {
           const raw = await callOpenAITextOnly(userNote);
           return json({
-            analysis: normalize(raw, userNote),
+            analysis: await normalizeStable(raw, userNote, req),
             model: OPENAI_MODEL,
             provider: "openai",
             mode: "text",
@@ -253,7 +253,7 @@ Deno.serve(async (req) => {
           if (GEMINI_API_KEY) {
             const raw = await callGeminiTextOnly(GEMINI_API_KEY, userNote);
             return json({
-              analysis: normalize(raw, userNote),
+              analysis: await normalizeStable(raw, userNote, req),
               model: GEMINI_MODELS[0] ?? "gemini",
               provider: "gemini",
               mode: "text",
@@ -269,7 +269,7 @@ Deno.serve(async (req) => {
       }
       const raw = await callGeminiTextOnly(GEMINI_API_KEY, userNote);
       return json({
-        analysis: normalize(raw, userNote),
+        analysis: await normalizeStable(raw, userNote, req),
         model: GEMINI_MODELS[0] ?? "gemini",
         provider: "gemini",
         mode: "text",
@@ -284,7 +284,7 @@ Deno.serve(async (req) => {
       try {
         const raw = await callOpenAI(image_base64, mime_type, userNote);
         return json({
-          analysis: normalize(raw, userNote),
+          analysis: await normalizeStable(raw, userNote, req),
           model: OPENAI_MODEL,
           provider: "openai",
         });
@@ -304,7 +304,7 @@ Deno.serve(async (req) => {
             userNote,
           );
           return json({
-            analysis: normalize(raw, userNote),
+            analysis: await normalizeStable(raw, userNote, req),
             model,
             provider: "gemini",
             fallback_from: "openai",
@@ -324,7 +324,7 @@ Deno.serve(async (req) => {
         userNote,
       );
       return json({
-        analysis: normalize(raw, userNote),
+        analysis: await normalizeStable(raw, userNote, req),
         model,
         provider: "gemini",
         fallback_from: "openai",
@@ -343,7 +343,7 @@ Deno.serve(async (req) => {
       mime_type,
       userNote,
     );
-    return json({ analysis: normalize(raw, userNote), model, provider: "gemini" });
+    return json({ analysis: await normalizeStable(raw, userNote, req), model, provider: "gemini" });
   } catch (err) {
     console.error("analyze-food error:", err);
     const message = err instanceof Error ? err.message : "Unexpected error analyzing the photo";
@@ -726,6 +726,22 @@ type NormalizedItem = {
   confidence: string;
 };
 
+type NormalizedAnalysis = {
+  is_food: boolean;
+  food_name: string;
+  items: Array<{
+    name: string;
+    portion: string;
+    estimated_grams?: number;
+    protein_g: number;
+    confidence: string;
+  }>;
+  total_protein_g: number;
+  calories: number;
+  confidence: string;
+  notes: string;
+};
+
 function calibrateItem(item: NormalizedItem, skipCalibration = false): NormalizedItem {
   if (skipCalibration) return item;
 
@@ -754,6 +770,23 @@ function calibrateItem(item: NormalizedItem, skipCalibration = false): Normalize
 function snapGrams(grams: number): number {
   if (grams <= 0) return 0;
   return Math.max(5, Math.round(grams / 5) * 5);
+}
+
+function minimumPlausibleGrams(name: string, portion: string): number {
+  const n = name.toLowerCase();
+  const p = portion.toLowerCase();
+  if (/bowl/.test(p)) {
+    if (/sambar|dal|dahl|curry|soup|stew|broth|ramen|pho|noodle/i.test(n)) return 120;
+    if (/rice|pasta|quinoa|beans|chickpeas|chole|rajma|khichdi/i.test(n)) return 90;
+    return 40;
+  }
+  if (/plate/.test(p)) return 90;
+  if (/cup/.test(p)) return 35;
+  if (/ladle/.test(p)) return 25;
+  if (/tablespoon|tbsp/.test(p)) return 8;
+  if (/teaspoon|tsp/.test(p)) return 3;
+  if (/piece|slice|stick|floret|spear|handful/.test(p)) return 8;
+  return 0;
 }
 
 /**
@@ -963,7 +996,7 @@ function deriveOverallConfidence(items: NormalizedItem[]): string {
   return "high";
 }
 
-function normalize(raw: Record<string, unknown>, userNote = "") {
+function normalize(raw: Record<string, unknown>, userNote = ""): NormalizedAnalysis {
   if (!raw.is_food) {
     return {
       is_food: false,
@@ -982,16 +1015,22 @@ function normalize(raw: Record<string, unknown>, userNote = "") {
   const skipCalibration = fromLabel;
 
   const baseItems = ((raw.items as Record<string, unknown>[]) ?? []).map((item) => {
+    const safeName = sanitizeField(item.name, 60) || "Unknown";
+    const safePortion = sanitizeField(item.portion, 80);
     const rawGrams = Math.round(Number(item.estimated_grams) || 0);
-    const grams = rawGrams > 0 ? snapGrams(rawGrams) : undefined;
+    const snappedGrams = rawGrams > 0 ? snapGrams(rawGrams) : undefined;
+    const minimum = fromLabel ? 0 : minimumPlausibleGrams(safeName, safePortion);
+    const grams = snappedGrams != null && snappedGrams > 0
+      ? Math.max(snappedGrams, minimum)
+      : undefined;
     const calorieDensity = grams ? lookupCalorieDensity(String(item.name ?? "")) : null;
     const llmCalories = Math.round(Number(item.calories_g) || 0);
     const fallbackCalories =
       grams && calorieDensity ? caloriesFromDensity(grams, calorieDensity) : llmCalories;
 
     return {
-      name: sanitizeField(item.name, 60) || "Unknown",
-      portion: sanitizeField(item.portion, 80),
+      name: safeName,
+      portion: safePortion,
       estimated_grams: grams,
       protein_g: round1(Number(item.protein_g) || 0),
       calories_g: llmCalories > 0 ? llmCalories : fallbackCalories,
@@ -1018,6 +1057,7 @@ function normalize(raw: Record<string, unknown>, userNote = "") {
         name: sanitizeField(raw.food_name, 60) || 'Labeled product',
         portion: 'per label',
         protein_g: labelProtein,
+        calories_g: labelCalories ?? Math.max(Math.round(labelProtein * 4), 0),
         confidence: 'high',
       });
     } else if (sum < labelProtein * 0.75) {
@@ -1116,6 +1156,163 @@ function normalize(raw: Record<string, unknown>, userNote = "") {
     calories,
     confidence,
     notes,
+  };
+}
+
+async function normalizeStable(
+  raw: Record<string, unknown>,
+  userNote: string,
+  req: Request,
+): Promise<NormalizedAnalysis> {
+  const normalized = normalize(raw, userNote);
+  return await stabilizeAgainstRecentScans(normalized, req);
+}
+
+function normalizeMealKey(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function tokenizeMeal(value: string): Set<string> {
+  return new Set(
+    normalizeMealKey(value)
+      .split(" ")
+      .filter((t) => t.length >= 3),
+  );
+}
+
+function readItemNames(rawItems: unknown): string[] {
+  if (!Array.isArray(rawItems)) return [];
+  const out: string[] = [];
+  for (const raw of rawItems) {
+    if (!raw || typeof raw !== "object") continue;
+    const maybeName = (raw as { name?: unknown }).name;
+    if (typeof maybeName !== "string") continue;
+    const clean = maybeName.trim();
+    if (clean) out.push(clean);
+  }
+  return out;
+}
+
+function tokenOverlap(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0;
+  let common = 0;
+  for (const token of a) if (b.has(token)) common += 1;
+  const denom = Math.max(a.size, b.size);
+  return denom > 0 ? common / denom : 0;
+}
+
+function median(values: number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+}
+
+function blendTowardMedian(current: number, targetMedian: number, tolerance: number): number {
+  if (!Number.isFinite(current) || !Number.isFinite(targetMedian)) return current;
+  if (Math.abs(current - targetMedian) > tolerance) return current;
+  return current * 0.2 + targetMedian * 0.8;
+}
+
+async function requestUserId(req: Request): Promise<string | null> {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return null;
+  const auth = req.headers.get("Authorization");
+  if (!auth?.startsWith("Bearer ")) return null;
+  const userClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    global: { headers: { Authorization: auth } },
+  });
+  const { data, error } = await userClient.auth.getUser();
+  if (error) return null;
+  return data.user?.id ?? null;
+}
+
+async function stabilizeAgainstRecentScans(
+  analysis: NormalizedAnalysis,
+  req: Request,
+): Promise<NormalizedAnalysis> {
+  if (!analysis.is_food) return analysis;
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return analysis;
+
+  const userId = await requestUserId(req);
+  if (!userId) return analysis;
+
+  const currentFoodKey = normalizeMealKey(analysis.food_name);
+  if (!currentFoodKey) return analysis;
+  const currentTokens = tokenizeMeal(
+    [analysis.food_name, ...analysis.items.map((item) => item.name)].join(" "),
+  );
+
+  const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+  const sinceIso = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+  const { data } = await admin
+    .from("protein_logs")
+    .select("food_name, items, protein_g, calories")
+    .eq("user_id", userId)
+    .in("source", ["photo", "photo_scan"])
+    .gte("created_at", sinceIso)
+    .gt("protein_g", 0)
+    .not("calories", "is", null)
+    .order("created_at", { ascending: false })
+    .limit(40);
+
+  if (!data?.length) return analysis;
+
+  const proteinHits: number[] = [];
+  const calorieHits: number[] = [];
+
+  for (const row of data as Array<{
+    food_name?: string | null;
+    items?: unknown;
+    protein_g?: number | null;
+    calories?: number | null;
+  }>) {
+    const foodName = typeof row.food_name === "string" ? row.food_name : "";
+    const rowFoodKey = normalizeMealKey(foodName);
+    if (!rowFoodKey || rowFoodKey !== currentFoodKey) continue;
+
+    const rowItemNames = readItemNames(row.items);
+    const rowTokens = tokenizeMeal([foodName, ...rowItemNames].join(" "));
+    const overlap = tokenOverlap(currentTokens, rowTokens);
+    if (currentTokens.size > 0 && rowTokens.size > 0 && overlap < 0.45) continue;
+
+    const protein = Number(row.protein_g);
+    const calories = Number(row.calories);
+    if (Number.isFinite(protein) && protein > 0) proteinHits.push(protein);
+    if (Number.isFinite(calories) && calories > 0) calorieHits.push(calories);
+  }
+
+  if (proteinHits.length < 2 || calorieHits.length < 2) return analysis;
+
+  const proteinMedian = median(proteinHits);
+  const calorieMedian = median(calorieHits);
+
+  const nextProtein = round1(
+    blendTowardMedian(
+      analysis.total_protein_g,
+      proteinMedian,
+      Math.max(6, proteinMedian * 0.2),
+    ),
+  );
+  const nextCalories = Math.round(
+    blendTowardMedian(
+      analysis.calories,
+      calorieMedian,
+      Math.max(90, calorieMedian * 0.22),
+    ),
+  );
+
+  if (nextProtein === analysis.total_protein_g && nextCalories === analysis.calories) {
+    return analysis;
+  }
+
+  return {
+    ...analysis,
+    total_protein_g: nextProtein > 0 ? nextProtein : analysis.total_protein_g,
+    calories: nextCalories > 0 ? nextCalories : analysis.calories,
   };
 }
 

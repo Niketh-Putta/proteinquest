@@ -74,6 +74,10 @@ a {
   letter-spacing: -0.015em;
 }
 
+.brand-accent {
+  color: #ff7a59;
+}
+
 .carousel {
   width: min(100%, 980px);
   outline: none;
