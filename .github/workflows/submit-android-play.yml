@@ -36,9 +36,10 @@ jobs:
 
       - name: Submit AAB to Play production
         env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN_NIKETHPUTTA }}
+          # Same Expo account as build-android.yml (nikethputta1). Build IDs live there.
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
           set -euo pipefail
-          node scripts/patch-eas-project.mjs play
+          node scripts/patch-eas-project.mjs restore
           npx eas-cli submit --platform android --id "${{ inputs.build_id }}" --profile production --non-interactive
           node scripts/patch-eas-project.mjs restore
