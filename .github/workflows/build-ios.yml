@@ -10,7 +10,16 @@ on:
         required: false
         default: false
         type: boolean
-  # No push trigger — Android hotfixes must not auto-build iOS.
+  push:
+    # Ship current main (Vercel app source) to App Store from this branch.
+    branches: [cursor/ios-ship-main-4928]
+    paths:
+      - 'src/**'
+      - 'app.json'
+      - 'eas.json'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/build-ios.yml'
 
 concurrency:
   group: ios-production
