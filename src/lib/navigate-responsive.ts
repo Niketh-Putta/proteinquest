@@ -41,3 +41,5 @@ export function prefetchRoute(routeModule: () => Promise<unknown>): void {
     // ignore sync import failures
   }
 }
+
+/** Ship marker: iOS 1.0.34 from main for App Store submit. */
