@@ -41,3 +41,4 @@ export function prefetchRoute(routeModule: () => Promise<unknown>): void {
     // ignore sync import failures
   }
 }
+
