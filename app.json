@@ -10,7 +10,7 @@
     "backgroundColor": "#0C0B10",
     "ios": {
       "bundleIdentifier": "com.proteinquest.app",
-      "buildNumber": "75",
+      "buildNumber": "76",
       "supportsTablet": true,
       "entitlements": {
         "aps-environment": "production"
@@ -36,7 +36,7 @@
         "com.android.vending.BILLING",
         "android.permission.POST_NOTIFICATIONS"
       ],
-      "versionCode": 131
+      "versionCode": 132
     },
     "web": {
       "output": "single",
