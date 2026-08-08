@@ -57,8 +57,10 @@ export async function pickLibraryImage(): Promise<PickedImage | null> {
 
   const result = await ImagePicker.launchImageLibraryAsync({
     mediaTypes: ['images'],
-    // Full quality; prepareSquareMealPhoto may lightly downscale for API payload limits.
-    quality: 1,
+    // Keep under ~0.85 so iPhone HEIC/12MP picks do not jetsam during manipulate.
+    // prepareSquareMealPhoto still resizes to EXPORT_MAX_SIDE for analyze.
+    quality: 0.85,
+    exif: false,
     // Android photo picker only (no legacy chooser that can list camera apps)
     legacy: false,
   });

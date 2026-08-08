@@ -18,6 +18,9 @@ textarea,
   user-select: text !important;
   -webkit-user-select: text !important;
   caret-color: auto !important;
+  /* Avoid webkit default padding pushing placeholders off-center. */
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
 }
 
 /* App chrome shouldn't feel like a selectable web page. */
@@ -33,7 +36,7 @@ export default function Root({ children }: PropsWithChildren) {
         <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
         <meta
           name="viewport"
-          content="width=device-width, initial-scale=1, shrink-to-fit=no"
+          content="width=device-width, initial-scale=1, shrink-to-fit=no, viewport-fit=cover"
         />
         <ScrollViewStyleReset />
         <style dangerouslySetInnerHTML={{ __html: globalCss }} />

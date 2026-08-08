@@ -1,6 +1,10 @@
 import type { ImageSourcePropType } from 'react-native';
 
 import {
+  getPendingDailyDragonLock,
+  hasPendingDailyDragonLock,
+} from './daily-dragon-lock';
+import {
   accountGoalStreakState,
   dayBeforeISO,
   nextGoalStreak,
@@ -421,11 +425,12 @@ export function dragonLevelProgress(progress: DragonProgress): {
 export function getDragonProgress(profile: Profile, dragonId: DragonId): DragonProgress {
   const stored = profile.dragon_progress?.[dragonId];
   if (stored) {
-    const merged = { ...emptyDragonProgress(), ...stored };
-    return { ...merged, level: merged.level ?? levelForXp(merged.xp) };
+    const xp = Math.max(0, Math.round(Number(stored.xp) || 0));
+    const merged = { ...emptyDragonProgress(), ...stored, xp };
+    return { ...merged, level: merged.level ?? levelForXp(xp) };
   }
   if (dragonId === 'fire' && !profile.dragon_progress?.fire) {
-    const xp = profile.xp ?? 0;
+    const xp = Math.max(0, Math.round(Number(profile.xp) || 0));
     return {
       xp,
       level: levelForXp(xp),
@@ -438,17 +443,108 @@ export function getDragonProgress(profile: Profile, dragonId: DragonId): DragonP
   return emptyDragonProgress();
 }
 
+/**
+ * Merge dragon_progress maps for saves.
+ * `award`: never let a stale client wipe higher XP (Math.max per dragon).
+ * `replace`: trust incoming (deletes / intentional clawbacks after a fresh read).
+ */
+export function mergeDragonProgressMaps(
+  latest: Profile['dragon_progress'] | null | undefined,
+  incoming: Profile['dragon_progress'] | null | undefined,
+  mode: 'award' | 'replace' = 'award',
+): Profile['dragon_progress'] {
+  if (!incoming) return { ...(latest ?? {}) };
+  if (mode === 'replace' || !latest) return { ...incoming };
+
+  const ids = new Set([
+    ...Object.keys(latest),
+    ...Object.keys(incoming),
+  ] as DragonId[]);
+  const out: Profile['dragon_progress'] = { ...latest };
+
+  for (const id of ids) {
+    const a = latest[id];
+    const b = incoming[id];
+    if (!b) continue;
+    if (!a) {
+      out[id] = b;
+      continue;
+    }
+    const aXp = Math.max(0, Math.round(Number(a.xp) || 0));
+    const bXp = Math.max(0, Math.round(Number(b.xp) || 0));
+    out[id] = bXp >= aXp ? { ...a, ...b, xp: bXp } : { ...b, ...a, xp: aXp };
+  }
+  return out;
+}
+
+/** Local copy of care XP constants to avoid a circular import with care-quests. */
+const CARE_STEP_XP_LOCAL = [25, 35, 50] as const;
+
+/**
+ * If today's meal protein XP is higher than the display dragon's stored XP,
+ * meals were saved without XP (or a stale write clobbered it). Backfill.
+ */
+export function reconcileDragonXpFromTodayMeals(params: {
+  profile: Profile;
+  consumedProteinG: number;
+  todayISO: string;
+}): Partial<Profile> | null {
+  const { profile, consumedProteinG, todayISO } = params;
+  const mealXp = Math.max(0, Math.round(consumedProteinG * XP_PER_GRAM));
+  if (mealXp <= 0) return null;
+
+  const dragonId = displayDragonId(profile, todayISO);
+  const progress = getDragonProgress(profile, dragonId);
+  if (progress.xp >= mealXp) return null;
+
+  const retention = profile.retention ?? {};
+  const care = retention.care_xp;
+  let careXp = 0;
+  if (care && care.date === todayISO && Array.isArray(care.steps)) {
+    const steps = CARE_STEP_XP_LOCAL;
+    for (let i = 0; i < 3; i++) {
+      if (care.steps[i]) careXp += steps[i];
+    }
+  }
+
+  const account = accountGoalStreakState(profile, progress);
+  const goalBonus = account.last_goal_date === todayISO ? XP_GOAL_BONUS : 0;
+  const floor = mealXp + careXp + goalBonus;
+  if (progress.xp >= floor) return null;
+
+  const xp = floor;
+  const level = levelForXp(xp);
+  const updatedProgress: DragonProgress = { ...progress, xp, level };
+
+  return {
+    dragon_progress: { ...profile.dragon_progress, [dragonId]: updatedProgress },
+    xp,
+  };
+}
+
 export function activeDragonId(profile: Profile): DragonId {
   return profile.active_dragon_id ?? 'fire';
 }
 
 export function isDailyDragonLockedForToday(profile: Profile, todayISO: string): boolean {
-  return profile.daily_dragon_date === todayISO && profile.daily_dragon_id != null;
+  // In-memory pending wins: Lock in must leave the picker even if profile lags.
+  if (hasPendingDailyDragonLock(todayISO)) return true;
+  const lockedDate = normalizeProfileDate(profile.daily_dragon_date);
+  return lockedDate === todayISO && profile.daily_dragon_id != null;
+}
+
+function normalizeProfileDate(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const s = String(value).trim();
+  return s.length >= 10 ? s.slice(0, 10) : s;
 }
 
 export function todayDragonId(profile: Profile, todayISO: string): DragonId | null {
-  if (isDailyDragonLockedForToday(profile, todayISO)) {
-    return profile.daily_dragon_id!;
+  const pending = getPendingDailyDragonLock(todayISO);
+  if (pending) return pending.dragonId;
+  const lockedDate = normalizeProfileDate(profile.daily_dragon_date);
+  if (lockedDate === todayISO && profile.daily_dragon_id != null) {
+    return profile.daily_dragon_id;
   }
   return null;
 }
@@ -651,12 +747,26 @@ export function applyDeleteLogToCharacter(params: {
   todayTotalAfterDelete: number;
   /** Calendar day the deleted meal belonged to (local YYYY-MM-DD). */
   todayISO: string;
-}): Partial<Profile> {
+}): {
+  updates: Partial<Profile>;
+  leveledDown: boolean;
+  goalUndone: boolean;
+  levelBefore: number;
+  levelAfter: number;
+  xpLost: number;
+  stageBeforeIndex: number;
+  stageAfterIndex: number;
+  dragonId: DragonId;
+} {
   const { profile, deletedProteinG, todayTotalAfterDelete, todayISO } = params;
   const dragonId = todayDragonId(profile, todayISO) ?? activeDragonId(profile);
   const progress = getDragonProgress(profile, dragonId);
   const account = accountGoalStreakState(profile, progress);
   const goal = profile.protein_goal_g ?? 0;
+
+  const levelBefore = effectiveLevel(progress);
+  const stageBeforeIndex = stageForXpLevel(levelBefore, dragonId).index;
+  const xpBefore = progress.xp;
 
   let xp = Math.max(0, progress.xp - Math.round(deletedProteinG * XP_PER_GRAM));
   let goalsHit = progress.goals_hit;
@@ -666,8 +776,9 @@ export function applyDeleteLogToCharacter(params: {
 
   const wasGoalHitOnDay = lastGoalDate === todayISO;
   const stillHitsGoal = goal > 0 && todayTotalAfterDelete >= goal;
+  const goalUndone = wasGoalHitOnDay && !stillHitsGoal;
 
-  if (wasGoalHitOnDay && !stillHitsGoal) {
+  if (goalUndone) {
     xp = Math.max(0, xp - XP_GOAL_BONUS);
     goalsHit = Math.max(0, goalsHit - 1);
     streak = Math.max(0, streak - 1);
@@ -675,10 +786,15 @@ export function applyDeleteLogToCharacter(params: {
     lastGoalDate = streak > 0 ? dayBeforeISO(todayISO) : null;
   }
 
+  const levelAfter = levelForXp(xp);
+  const stageAfterIndex = stageForXpLevel(levelAfter, dragonId).index;
+  const leveledDown = levelAfter < levelBefore;
+  const xpLost = Math.max(0, xpBefore - xp);
+
   const updatedProgress: DragonProgress = {
     ...progress,
     xp,
-    level: levelForXp(xp),
+    level: levelAfter,
     goals_hit: goalsHit,
     streak,
     best_streak: bestStreak,
@@ -686,12 +802,22 @@ export function applyDeleteLogToCharacter(params: {
   };
 
   return {
-    dragon_progress: { ...profile.dragon_progress, [dragonId]: updatedProgress },
-    xp: updatedProgress.xp,
-    streak: updatedProgress.streak,
-    best_streak: updatedProgress.best_streak,
-    goals_hit: updatedProgress.goals_hit,
-    last_goal_date: updatedProgress.last_goal_date,
+    updates: {
+      dragon_progress: { ...profile.dragon_progress, [dragonId]: updatedProgress },
+      xp: updatedProgress.xp,
+      streak: updatedProgress.streak,
+      best_streak: updatedProgress.best_streak,
+      goals_hit: updatedProgress.goals_hit,
+      last_goal_date: updatedProgress.last_goal_date,
+    },
+    leveledDown,
+    goalUndone,
+    levelBefore,
+    levelAfter,
+    xpLost,
+    stageBeforeIndex,
+    stageAfterIndex,
+    dragonId,
   };
 }
 

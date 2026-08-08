@@ -226,7 +226,8 @@ Deno.serve(async (req) => {
 
   try {
     const gate = await enforcePhotoScanLimit(req);
-    if (gate) return gate;
+    if (!gate.allowed) return gate.response;
+    const gatedUserId = gate.userId;
 
     const body = await req.json();
     const { image_base64, mime_type = "image/jpeg", user_note, text_only } = body;
@@ -241,7 +242,7 @@ Deno.serve(async (req) => {
         try {
           const raw = await callOpenAITextOnly(userNote);
           return json({
-            analysis: await normalizeStable(raw, userNote, req),
+            analysis: await normalizeStable(raw, userNote, gatedUserId),
             model: OPENAI_MODEL,
             provider: "openai",
             mode: "text",
@@ -256,7 +257,7 @@ Deno.serve(async (req) => {
           if (GEMINI_API_KEY) {
             const raw = await callGeminiTextOnly(GEMINI_API_KEY, userNote);
             return json({
-              analysis: await normalizeStable(raw, userNote, req),
+              analysis: await normalizeStable(raw, userNote, gatedUserId),
               model: GEMINI_MODELS[0] ?? "gemini",
               provider: "gemini",
               mode: "text",
@@ -272,7 +273,7 @@ Deno.serve(async (req) => {
       }
       const raw = await callGeminiTextOnly(GEMINI_API_KEY, userNote);
       return json({
-        analysis: await normalizeStable(raw, userNote, req),
+        analysis: await normalizeStable(raw, userNote, gatedUserId),
         model: GEMINI_MODELS[0] ?? "gemini",
         provider: "gemini",
         mode: "text",
@@ -287,7 +288,7 @@ Deno.serve(async (req) => {
       try {
         const raw = await callOpenAI(image_base64, mime_type, userNote);
         return json({
-          analysis: await normalizeStable(raw, userNote, req),
+          analysis: await normalizeStable(raw, userNote, gatedUserId),
           model: OPENAI_MODEL,
           provider: "openai",
         });
@@ -307,7 +308,7 @@ Deno.serve(async (req) => {
             userNote,
           );
           return json({
-            analysis: await normalizeStable(raw, userNote, req),
+            analysis: await normalizeStable(raw, userNote, gatedUserId),
             model,
             provider: "gemini",
             fallback_from: "openai",
@@ -327,7 +328,7 @@ Deno.serve(async (req) => {
         userNote,
       );
       return json({
-        analysis: await normalizeStable(raw, userNote, req),
+        analysis: await normalizeStable(raw, userNote, gatedUserId),
         model,
         provider: "gemini",
         fallback_from: "openai",
@@ -346,7 +347,11 @@ Deno.serve(async (req) => {
       mime_type,
       userNote,
     );
-    return json({ analysis: await normalizeStable(raw, userNote, req), model, provider: "gemini" });
+    return json({
+      analysis: await normalizeStable(raw, userNote, gatedUserId),
+      model,
+      provider: "gemini",
+    });
   } catch (err) {
     console.error("analyze-food error:", err);
     const message = err instanceof Error ? err.message : "Unexpected error analyzing the photo";
@@ -1295,10 +1300,10 @@ function normalize(raw: Record<string, unknown>, userNote = ""): NormalizedAnaly
 async function normalizeStable(
   raw: Record<string, unknown>,
   userNote: string,
-  req: Request,
+  userId: string | null,
 ): Promise<NormalizedAnalysis> {
   const normalized = normalize(raw, userNote);
-  return await stabilizeAgainstRecentScans(normalized, req);
+  return await stabilizeAgainstRecentScans(normalized, userId);
 }
 
 function normalizeMealKey(value: string): string {
@@ -1351,27 +1356,12 @@ function blendTowardMedian(current: number, targetMedian: number, tolerance: num
   return current * 0.2 + targetMedian * 0.8;
 }
 
-async function requestUserId(req: Request): Promise<string | null> {
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return null;
-  const auth = req.headers.get("Authorization");
-  if (!auth?.startsWith("Bearer ")) return null;
-  const userClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    global: { headers: { Authorization: auth } },
-  });
-  const { data, error } = await userClient.auth.getUser();
-  if (error) return null;
-  return data.user?.id ?? null;
-}
-
 async function stabilizeAgainstRecentScans(
   analysis: NormalizedAnalysis,
-  req: Request,
+  userId: string | null,
 ): Promise<NormalizedAnalysis> {
   if (!analysis.is_food) return analysis;
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return analysis;
-
-  const userId = await requestUserId(req);
-  if (!userId) return analysis;
+  if (!userId || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return analysis;
 
   const currentFoodKey = normalizeMealKey(analysis.food_name);
   if (!currentFoodKey) return analysis;
@@ -1385,6 +1375,7 @@ async function stabilizeAgainstRecentScans(
 
   const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
   const sinceIso = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+  // Lean fetch: recent matches only (was 40 + second auth.getUser).
   const { data } = await admin
     .from("protein_logs")
     .select("food_name, items, protein_g, calories")
@@ -1394,7 +1385,7 @@ async function stabilizeAgainstRecentScans(
     .gt("protein_g", 0)
     .not("calories", "is", null)
     .order("created_at", { ascending: false })
-    .limit(40);
+    .limit(12);
 
   if (!data?.length) return analysis;
 
@@ -1481,14 +1472,21 @@ function round1(n: number): number {
   return Math.round(n * 10) / 10;
 }
 
-async function enforcePhotoScanLimit(req: Request): Promise<Response | null> {
+type ScanGateResult =
+  | { allowed: true; userId: string | null }
+  | { allowed: false; response: Response };
+
+async function enforcePhotoScanLimit(req: Request): Promise<ScanGateResult> {
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SUPABASE_SERVICE_ROLE_KEY) {
-    return null;
+    return { allowed: true, userId: null };
   }
 
   const auth = req.headers.get("Authorization");
   if (!auth?.startsWith("Bearer ")) {
-    return json({ error: "Sign in required to scan meals." }, 401);
+    return {
+      allowed: false,
+      response: json({ error: "Sign in required to scan meals." }, 401),
+    };
   }
 
   const userClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
@@ -1497,11 +1495,16 @@ async function enforcePhotoScanLimit(req: Request): Promise<Response | null> {
   const { data: userData, error: userError } = await userClient.auth.getUser();
   const userId = userData.user?.id;
   if (userError || !userId) {
-    return json({ error: "Sign in required to scan meals." }, 401);
+    return {
+      allowed: false,
+      response: json({ error: "Sign in required to scan meals." }, 401),
+    };
   }
 
   const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-  const [{ data: profile }, { data: paywallCfg }] = await Promise.all([
+  const today = new Date().toISOString().slice(0, 10);
+  // Profile, paywall, and both scan counts in one round-trip batch.
+  const [{ data: profile }, { data: paywallCfg }, lifetimeRes, todayRes] = await Promise.all([
     admin
       .from("profiles")
       .select("is_premium, created_at")
@@ -1512,38 +1515,38 @@ async function enforcePhotoScanLimit(req: Request): Promise<Response | null> {
       .select("promo_unlimited_until")
       .eq("id", 1)
       .maybeSingle(),
+    admin
+      .from("protein_logs")
+      .select("*", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .in("source", ["photo", "manual"]),
+    // Count only photo_scan rows — each AI analysis records one. Do NOT also
+    // count logged `photo` meals or free users effectively get ~2 scans (scan+log
+    // would burn two slots toward FREE_DAILY_SCANS).
+    admin
+      .from("protein_logs")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .eq("logged_date", today)
+      .eq("source", "photo_scan"),
   ]);
-
-  const { count: lifetimeMeals } = await admin
-    .from("protein_logs")
-    .select("*", { count: "exact", head: true })
-    .eq("user_id", userId)
-    .in("source", ["photo", "manual"]);
-
-  // Count only photo_scan rows — each AI analysis records one. Do NOT also
-  // count logged `photo` meals or free users effectively get ~2 scans (scan+log
-  // would burn two slots toward FREE_DAILY_SCANS).
-  const today = new Date().toISOString().slice(0, 10);
-  const { count } = await admin
-    .from("protein_logs")
-    .select("id", { count: "exact", head: true })
-    .eq("user_id", userId)
-    .eq("logged_date", today)
-    .eq("source", "photo_scan");
 
   const decision = canScanPhoto({
     isPremium: profile?.is_premium === true,
     createdAt: profile?.created_at ?? null,
-    scansUsedToday: count ?? 0,
-    lifetimeMeals: lifetimeMeals ?? 0,
+    scansUsedToday: todayRes.count ?? 0,
+    lifetimeMeals: lifetimeRes.count ?? 0,
     promoUnlimitedUntil: paywallCfg?.promo_unlimited_until ?? null,
   });
 
   if (!decision.allowed) {
-    return json({ error: decision.message ?? "Daily scan limit reached." }, 403);
+    return {
+      allowed: false,
+      response: json({ error: decision.message ?? "Daily scan limit reached." }, 403),
+    };
   }
 
-  return null;
+  return { allowed: true, userId };
 }
 
 function json(body: unknown, status = 200): Response {

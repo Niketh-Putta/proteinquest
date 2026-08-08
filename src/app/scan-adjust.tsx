@@ -23,7 +23,7 @@ import Animated, {
   useSharedValue,
   withSpring,
 } from 'react-native-reanimated';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { GlassPanel } from '@/components/GlassPanel';
 import { ModalMotionLayer } from '@/components/ModalMotionLayer';
@@ -61,6 +61,14 @@ const PAD_ROWS = 2;
 const GRAM_STEP = 5;
 const TOGGLE_PAD = 4;
 const TOGGLE_H = 52;
+
+const IS_NATIVE = Platform.OS !== 'web';
+/** Reanimated layout entering + stacked fullScreenModals jetsam-kills iOS (meal edit → adjust). */
+const Enter = IS_NATIVE ? View : Animated.View;
+const enterProps = (delay = 0, duration = 320) =>
+  IS_NATIVE ? {} : { entering: FadeInDown.delay(delay).duration(duration) };
+const enterFade = (duration = 280) =>
+  IS_NATIVE ? {} : { entering: FadeIn.duration(duration) };
 
 const glassSoft =
   Platform.OS === 'web'
@@ -175,9 +183,11 @@ function formatApproxQty(qty: number): string {
 export default function ScanAdjustScreen() {
   const navigation = useNavigation();
   const column = useContentColumn('form');
+  const insets = useSafeAreaInsets();
   const { height: winH } = useWindowDimensions();
   const compact = winH < 720;
   const flushedOnLeaveRef = useRef(false);
+  const topPad = Math.max(insets.top, 8);
   const params = useLocalSearchParams<{
     index?: string;
     name?: string;
@@ -280,13 +290,19 @@ export default function ScanAdjustScreen() {
   });
   const [gramsDraft, setGramsDraft] = useState('');
   const [toggleTrackW, setToggleTrackW] = useState(0);
+  /** Outer page ScrollView locks while the nested wheel is dragged (RN-web freeze). */
+  const [wheelDragging, setWheelDragging] = useState(false);
   const toggleSlide = useSharedValue(0);
   const toggleThumbW = useSharedValue(0);
   const scrollRef = useRef<ScrollView>(null);
   const selectedIndexRef = useRef(initialIndex);
   const lastOffsetYRef = useRef(initialIndex * ITEM_H);
-  const settleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const isProgrammaticSnapRef = useRef(false);
+  const isProgrammaticScrollRef = useRef(false);
+  /** Dedupe onScrollEndDrag + onMomentumScrollEnd for the same gesture. */
+  const endAppliedIndexRef = useRef<number | null>(null);
+  const wheelUnlockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Web often skips momentum end; idle settle locks to a discrete row. */
+  const webIdleSettleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (toggleTrackW <= 0) return;
@@ -321,7 +337,8 @@ export default function ScanAdjustScreen() {
     });
     return () => {
       cancelAnimationFrame(id);
-      if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
+      if (wheelUnlockTimerRef.current) clearTimeout(wheelUnlockTimerRef.current);
+      if (webIdleSettleTimerRef.current) clearTimeout(webIdleSettleTimerRef.current);
     };
   }, [initialIndex]);
 
@@ -517,25 +534,27 @@ export default function ScanAdjustScreen() {
     persist({ i, mode: 'unit', grams: g });
   }
 
-  function snapToNearest(y: number, animated: boolean) {
-    const i = indexFromOffset(y);
-    const snapped = i * ITEM_H;
-    applyIndex(i, true);
-    if (Math.abs(y - snapped) > 0.5) {
-      isProgrammaticSnapRef.current = true;
-      scrollRef.current?.scrollTo({ y: snapped, animated });
-      if (animated) {
-        setTimeout(() => {
-          isProgrammaticSnapRef.current = false;
-        }, 220);
-      } else {
-        isProgrammaticSnapRef.current = false;
-      }
+  function clearWheelDraggingSoon(delayMs = 140) {
+    if (wheelUnlockTimerRef.current) clearTimeout(wheelUnlockTimerRef.current);
+    // Brief settle so outer ScrollView does not steal the release frame on web.
+    wheelUnlockTimerRef.current = setTimeout(() => {
+      setWheelDragging(false);
+      endAppliedIndexRef.current = null;
+      wheelUnlockTimerRef.current = null;
+    }, delayMs);
+  }
+
+  function onWheelScrollBeginDrag() {
+    if (wheelUnlockTimerRef.current) {
+      clearTimeout(wheelUnlockTimerRef.current);
+      wheelUnlockTimerRef.current = null;
     }
+    endAppliedIndexRef.current = null;
+    setWheelDragging(true);
   }
 
   function onScroll(e: NativeSyntheticEvent<NativeScrollEvent>) {
-    if (isProgrammaticSnapRef.current) return;
+    if (isProgrammaticScrollRef.current) return;
     const y = e.nativeEvent.contentOffset.y;
     lastOffsetYRef.current = y;
     const i = indexFromOffset(y);
@@ -550,32 +569,63 @@ export default function ScanAdjustScreen() {
       setGramsValue(Math.max(0, Math.round(gramsPerUnit * scale)));
       setGramsDraft('');
     }
-    if (Platform.OS !== 'web') return;
-    if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
-    settleTimerRef.current = setTimeout(() => {
-      snapToNearest(lastOffsetYRef.current, true);
-    }, 90);
+    // RN-web: momentum/end events are flaky; settle after scroll goes idle.
+    if (Platform.OS === 'web') {
+      if (webIdleSettleTimerRef.current) clearTimeout(webIdleSettleTimerRef.current);
+      webIdleSettleTimerRef.current = setTimeout(() => {
+        webIdleSettleTimerRef.current = null;
+        if (isProgrammaticScrollRef.current) return;
+        settleWheelToNearest(lastOffsetYRef.current);
+      }, 100);
+    }
+  }
+
+  /**
+   * Always lock onto one discrete row. Web snapToOffsets is unreliable, so we
+   * correct with a single scrollTo — never a settle-timer loop (that froze UI).
+   */
+  function settleWheelToNearest(y: number) {
+    const i = indexFromOffset(y);
+    const snapped = i * ITEM_H;
+    // Deduplicate onScrollEndDrag + onMomentumScrollEnd for the same gesture.
+    if (endAppliedIndexRef.current === i && Math.abs(y - snapped) <= 0.5) {
+      clearWheelDraggingSoon();
+      return;
+    }
+    endAppliedIndexRef.current = i;
+    applyIndex(i, true);
+    lastOffsetYRef.current = snapped;
+
+    if (Math.abs(y - snapped) > 0.5) {
+      isProgrammaticScrollRef.current = true;
+      // Web: unanimated lock avoids mid-frame freezes; native: soft snap.
+      scrollRef.current?.scrollTo({
+        y: snapped,
+        animated: Platform.OS !== 'web',
+      });
+      const unlockMs = Platform.OS === 'web' ? 80 : 240;
+      setTimeout(() => {
+        isProgrammaticScrollRef.current = false;
+        clearWheelDraggingSoon(80);
+      }, unlockMs);
+      return;
+    }
+    clearWheelDraggingSoon();
   }
 
   function onScrollEnd(e: NativeSyntheticEvent<NativeScrollEvent>) {
-    if (settleTimerRef.current) {
-      clearTimeout(settleTimerRef.current);
-      settleTimerRef.current = null;
-    }
-    snapToNearest(e.nativeEvent.contentOffset.y, true);
+    if (isProgrammaticScrollRef.current) return;
+    settleWheelToNearest(e.nativeEvent.contentOffset.y);
   }
 
   function selectIndex(i: number) {
-    if (settleTimerRef.current) {
-      clearTimeout(settleTimerRef.current);
-      settleTimerRef.current = null;
-    }
     applyIndex(i, true);
-    isProgrammaticSnapRef.current = true;
-    scrollRef.current?.scrollTo({ y: i * ITEM_H, animated: true });
+    isProgrammaticScrollRef.current = true;
+    endAppliedIndexRef.current = i;
+    scrollRef.current?.scrollTo({ y: i * ITEM_H, animated: Platform.OS !== 'web' });
     setTimeout(() => {
-      isProgrammaticSnapRef.current = false;
-    }, 220);
+      isProgrammaticScrollRef.current = false;
+    }, Platform.OS === 'web' ? 80 : 220);
   }
 
   function switchInputMode(next: InputMode) {
@@ -628,25 +678,24 @@ export default function ScanAdjustScreen() {
   }
 
   function goBack() {
+    if (isAdd) {
+      // Stack: Confirm/Meal → Search → Adjust. Pop both so we land on Confirm/Meal.
+      // Single back() incorrectly returns to Search.
+      if (router.canDismiss()) {
+        router.dismiss(2);
+        return;
+      }
+    }
     if (router.canGoBack()) router.back();
     else router.replace('/scan');
   }
 
-  /** Leave without router.dismiss (throws POP toast on web). */
+  /**
+   * Leave adjust without remounting /scan (would wipe analysis → black camera).
+   * Add flow: dismiss Search + Adjust together. Edit flow: one back to Confirm.
+   */
   function leaveScreen() {
-    if (!isAdd) {
-      goBack();
-      return;
-    }
-    // Add flow: scan → scan-ingredient → scan-adjust.
-    if (router.canGoBack()) {
-      router.back();
-      requestAnimationFrame(() => {
-        if (router.canGoBack()) router.back();
-      });
-      return;
-    }
-    router.replace('/scan');
+    goBack();
   }
 
   function saveAndBack() {
@@ -673,8 +722,8 @@ export default function ScanAdjustScreen() {
 
   return (
     <PageCanvas>
-      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-        <View style={[styles.topBar, column]}>
+      <SafeAreaView style={styles.safe} edges={['bottom']}>
+        <View style={[styles.topBar, column, { paddingTop: topPad + spacing.sm }]}>
           <View style={styles.topBarSide}>
             <Pressable
               onPress={saveAndBack}
@@ -699,9 +748,7 @@ export default function ScanAdjustScreen() {
           <View style={[styles.titleWrap, { minWidth: 0, flexShrink: 1 }]}>
             <Text
               style={styles.topTitle}
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              minimumFontScale={0.78}
+              numberOfLines={2}
               ellipsizeMode="tail">
               {isAdd ? `Add ${name}` : `Adjust ${name}`}
             </Text>
@@ -738,19 +785,21 @@ export default function ScanAdjustScreen() {
         <ScrollView
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
+          scrollEnabled={!wheelDragging}
+          nestedScrollEnabled
           contentContainerStyle={[
             styles.scroll,
             column,
             { paddingBottom: compact ? spacing.lg : spacing.xxl },
           ]}>
-          <Animated.View entering={FadeIn.duration(280)} style={styles.hero}>
+          <Enter {...enterFade(280)} style={styles.hero}>
             <Text style={[styles.foodName, compact && styles.foodNameCompact]} numberOfLines={2}>
               {name}
             </Text>
             <Text style={styles.portionLine}>{heroSubtitle}</Text>
-          </Animated.View>
+          </Enter>
 
-          <Animated.View entering={FadeInDown.delay(40).duration(320)} style={styles.toggleBlock}>
+          <Enter {...enterProps(40, 320)} style={styles.toggleBlock}>
             <Text style={styles.togglePrompt}>How do you want to measure?</Text>
             <View
               style={[styles.toggleTrack, glassStrong]}
@@ -802,23 +851,25 @@ export default function ScanAdjustScreen() {
                 </Text>
               </Pressable>
             </View>
-          </Animated.View>
+          </Enter>
 
-          <Animated.View entering={FadeInDown.delay(70).duration(320)}>
+          <Enter {...enterProps(70, 320)}>
             <Text style={styles.question}>
               {inputMode === 'unit' ? questionUnit : questionGrams}
             </Text>
-          </Animated.View>
+          </Enter>
 
           {inputMode === 'unit' ? (
-            <Animated.View entering={FadeInDown.delay(90).duration(360)} style={styles.pickerBlock}>
+            <Enter {...enterProps(90, 360)} style={styles.pickerBlock}>
               <View style={[styles.pickerShell, glassSoft]}>
                 <View style={[styles.pickerFrame, { height: PICKER_H }]}>
                   <View pointerEvents="none" style={styles.lens} />
                   <ScrollView
                     ref={scrollRef}
                     showsVerticalScrollIndicator={false}
-                    snapToOffsets={snapOffsets}
+                    snapToInterval={ITEM_H}
+                    // Native only: web snapToOffsets fights our settle + CSS snap.
+                    {...(Platform.OS === 'web' ? null : { snapToOffsets })}
                     snapToAlignment="start"
                     disableIntervalMomentum
                     decelerationRate="fast"
@@ -826,11 +877,20 @@ export default function ScanAdjustScreen() {
                     bounces={false}
                     overScrollMode="never"
                     contentContainerStyle={{ paddingVertical: ITEM_H * PAD_ROWS }}
+                    onScrollBeginDrag={onWheelScrollBeginDrag}
                     onScroll={onScroll}
                     scrollEventThrottle={16}
                     onMomentumScrollEnd={onScrollEnd}
                     onScrollEndDrag={onScrollEnd}
-                    style={styles.pickerScroll}>
+                    style={[
+                      styles.pickerScroll,
+                      Platform.OS === 'web'
+                        ? ({
+                            scrollSnapType: 'y mandatory',
+                            WebkitOverflowScrolling: 'touch',
+                          } as object)
+                        : null,
+                    ]}>
                     {sizeMode
                       ? ADJUST_SIZES.map((s, i) => {
                           const selected = i === selectedIndex;
@@ -840,7 +900,13 @@ export default function ScanAdjustScreen() {
                             <Pressable
                               key={s}
                               onPress={() => selectIndex(i)}
-                              style={[styles.pickerRow, { height: ITEM_H }]}
+                              style={[
+                                styles.pickerRow,
+                                { height: ITEM_H },
+                                Platform.OS === 'web'
+                                  ? ({ scrollSnapAlign: 'center' } as object)
+                                  : null,
+                              ]}
                               accessibilityRole="button"
                               accessibilityState={{ selected }}
                               accessibilityLabel={label}>
@@ -866,7 +932,13 @@ export default function ScanAdjustScreen() {
                             <Pressable
                               key={q}
                               onPress={() => selectIndex(i)}
-                              style={[styles.pickerRow, { height: ITEM_H }]}
+                              style={[
+                                styles.pickerRow,
+                                { height: ITEM_H },
+                                Platform.OS === 'web'
+                                  ? ({ scrollSnapAlign: 'center' } as object)
+                                  : null,
+                              ]}
                               accessibilityRole="button"
                               accessibilityState={{ selected }}
                               accessibilityLabel={`${formatQuantityLabel(q)} ${unitLabel}`}>
@@ -902,9 +974,9 @@ export default function ScanAdjustScreen() {
                   </View>
                 </View>
               </View>
-            </Animated.View>
+            </Enter>
           ) : (
-            <Animated.View entering={FadeInDown.delay(90).duration(360)} style={styles.gramsModeBlock}>
+            <Enter {...enterProps(90, 360)} style={styles.gramsModeBlock}>
               <View style={styles.gramsStepperRow}>
                 <Pressable
                   onPress={() => stepGrams(-GRAM_STEP)}
@@ -967,10 +1039,10 @@ export default function ScanAdjustScreen() {
                   <Ionicons name="add" size={22} color={colors.text} />
                 </Pressable>
               </View>
-            </Animated.View>
+            </Enter>
           )}
 
-          <Animated.View entering={FadeInDown.delay(120).duration(320)} style={styles.estimateBlock}>
+          <Enter {...enterProps(120, 320)} style={styles.estimateBlock}>
             <View style={styles.conversionPill}>
               <LinearGradient
                 pointerEvents="none"
@@ -995,9 +1067,9 @@ export default function ScanAdjustScreen() {
               <Text style={styles.estimateValue}>{estimatedValue}</Text>
             </View>
             <Text style={styles.gramsHint}>{gramsHint}</Text>
-          </Animated.View>
+          </Enter>
 
-          <Animated.View entering={FadeInDown.delay(150).duration(360)}>
+          <Enter {...enterProps(150, 360)}>
             <GlassPanel emphasized style={styles.nutritionCard}>
               <View style={styles.nutritionCol}>
                 <View style={styles.nutritionIconRow}>
@@ -1024,7 +1096,7 @@ export default function ScanAdjustScreen() {
                 </Text>
               </View>
             </GlassPanel>
-          </Animated.View>
+          </Enter>
         </ScrollView>
 
         <Modal
@@ -1089,7 +1161,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingTop: spacing.md,
     paddingBottom: spacing.sm,
     minHeight: 56,
   },
@@ -1551,7 +1622,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
   },
   confirmBackdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(6, 5, 10, 0.72)',
     ...(Platform.OS === 'web'
       ? ({

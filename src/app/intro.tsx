@@ -327,8 +327,29 @@ export default function IntroScreen() {
   const phaseIndex = PHASES.indexOf(phase);
   const namingDragon = DRAGONS[dragonIndex];
   const dragonPortraitSizeBase = isTiny ? 88 : isCompact ? 112 : 160;
-  // specialScale is 1 on normal phones — portrait size unchanged.
-  const dragonPortraitSize = Math.round(dragonPortraitSizeBase * special.specialScale);
+  /** Keyboard height while typing a dragon name — shrink portrait so field + CTA stay on screen. */
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  // Fit portrait into remaining viewport (and under an open keyboard) so we never
+  // need scrollToEnd, which used to yeet the dragon off-screen intermittently.
+  const namingCopyBudget = isTiny ? 140 : isCompact ? 175 : 210;
+  const namingChrome =
+    48 + // top bar
+    56 + // CTA button row
+    footerGap +
+    namingCopyBudget +
+    Math.max(insets.top + insets.bottom, 0) * 0.2;
+  const keyboardReserve =
+    phase === 'dragons' && keyboardHeight > 0
+      ? Math.max(0, keyboardHeight - Math.max(insets.bottom, 0) - 8)
+      : 0;
+  const dragonFitMax = Math.max(
+    keyboardReserve > 0 ? 56 : 72,
+    Math.floor(height - namingChrome - 40 - keyboardReserve),
+  );
+  const dragonPortraitSize = Math.min(
+    Math.round(dragonPortraitSizeBase * special.specialScale),
+    dragonFitMax,
+  );
 
   // Baby dragon PNGs are ~2MB each — warm all three as soon as intro mounts so
   // the naming step never paints an empty frame.
@@ -340,17 +361,59 @@ export default function IntroScreen() {
     if (phase === 'name' || phase === 'dragons') warmDragonPreviewArt();
   }, [phase]);
 
+  useEffect(() => {
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvt, (e) => {
+      setKeyboardHeight(e.endCoordinates?.height ?? 0);
+      // Keep content anchored at top; portrait shrinks to leave room for the field.
+      if (phase === 'dragons') {
+        requestAnimationFrame(() => {
+          phaseScrollRef.current?.scrollTo({ y: 0, animated: true });
+        });
+      }
+    });
+    const hideSub = Keyboard.addListener(hideEvt, () => {
+      setKeyboardHeight(0);
+      if (phase === 'dragons') {
+        requestAnimationFrame(() => {
+          phaseScrollRef.current?.scrollTo({ y: 0, animated: true });
+        });
+      }
+    });
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, [phase]);
+
   function scrollNameFieldIntoView() {
-    // Keep the name input above the pinned Continue / Next dragon CTA.
+    // User-name step only: nudge field above the pinned Continue CTA.
+    // Dragon steps: KeyboardAvoidingView + live portrait resize keep the field
+    // clear without scrollToEnd (that was the off-screen bug).
+    if (phase === 'dragons') {
+      requestAnimationFrame(() => {
+        phaseScrollRef.current?.scrollTo({ y: 0, animated: true });
+      });
+      return;
+    }
     requestAnimationFrame(() => {
       phaseScrollRef.current?.scrollToEnd({ animated: true });
     });
   }
 
   useEffect(() => {
-    if (phase !== 'dragons' && phase !== 'name') return;
-    const t = setTimeout(scrollNameFieldIntoView, 80);
-    return () => clearTimeout(t);
+    if (phase === 'name') {
+      const t = setTimeout(scrollNameFieldIntoView, 80);
+      return () => clearTimeout(t);
+    }
+    if (phase === 'dragons') {
+      setKeyboardHeight(0);
+      const t = setTimeout(() => {
+        phaseScrollRef.current?.scrollTo({ y: 0, animated: false });
+      }, 16);
+      return () => clearTimeout(t);
+    }
   }, [phase, dragonIndex]);
 
   // Opening title sequence: FUEL. FEED. EVOLVE. → settle on the brand statement.
@@ -569,7 +632,8 @@ export default function IntroScreen() {
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
               onScrollBeginDrag={Keyboard.dismiss}
-              showsVerticalScrollIndicator={false}>
+              showsVerticalScrollIndicator={false}
+              bounces={phase !== 'dragons'}>
               {phase === 'name' ? (
                 <Animated.View
                   key="name"

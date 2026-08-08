@@ -24,6 +24,7 @@ import { Button } from '@/components/Button';
 import { DragonPicker } from '@/components/DragonPicker';
 import { GoalEditor } from '@/components/GoalEditor';
 import { emptyDragonProgress } from '@/lib/character';
+import { markDailyDragonLocked } from '@/lib/daily-dragon-lock';
 import { trackEvent } from '@/lib/analytics';
 import { markNeedsFirstScan } from '@/lib/first-scan';
 import { setMealRemindersEnabled } from '@/lib/meal-reminders';
@@ -183,13 +184,16 @@ export default function Onboarding() {
     setError(null);
     try {
       const progress = emptyDragonProgress();
+      const todayISO = todayISODate();
+      // Sync lock before await so first Today open never shows the daily picker.
+      markDailyDragonLocked(dragonId, todayISO);
       await saveProfile({
         ...updates,
         active_dragon_id: dragonId,
         // Lock the chosen dragon as today's dragon so first-time users land
         // straight on their Today hub instead of being asked to pick again.
         daily_dragon_id: dragonId,
-        daily_dragon_date: todayISODate(),
+        daily_dragon_date: todayISO,
         dragon_progress: { [dragonId]: progress },
         xp: 0,
         streak: 0,

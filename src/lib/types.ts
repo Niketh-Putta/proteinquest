@@ -22,6 +22,11 @@ export interface RetentionState {
   care_days?: string[];
   /** User calorie aim (kcal/day). Prefer this over derived estimate. */
   calorie_goal_kcal?: number;
+  /** Today's care checklist XP already paid (per task, per calendar day). */
+  care_xp?: {
+    date: string;
+    steps: [boolean, boolean, boolean];
+  };
 }
 
 export interface Profile {
@@ -39,7 +44,7 @@ export interface Profile {
   intro_completed: boolean;
   is_premium: boolean;
   paywall_dismissed: boolean;
-  /** Set by Supabase on profile insert — used for the 2-day habit grace period. */
+  /** Set by Supabase on profile insert — used for the 1-day habit grace period. */
   created_at?: string | null;
   /** @deprecated use dragon_progress */
   xp: number;

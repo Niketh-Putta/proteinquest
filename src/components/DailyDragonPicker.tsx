@@ -15,6 +15,7 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import { DragonPicker } from '@/components/DragonPicker';
 import { StickyFooter } from '@/components/StickyFooter';
 import { lockDailyDragon } from '@/lib/character';
+import { markDailyDragonLocked } from '@/lib/daily-dragon-lock';
 import { useLayout } from '@/lib/layout';
 import { todayISODate } from '@/lib/protein';
 import { useSession } from '@/lib/session';
@@ -33,21 +34,28 @@ export function DailyDragonPicker() {
   const scrollFooterPad =
     (isCompact ? layout.controlHeightCompact : layout.controlHeight) + spacing.xl;
 
-  async function confirm() {
+  function confirm() {
     if (!profile || !dragonId) {
       setError('Choose a dragon to grow today.');
       return;
     }
     setSaving(true);
     setError(null);
-    try {
-      await saveProfile(lockDailyDragon(profile, dragonId, todayISODate()));
-    } catch (e: unknown) {
+    const todayISO = todayISODate();
+    // 1) Sync memory lock + notify Today to leave the picker immediately.
+    markDailyDragonLocked(dragonId, todayISO);
+    const updates = lockDailyDragon(profile, dragonId, todayISO);
+    // 2) Persist in background. Never block leaving the picker on network.
+    void saveProfile({
+      ...updates,
+      daily_dragon_id: dragonId,
+      daily_dragon_date: todayISO,
+    }).catch((e: unknown) => {
+      // Keep pending lock so Today stays open. Only show error if still mounted.
       const msg = e instanceof Error ? e.message : 'Could not save. Try again.';
       setError(msg);
-    } finally {
       setSaving(false);
-    }
+    });
   }
 
   return (

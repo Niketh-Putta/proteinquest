@@ -15,10 +15,10 @@ interface Props {
 
 function parseFeedToast(message: string): { body: string; protein: string | null } {
   const parts = message.split(' · ').map((p) => p.trim()).filter(Boolean);
-  const proteinIdx = parts.findIndex((p) => /^\+\d+g$/i.test(p));
-  if (proteinIdx < 0) return { body: message, protein: null };
-  const protein = parts[proteinIdx] ?? null;
-  const body = parts.filter((_, i) => i !== proteinIdx).join(' · ');
+  const rewardIdx = parts.findIndex((p) => /^\+\d+(\s*(g|xp))?$/i.test(p));
+  if (rewardIdx < 0) return { body: message, protein: null };
+  const protein = parts[rewardIdx] ?? null;
+  const body = parts.filter((_, i) => i !== rewardIdx).join(' · ');
   return { body, protein };
 }
 
@@ -29,9 +29,9 @@ export function FeedToast({ visible, message, onHide }: Props) {
 
   useEffect(() => {
     if (!visible) return;
-    const t = setTimeout(() => onHide?.(), 2800);
+    const t = setTimeout(() => onHide?.(), 2200);
     return () => clearTimeout(t);
-  }, [visible, onHide]);
+  }, [visible, message, onHide]);
 
   if (!visible || !message) return null;
 
@@ -53,7 +53,9 @@ export function FeedToast({ visible, message, onHide }: Props) {
           <Ionicons name="sparkles" size={13} color="rgba(255, 176, 144, 0.9)" />
           <Text style={styles.text} numberOfLines={2}>
             {body}
-            {protein ? <Text style={styles.protein}>{` · ${protein}`}</Text> : null}
+            {protein ? (
+              <Text style={styles.protein}>{body ? ` · ${protein}` : protein}</Text>
+            ) : null}
           </Text>
         </View>
       </GlassPanel>

@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import React, { useState } from 'react';
-import { LayoutChangeEvent, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { LayoutChangeEvent, Platform, StyleSheet, View, useWindowDimensions } from 'react-native';
 
 import { colors } from '@/theme';
 
@@ -53,8 +53,10 @@ export function MealPhotoPreview({
         source={{ uri }}
         style={styles.image}
         contentFit={square ? 'cover' : 'contain'}
-        cachePolicy="memory-disk"
-        priority="high"
+        // Disk-only on native: memory-disk + stacked modals jetsam-kills iOS when opening Adjust.
+        cachePolicy={Platform.OS === 'web' ? 'memory-disk' : 'disk'}
+        priority="normal"
+        allowDownscaling
         recyclingKey={uri.slice(0, 64)}
         accessibilityLabel=""
         onLoad={(e) => {

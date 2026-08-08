@@ -95,8 +95,11 @@ interface Props {
   profile: Profile;
   evolved: boolean;
   leveledUp?: boolean;
+  leveledDown?: boolean;
   goalJustHit?: boolean;
+  goalUndone?: boolean;
   xpGained?: number;
+  xpLost?: number;
   perkUnlocked?: string | null;
   levelBefore?: number;
   levelAfter?: number;
@@ -109,8 +112,11 @@ export function Celebration({
   profile,
   evolved,
   leveledUp = false,
+  leveledDown = false,
   goalJustHit = false,
+  goalUndone = false,
   xpGained,
+  xpLost,
   perkUnlocked,
   levelBefore,
   levelAfter,
@@ -131,13 +137,15 @@ export function Celebration({
   const previousStage =
     evolved && previousStageIndex != null ? dragon.stages[previousStageIndex] : null;
 
-  const showEvolution = evolved && previousStage != null && previousStage.index !== stage.index;
-  const isQuickLevelUp = leveledUp && !showEvolution;
-  const prevLevel = levelBefore ?? Math.max(1, level - 1);
+  const showEvolution = !leveledDown && evolved && previousStage != null && previousStage.index !== stage.index;
+  const isQuickLevelUp = !leveledDown && leveledUp && !showEvolution;
+  const isLevelDown = leveledDown || (goalUndone && !leveledUp && !showEvolution);
+  const prevLevel = levelBefore ?? (isLevelDown ? level + 1 : Math.max(1, level - 1));
   const streakShown = effectiveStreak(progress, todayISO, yesterdayISO, {
     freezeKeepsAlive: canUseStreakFreeze(profile),
   });
   const xpShown = Math.max(0, Math.round(xpGained ?? (goalJustHit ? XP_GOAL_BONUS : 0)));
+  const xpLostShown = Math.max(0, Math.round(xpLost ?? 0));
 
   const [ceremonyDone, setCeremonyDone] = useState(!showEvolution);
   const breath = useSharedValue(1);
@@ -175,7 +183,7 @@ export function Celebration({
           },
         ]}
         onPress={ceremonyDone ? onDone : undefined}>
-        {(ceremonyDone || !showEvolution) && (
+        {!isLevelDown && (ceremonyDone || !showEvolution) && (
           <View style={[styles.particles, { top: screenH / 2 - 60, left: screenW / 2 }]}>
             {Array.from({ length: 24 }).map((_, i) => (
               <Particle key={i} index={i} color={dragon.accent} delayBase={particleDelay} />
@@ -186,12 +194,16 @@ export function Celebration({
         <Animated.View
           entering={FadeIn.duration(400)}
           style={[styles.arena, isCompact && styles.arenaCompact]}>
-          <Text style={styles.kicker}>
-            {showEvolution && !ceremonyDone
-              ? 'EVOLVING…'
-              : isQuickLevelUp
-                ? 'LEVEL UP'
-                : 'REACH YOUR POTENTIAL'}
+          <Text style={[styles.kicker, isLevelDown && styles.kickerDown]}>
+            {isLevelDown
+              ? leveledDown
+                ? 'LEVEL DOWN'
+                : 'GOAL UNDONE'
+              : showEvolution && !ceremonyDone
+                ? 'EVOLVING…'
+                : isQuickLevelUp
+                  ? 'LEVEL UP'
+                  : 'REACH YOUR POTENTIAL'}
           </Text>
 
           {showEvolution ? (
@@ -217,7 +229,7 @@ export function Celebration({
                   accent={dragon.accent}
                   level={level}
                   dragonId={dragonId}
-                  showGlow
+                  showGlow={!isLevelDown}
                 />
               </Animated.View>
             </View>
@@ -243,7 +255,7 @@ export function Celebration({
                   style={[styles.title, isCompact && styles.titleCompact]}>
                   {`${dragonName} evolved`}
                 </Animated.Text>
-              ) : isQuickLevelUp || leveledUp ? (
+              ) : leveledDown || isQuickLevelUp || leveledUp ? (
                 <Animated.View
                   entering={FadeInUp.delay(80).springify()}
                   style={styles.levelTransitionRow}
@@ -251,16 +263,28 @@ export function Celebration({
                   <Text style={[styles.levelTransitionPrev, isCompact && styles.levelTransitionCompact]}>
                     Lvl {prevLevel}
                   </Text>
-                  <Text style={[styles.levelTransitionArrow, { color: dragon.accent }]}>→</Text>
+                  <Text
+                    style={[
+                      styles.levelTransitionArrow,
+                      { color: leveledDown ? 'rgba(255,255,255,0.45)' : dragon.accent },
+                    ]}>
+                    →
+                  </Text>
                   <Text
                     style={[
                       styles.levelTransitionNext,
                       isCompact && styles.levelTransitionCompact,
-                      { color: dragon.accent },
+                      { color: leveledDown ? colors.text : dragon.accent },
                     ]}>
                     Lvl {level}
                   </Text>
                 </Animated.View>
+              ) : isLevelDown ? (
+                <Animated.Text
+                  entering={FadeInUp.delay(80).springify()}
+                  style={[styles.title, isCompact && styles.titleCompact]}>
+                  Goal undone
+                </Animated.Text>
               ) : (
                 <Animated.Text
                   entering={FadeInUp.delay(80).springify()}
@@ -298,34 +322,55 @@ export function Celebration({
               ) : (
                 <Animated.Text
                   entering={FadeInUp.delay(160).springify()}
-                  style={[styles.stageName, { color: dragon.accent }]}>
-                  {isQuickLevelUp
-                    ? perkUnlocked
-                      ? 'PERK UNLOCKED'
-                      : `LEVEL ${level}`
-                    : leveledUp
-                      ? `LEVEL ${level}`
-                      : 'PROTEIN GOAL HIT'}
+                  style={[
+                    styles.stageName,
+                    { color: isLevelDown ? 'rgba(255,255,255,0.55)' : dragon.accent },
+                  ]}>
+                  {isLevelDown
+                    ? leveledDown
+                      ? `NOW LEVEL ${level}`
+                      : 'PROTEIN GOAL UNDONE'
+                    : isQuickLevelUp
+                      ? perkUnlocked
+                        ? 'PERK UNLOCKED'
+                        : `LEVEL ${level}`
+                      : leveledUp
+                        ? `LEVEL ${level}`
+                        : 'PROTEIN GOAL HIT'}
                 </Animated.Text>
               )}
               <Animated.Text
                 entering={FadeInUp.delay(showEvolution ? 280 : 240).springify()}
                 style={styles.subline}>
-                {showEvolution
-                  ? `New form unlocked: ${stage.tagline}`
-                  : isQuickLevelUp && perkUnlocked
-                    ? perkUnlocked
-                    : isQuickLevelUp
-                      ? `${dragonName} grows stronger. Keep hitting your goal.`
-                      : leveledUp && perkUnlocked
-                        ? `Perk unlocked: ${perkUnlocked}`
-                        : leveledUp
-                          ? `${dragonName} grows stronger. Keep hitting your goal.`
-                          : `${dragonName} is fed. Keep reaching.`}
+                {isLevelDown
+                  ? goalUndone && leveledDown
+                    ? `Meal edit dropped XP and undid today's goal. Log more protein to climb back.`
+                    : goalUndone
+                      ? `Today's protein is under goal again. Keep logging to reclaim the bonus.`
+                      : `${dragonName} lost some XP from this edit. Feed more protein to level up again.`
+                  : showEvolution
+                    ? `New form unlocked: ${stage.tagline}`
+                    : isQuickLevelUp && perkUnlocked
+                      ? perkUnlocked
+                      : isQuickLevelUp
+                        ? `${dragonName} grows stronger. Keep hitting your goal.`
+                        : leveledUp && perkUnlocked
+                          ? `Perk unlocked: ${perkUnlocked}`
+                          : leveledUp
+                            ? `${dragonName} grows stronger. Keep hitting your goal.`
+                            : `${dragonName} is fed. Keep reaching.`}
               </Animated.Text>
 
               <Animated.View entering={FadeIn.delay(showEvolution ? 360 : 320)} style={styles.rewardRow}>
-                {xpShown > 0 ? (
+                {isLevelDown && xpLostShown > 0 ? (
+                  <View style={styles.rewardChip}>
+                    <Text style={[styles.rewardValue, styles.rewardValueDown]}>-{xpLostShown}</Text>
+                    <Text style={styles.rewardLabel}>
+                      {goalUndone ? 'xp · goal' : 'xp'}
+                    </Text>
+                  </View>
+                ) : null}
+                {!isLevelDown && xpShown > 0 ? (
                   <View style={styles.rewardChip}>
                     <Text style={[styles.rewardValue, { color: dragon.accent }]}>+{xpShown}</Text>
                     <Text style={styles.rewardLabel}>
@@ -370,6 +415,9 @@ const styles = StyleSheet.create({
     letterSpacing: 3.5,
     color: colors.accentSecondary,
     marginBottom: spacing.lg,
+  },
+  kickerDown: {
+    color: 'rgba(255,255,255,0.45)',
   },
   stage: {
     height: 260,
@@ -533,6 +581,9 @@ const styles = StyleSheet.create({
     fontSize: 22,
     color: colors.text,
     fontVariant: ['tabular-nums'],
+  },
+  rewardValueDown: {
+    color: 'rgba(255, 140, 120, 0.95)',
   },
   rewardLabel: {
     fontFamily: fonts.mono,

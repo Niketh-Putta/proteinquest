@@ -77,13 +77,14 @@ export default function RootLayout() {
                   name="scan"
                   options={{ presentation: 'fullScreenModal', animation: 'slide_from_bottom' }}
                 />
+                {/* Card (not fullScreenModal): stacking modals on meal/scan jetsam-kills iOS. */}
                 <Stack.Screen
                   name="scan-ingredient"
-                  options={{ presentation: 'fullScreenModal', animation: 'slide_from_right' }}
+                  options={{ animation: 'slide_from_right' }}
                 />
                 <Stack.Screen
                   name="scan-adjust"
-                  options={{ presentation: 'fullScreenModal', animation: 'slide_from_right' }}
+                  options={{ animation: 'slide_from_right' }}
                 />
                 <Stack.Screen
                   name="meal/[id]"

@@ -3,6 +3,7 @@ import { router, useFocusEffect } from 'expo-router';
 import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, startTransition } from 'react';
 import {
   InteractionManager,
+  KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
@@ -12,7 +13,7 @@ import {
   View,
 } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { GlassPanel } from '@/components/GlassPanel';
 import { PageCanvas } from '@/components/PageCanvas';
@@ -33,10 +34,13 @@ import { useContentColumn } from '@/lib/layout';
 import { colors, fonts, layout, pressableWeb, radius, spacing, textInputWeb } from '@/theme';
 
 const IS_ANDROID = Platform.OS === 'android';
-/** Reanimated layout entering crashes / OOM-kills some Android devices on this screen. */
-const Enter = IS_ANDROID ? View : Animated.View;
+const IS_NATIVE = Platform.OS !== 'web';
+const IS_WEB = Platform.OS === 'web';
+const SEARCH_ROW_H = 52;
+/** Reanimated entering + heavy catalog under stacked screens jetsam-kills native. */
+const Enter = IS_NATIVE ? View : Animated.View;
 const enterProps = (delay = 0) =>
-  IS_ANDROID ? {} : { entering: FadeInDown.delay(delay).duration(280) };
+  IS_NATIVE ? {} : { entering: FadeInDown.delay(delay).duration(280) };
 
 function openAdjust(food: CatalogFood) {
   void pushRecentFood(food);
@@ -49,7 +53,10 @@ function openAdjust(food: CatalogFood) {
     mode: 'add',
   });
   if (food.estimated_grams != null) q.set('grams', String(food.estimated_grams));
-  router.push(`/scan-adjust?${q.toString()}` as never);
+  const href = `/scan-adjust?${q.toString()}`;
+  InteractionManager.runAfterInteractions(() => {
+    router.push(href as never);
+  });
 }
 
 function SectionLabel({ label }: { label: string }) {
@@ -97,6 +104,7 @@ const BROWSE_PAGE = IS_ANDROID ? 36 : 80;
 
 export default function ScanIngredientScreen() {
   const column = useContentColumn('form');
+  const insets = useSafeAreaInsets();
   const [query, setQuery] = useState('');
   const deferredQuery = useDeferredValue(query);
   const [recent, setRecent] = useState<CatalogFood[]>([]);
@@ -107,10 +115,11 @@ export default function ScanIngredientScreen() {
   const [browseReady, setBrowseReady] = useState(false);
   const searchRef = useRef<TextInput>(null);
 
-  // iOS: warm heavy catalog after transition. Android: NEVER on mount — Hermes parse of
-  // ~600KB food modules OOMs / kills the activity (Add button "stops and closes").
+  // Native: NEVER warm heavy catalog on mount — Hermes parse of ~600KB modules
+  // OOMs / jetsam-kills when opened from meal edit (stacked with photo). Load on search.
+  // Web: warm after paint so browse list fills in.
   useEffect(() => {
-    if (IS_ANDROID) return;
+    if (IS_NATIVE) return;
     let alive = true;
     let delayTimer: ReturnType<typeof setTimeout> | undefined;
     const handle = InteractionManager.runAfterInteractions(() => {
@@ -135,29 +144,21 @@ export default function ScanIngredientScreen() {
     };
   }, []);
 
-  // Autofocus fights the Android transition and can kill the activity — tap to search instead.
-  useEffect(() => {
-    if (IS_ANDROID) return;
-    const handle = InteractionManager.runAfterInteractions(() => {
-      searchRef.current?.focus();
-    });
-    return () => handle.cancel();
-  }, []);
+  // Autofocus skipped: Safari pans under status bar; native autofocus fights transition / OOM.
 
   useFocusEffect(
     useCallback(() => {
       let alive = true;
-      let delayTimer: ReturnType<typeof setTimeout> | undefined;
       void loadRecentFoods().then((list) => {
         if (alive) setRecent(list);
       });
-      // Remote catalogue after paint — never race the open transition.
-      // Android: skip on open (network + JSON parse adds crash risk); refresh on search instead.
-      if (IS_ANDROID) {
+      // Native: skip remote refresh on open (JSON parse crash risk); refresh on search instead.
+      if (IS_NATIVE) {
         return () => {
           alive = false;
         };
       }
+      let delayTimer: ReturnType<typeof setTimeout> | undefined;
       const handle = InteractionManager.runAfterInteractions(() => {
         if (!alive) return;
         delayTimer = setTimeout(() => {
@@ -176,13 +177,13 @@ export default function ScanIngredientScreen() {
   );
 
   // Sort/filter full browse list after interactions so search + COMMON paint first.
-  // Android: skip auto full-browse — COMMON + search only (full sort freezes taps).
+  // Native: skip auto full-browse — COMMON + search only (full sort freezes taps / OOMs).
   useEffect(() => {
     if (!heavyReady) {
       setBrowseReady(false);
       return;
     }
-    if (IS_ANDROID) {
+    if (IS_NATIVE) {
       setBrowseReady(false);
       return;
     }
@@ -216,10 +217,10 @@ export default function ScanIngredientScreen() {
 
   const [similarResults, setSimilarResults] = useState<CatalogFood[]>([]);
 
-  // Android: only pull heavy chunks after the user actually searches (2+ chars),
+  // Native: only pull heavy chunks after the user actually searches (2+ chars),
   // and only after interactions — open stays COMMON + base FOOD_CATALOG forever-safe.
   useEffect(() => {
-    if (!IS_ANDROID) return;
+    if (!IS_NATIVE) return;
     if (heavyReady) return;
     if (deferredTrimmed.length < 2) return;
     let alive = true;
@@ -263,7 +264,7 @@ export default function ScanIngredientScreen() {
         if (cancelled) return;
         setSimilarResults(searchCatalogSimilar(deferredTrimmed, exactResults));
       });
-    }, Platform.OS === 'android' ? 180 : 60);
+    }, IS_NATIVE ? 180 : 60);
     return () => {
       cancelled = true;
       clearTimeout(timer);
@@ -300,192 +301,200 @@ export default function ScanIngredientScreen() {
     return browseVisible.length >= browseLimit;
   }, [searching, browseReady, browseVisible.length, browseLimit]);
 
-  const showBrowseSkeleton = !searching && !IS_ANDROID && (!heavyReady || !browseReady);
+  const showBrowseSkeleton = !searching && !IS_NATIVE && (!heavyReady || !browseReady);
 
   const loadMoreBrowse = useCallback(() => {
     setBrowseLimit((n) => n + BROWSE_PAGE);
   }, []);
 
+  const topPad = Math.max(insets.top, 8);
+
   return (
     <PageCanvas>
-      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-        <View style={[styles.page, column]}>
-          <View style={styles.topBar}>
-            <Pressable
-              onPress={() => {
-                if (router.canGoBack()) router.back();
-                else router.replace('/scan');
-              }}
-              hitSlop={12}
-              style={({ pressed }) => [styles.iconBtn, pressableWeb, pressed && { opacity: 0.7 }]}
-              accessibilityRole="button"
-              accessibilityLabel="Back">
-              <Ionicons name="chevron-back" size={22} color={colors.text} />
-            </Pressable>
-            <Text
-              style={[styles.topTitle, { flexShrink: 1, minWidth: 0, textAlign: 'center' }]}
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              minimumFontScale={0.75}>
-              ADD INGREDIENT
-            </Text>
-            <View style={styles.iconBtnSpacer} />
-          </View>
-
-          <ScrollView
-            showsVerticalScrollIndicator
-            keyboardShouldPersistTaps="handled"
-            style={styles.scrollView}
-            contentContainerStyle={styles.scroll}
-            scrollEventThrottle={160}
-            onScroll={(e) => {
-              if (searching || !browseHasMore) return;
-              const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
-              if (layoutMeasurement.height + contentOffset.y >= contentSize.height - 480) {
-                loadMoreBrowse();
-              }
-            }}>
-          <View style={styles.searchWrap}>
-            <View style={styles.searchIcon} pointerEvents="none">
-              <Ionicons name="search" size={18} color={colors.textTertiary} />
+      <SafeAreaView style={styles.safe} edges={['bottom']}>
+        <KeyboardAvoidingView
+          style={styles.safe}
+          behavior={Platform.OS === 'ios' ? 'padding' : IS_WEB ? 'padding' : undefined}
+          keyboardVerticalOffset={Platform.OS === 'ios' || IS_WEB ? topPad : 0}>
+          <View style={[styles.page, column, { paddingTop: topPad }]}>
+            <View style={styles.topBar}>
+              <Pressable
+                onPress={() => {
+                  if (router.canGoBack()) router.back();
+                  else router.replace('/scan');
+                }}
+                hitSlop={12}
+                style={({ pressed }) => [styles.iconBtn, pressableWeb, pressed && { opacity: 0.7 }]}
+                accessibilityRole="button"
+                accessibilityLabel="Back">
+                <Ionicons name="chevron-back" size={22} color={colors.text} />
+              </Pressable>
+              <Text
+                style={[styles.topTitle, { flexShrink: 1, minWidth: 0, textAlign: 'center' }]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.75}>
+                ADD INGREDIENT
+              </Text>
+              <View style={styles.iconBtnSpacer} />
             </View>
-            <TextInput
-              ref={searchRef}
-              style={[styles.searchInput, textInputWeb]}
-              value={query}
-              onChangeText={setQuery}
-              placeholder="Search food or ingredient..."
-              placeholderTextColor={colors.textTertiary}
-              autoCapitalize="sentences"
-              autoCorrect
-              returnKeyType="search"
-              clearButtonMode="while-editing"
-              accessibilityLabel="Search food"
-            />
-          </View>
 
-          {searching ? (
-            <Enter {...enterProps(0)} style={styles.searchResults}>
-              {searchPending && exactResults.length === 0 && similarResults.length === 0 ? (
-                <Text style={styles.searchPending}>Searching…</Text>
-              ) : null}
-              {recentMatches.length > 0 ? (
-                <>
-                  <SectionLabel label="RECENT" />
-                  <GlassPanel style={styles.listCard}>
-                    {recentMatches.map((food, i) => (
-                      <FoodRow
-                        key={`rm-${food.name}`}
-                        food={food}
-                        icon="time-outline"
-                        isLast={i === recentMatches.length - 1}
-                      />
-                    ))}
-                  </GlassPanel>
-                </>
-              ) : null}
-              {exactResults.length === 0 &&
-              similarResults.length === 0 &&
-              recentMatches.length === 0 &&
-              !searchPending ? (
-                <>
-                  <SectionLabel label="RESULTS" />
-                  <GlassPanel style={styles.listCard}>
-                    <Text style={styles.empty}>No matches. Try another name.</Text>
-                  </GlassPanel>
-                </>
-              ) : (
-                <>
-                  {exactResults.length > 0 ? (
+            <View style={styles.searchWrap}>
+              <View style={styles.searchIcon} pointerEvents="none">
+                <Ionicons name="search" size={18} color={colors.textTertiary} />
+              </View>
+              <TextInput
+                ref={searchRef}
+                style={[styles.searchInput, textInputWeb]}
+                value={query}
+                onChangeText={setQuery}
+                placeholder="Search food or ingredient..."
+                placeholderTextColor={colors.textTertiary}
+                autoCapitalize="sentences"
+                autoCorrect
+                returnKeyType="search"
+                clearButtonMode="while-editing"
+                accessibilityLabel="Search food"
+              />
+            </View>
+
+            <ScrollView
+              showsVerticalScrollIndicator
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+              style={styles.scrollView}
+              contentContainerStyle={styles.scroll}
+              scrollEventThrottle={160}
+              onScroll={(e) => {
+                if (searching || !browseHasMore) return;
+                const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
+                if (layoutMeasurement.height + contentOffset.y >= contentSize.height - 480) {
+                  loadMoreBrowse();
+                }
+              }}>
+              {searching ? (
+                <Enter {...enterProps(0)} style={styles.searchResults}>
+                  {searchPending && exactResults.length === 0 && similarResults.length === 0 ? (
+                    <Text style={styles.searchPending}>Searching…</Text>
+                  ) : null}
+                  {recentMatches.length > 0 ? (
+                    <>
+                      <SectionLabel label="RECENT" />
+                      <GlassPanel style={styles.listCard}>
+                        {recentMatches.map((food, i) => (
+                          <FoodRow
+                            key={`rm-${food.name}`}
+                            food={food}
+                            icon="time-outline"
+                            isLast={i === recentMatches.length - 1}
+                          />
+                        ))}
+                      </GlassPanel>
+                    </>
+                  ) : null}
+                  {exactResults.length === 0 &&
+                  similarResults.length === 0 &&
+                  recentMatches.length === 0 &&
+                  !searchPending ? (
                     <>
                       <SectionLabel label="RESULTS" />
                       <GlassPanel style={styles.listCard}>
-                        {exactResults.map((food, i) => (
-                          <FoodRow
-                            key={`e-${food.name}`}
-                            food={food}
-                            icon="nutrition-outline"
-                            isLast={i === exactResults.length - 1}
-                          />
-                        ))}
+                        <Text style={styles.empty}>No matches. Try another name.</Text>
                       </GlassPanel>
                     </>
-                  ) : null}
-                  {similarResults.length > 0 ? (
+                  ) : (
                     <>
-                      <SectionLabel label="SIMILAR" />
+                      {exactResults.length > 0 ? (
+                        <>
+                          <SectionLabel label="RESULTS" />
+                          <GlassPanel style={styles.listCard}>
+                            {exactResults.map((food, i) => (
+                              <FoodRow
+                                key={`e-${food.name}`}
+                                food={food}
+                                icon="nutrition-outline"
+                                isLast={i === exactResults.length - 1}
+                              />
+                            ))}
+                          </GlassPanel>
+                        </>
+                      ) : null}
+                      {similarResults.length > 0 ? (
+                        <>
+                          <SectionLabel label="SIMILAR" />
+                          <GlassPanel style={styles.listCard}>
+                            {similarResults.map((food, i) => (
+                              <FoodRow
+                                key={`s-${food.name}`}
+                                food={food}
+                                icon="sparkles-outline"
+                                isLast={i === similarResults.length - 1}
+                              />
+                            ))}
+                          </GlassPanel>
+                        </>
+                      ) : null}
+                    </>
+                  )}
+                </Enter>
+              ) : (
+                <>
+                  {recent.length > 0 ? (
+                    <Enter {...enterProps(40)}>
+                      <SectionLabel label="RECENT" />
                       <GlassPanel style={styles.listCard}>
-                        {similarResults.map((food, i) => (
+                        {recent.map((food, i) => (
                           <FoodRow
-                            key={`s-${food.name}`}
+                            key={`r-${food.name}`}
                             food={food}
-                            icon="sparkles-outline"
-                            isLast={i === similarResults.length - 1}
+                            icon="time-outline"
+                            isLast={i === recent.length - 1}
                           />
                         ))}
                       </GlassPanel>
-                    </>
+                    </Enter>
                   ) : null}
+
+                  <Enter {...enterProps(80)}>
+                    <SectionLabel label="COMMON" />
+                    <GlassPanel style={styles.listCard}>
+                      {common.map((food, i) => (
+                        <FoodRow
+                          key={`c-${food.name}`}
+                          food={food}
+                          icon="sparkles"
+                          isLast={i === common.length - 1 && browseVisible.length === 0}
+                        />
+                      ))}
+                      {browseVisible.map((food, i) => (
+                        <FoodRow
+                          key={`b-${food.name}`}
+                          food={food}
+                          icon="nutrition-outline"
+                          isLast={i === browseVisible.length - 1 && !browseHasMore}
+                        />
+                      ))}
+                      {showBrowseSkeleton ? (
+                        <View style={styles.loadMore}>
+                          <Text style={styles.loadMoreText}>Loading more foods…</Text>
+                        </View>
+                      ) : null}
+                      {browseHasMore ? (
+                        <Pressable
+                          onPress={loadMoreBrowse}
+                          style={({ pressed }) => [styles.loadMore, pressableWeb, pressed && { opacity: 0.8 }]}
+                          accessibilityRole="button"
+                          accessibilityLabel="Load more foods">
+                          <Text style={styles.loadMoreText}>Scroll for more</Text>
+                        </Pressable>
+                      ) : null}
+                    </GlassPanel>
+                  </Enter>
                 </>
               )}
-            </Enter>
-          ) : (
-            <>
-              {recent.length > 0 ? (
-                <Enter {...enterProps(40)}>
-                  <SectionLabel label="RECENT" />
-                  <GlassPanel style={styles.listCard}>
-                    {recent.map((food, i) => (
-                      <FoodRow
-                        key={`r-${food.name}`}
-                        food={food}
-                        icon="time-outline"
-                        isLast={i === recent.length - 1}
-                      />
-                    ))}
-                  </GlassPanel>
-                </Enter>
-              ) : null}
-
-              <Enter {...enterProps(80)}>
-                <SectionLabel label="COMMON" />
-                <GlassPanel style={styles.listCard}>
-                  {common.map((food, i) => (
-                    <FoodRow
-                      key={`c-${food.name}`}
-                      food={food}
-                      icon="sparkles"
-                      isLast={i === common.length - 1 && browseVisible.length === 0}
-                    />
-                  ))}
-                  {browseVisible.map((food, i) => (
-                    <FoodRow
-                      key={`b-${food.name}`}
-                      food={food}
-                      icon="nutrition-outline"
-                      isLast={i === browseVisible.length - 1 && !browseHasMore}
-                    />
-                  ))}
-                  {showBrowseSkeleton ? (
-                    <View style={styles.loadMore}>
-                      <Text style={styles.loadMoreText}>Loading more foods…</Text>
-                    </View>
-                  ) : null}
-                  {browseHasMore ? (
-                    <Pressable
-                      onPress={loadMoreBrowse}
-                      style={({ pressed }) => [styles.loadMore, pressableWeb, pressed && { opacity: 0.8 }]}
-                      accessibilityRole="button"
-                      accessibilityLabel="Load more foods">
-                      <Text style={styles.loadMoreText}>Scroll for more</Text>
-                    </Pressable>
-                  ) : null}
-                </GlassPanel>
-              </Enter>
-            </>
-          )}
-          </ScrollView>
-        </View>
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
       </SafeAreaView>
     </PageCanvas>
   );
@@ -540,7 +549,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'flex-start',
     width: '100%',
-    height: 52,
+    height: SEARCH_ROW_H,
+    marginBottom: spacing.md,
     paddingHorizontal: spacing.md,
     borderRadius: radius.md,
     backgroundColor: 'rgba(255,255,255,0.06)',
@@ -551,36 +561,30 @@ const styles = StyleSheet.create({
   searchIcon: {
     marginRight: 10,
     width: 20,
-    height: 52,
+    height: SEARCH_ROW_H,
     alignItems: 'center',
     justifyContent: 'center',
   },
   searchInput: {
     flex: 1,
     minWidth: 0,
-    alignSelf: 'stretch',
+    height: SEARCH_ROW_H,
     fontFamily: fonts.body,
     fontSize: 16,
+    lineHeight: 22,
     color: colors.text,
     paddingHorizontal: 0,
+    paddingVertical: 0,
     margin: 0,
-    // Match row height so placeholder/caret stay vertically centered (esp. web).
-    ...(Platform.OS === 'web'
+    ...(Platform.OS === 'android'
+      ? { textAlignVertical: 'center' as const, includeFontPadding: false }
+      : null),
+    ...(IS_WEB
       ? ({
-          height: '100%',
-          lineHeight: 52,
-          paddingTop: 0,
-          paddingBottom: 0,
-          display: 'flex',
-          alignItems: 'center',
+          // RN-web <input>: normal line-height + zero padding; row centers via alignItems.
+          outlineStyle: 'none',
         } as object)
-      : {
-          height: 52,
-          lineHeight: 52,
-          paddingVertical: 0,
-          textAlignVertical: 'center' as const,
-          ...(Platform.OS === 'android' ? { includeFontPadding: false } : null),
-        }),
+      : null),
   },
   searchPending: {
     fontFamily: fonts.mono,

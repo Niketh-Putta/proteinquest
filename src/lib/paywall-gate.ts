@@ -7,7 +7,7 @@ import type { Profile } from './types';
 
 /** Bundled fallbacks (remote `app_paywall_config` overrides at runtime). */
 export const FREE_DAILY_SCANS = 1;
-export const HABIT_GRACE_DAYS = 2;
+export const HABIT_GRACE_DAYS = 1;
 
 export function isPro(profile: Profile | null | undefined): boolean {
   return profile?.is_premium === true;
@@ -118,17 +118,17 @@ export function scansLimitLabel(
   if (isPromoUnlimitedActive()) return 'Unlimited scans · promo day';
   if (isInHabitGracePeriod(profile)) {
     const days = habitGraceDays();
-    return `Unlimited scans, ${days}-day free trial`;
+    return `Unlimited meals · ${days}-day free access`;
   }
   const left = remainingFreeScans(scansUsedToday, profile, lifetimeMeals);
-  if (left === 0) return 'Out of free scans. Go Pro';
-  return `${left} free scan${left === 1 ? '' : 's'} left today`;
+  if (left === 0) return 'Out of free meals. Go Pro';
+  return `${left} free meal${left === 1 ? '' : 's'} left today`;
 }
 
 /** True when a message is (or was) a free-tier scan-limit notice — never show as a banner. */
 export function isScanLimitMessage(message: string | null | undefined): boolean {
   if (!message) return false;
-  return /daily scan limit|scan limit reached|out of free scans|upgrade to (proteinquest )?pro for unlimited/i.test(
+  return /daily scan limit|scan limit reached|out of free (scans|meals)|upgrade to (proteinquest )?pro for unlimited/i.test(
     message,
   );
 }

@@ -109,7 +109,7 @@ export default function TermsScreen() {
             us.
           </Bullet>
           <Bullet>
-            Free tier includes a 2-day unlimited scan trial, then 1 free AI scan per day. Pro unlocks unlimited scans.
+            Free tier includes 1 day of unlimited meal logging, then 1 free meal per day. Pro unlocks unlimited logging.
           </Bullet>
         </Section>
 

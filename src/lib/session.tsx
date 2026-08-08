@@ -20,7 +20,9 @@ import {
 } from './auth';
 import { fetchProfile, isStaleProfileSaveError, upsertProfile } from './api';
 import { withTimeout } from './async-utils';
+import { mergeDragonProgressMaps } from './character';
 import { acceptFriendInvite } from './leaderboard';
+import { applyPendingDailyDragonLock } from './daily-dragon-lock';
 import {
   loadCachedProfile,
   mergeProfiles,
@@ -28,6 +30,7 @@ import {
 } from './profile-cache';
 import { syncPremiumFromRevenueCat } from './payments';
 import { resolvePremiumSync } from './premium-sync';
+import { todayISODate } from './protein';
 import { initRevenueCat, isRevenueCatConfigured, subscribeToProEntitlementChanges } from './revenuecat';
 import { supabase } from './supabase';
 import type { Profile } from './types';
@@ -37,7 +40,13 @@ interface SessionContextValue {
   profile: Profile | null;
   loading: boolean;
   authMessage: string | null;
-  saveProfile: (updates: Partial<Profile>) => Promise<void>;
+  saveProfile: (
+    updates: Partial<Profile>,
+    opts?: {
+      dragonProgressMode?: 'award' | 'replace';
+      baseProfile?: Profile | null;
+    },
+  ) => Promise<void>;
 }
 
 const SessionContext = createContext<SessionContextValue>({
@@ -60,10 +69,14 @@ const AUTH_VALIDATE_MS = 8_000;
 const PROFILE_VALIDATE_MS = 8_000;
 
 /** Complimentary Pro: survives RevenueCat “no entitlement” downgrades. */
-const FORCED_PRO_USER_IDS = new Set(['c1f09a00-e65f-4ad7-987c-83f601c11815']);
+const FORCED_PRO_USER_IDS = new Set([
+  'c1f09a00-e65f-4ad7-987c-83f601c11815', // Bigger N
+  'a247ad33-40ae-4e3e-bd64-fb70882e3d59', // Lil B
+]);
 
 function isForcedProDisplayName(name: string | null | undefined): boolean {
-  return (name ?? '').trim().toLowerCase() === 'bigger n';
+  const n = (name ?? '').trim().toLowerCase();
+  return n === 'bigger n' || n === 'lil b';
 }
 
 function shouldForcePro(profile: Profile | null | undefined): boolean {
@@ -125,10 +138,17 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
   const applyProfile = useCallback((incoming: Profile | null) => {
     if (!incoming) {
+      profileRef.current = null;
       setProfile(null);
       return;
     }
-    setProfile((prev) => mergeProfiles(prev, withForcedPro(incoming)));
+    setProfile((prev) => {
+      const merged = mergeProfiles(prev, withForcedPro(incoming));
+      // Pending Lock in always wins over a lagging network profile.
+      const next = applyPendingDailyDragonLock(merged, todayISODate());
+      profileRef.current = next;
+      return next;
+    });
   }, []);
 
   const refreshProfile = useCallback(async (userId: string) => {
@@ -161,8 +181,13 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           fallbackProfile,
         );
         if (!mountedRef.current || !fresh) return;
-        applyProfile(fresh);
-        await saveCachedProfile(fresh);
+        // Merge before disk write so a stale fetch cannot erase today's dragon lock.
+        const merged = applyPendingDailyDragonLock(
+          mergeProfiles(profileRef.current, withForcedPro(fresh)),
+          todayISODate(),
+        );
+        applyProfile(merged);
+        await saveCachedProfile(merged);
       } finally {
         bootstrapInFlightRef.current = false;
       }
@@ -435,7 +460,41 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     };
   }, [session?.user.id, applyProfile]);
 
-  const saveProfile = useCallback(async (updates: Partial<Profile>) => {
+  const saveProfile = useCallback(async (
+    updates: Partial<Profile>,
+    opts?: {
+      dragonProgressMode?: 'award' | 'replace';
+      /** Caller already fetched; skip a second profile round-trip on XP saves. */
+      baseProfile?: Profile | null;
+    },
+  ) => {
+    const mode = opts?.dragonProgressMode ?? 'award';
+    const lockingToday = !!(updates.daily_dragon_id && updates.daily_dragon_date);
+
+    // Stamp lock fields onto any saved row so a sparse DB response cannot drop them.
+    const withLockStamp = (row: Profile, id: string): Profile => {
+      if (!lockingToday) return { ...row, id };
+      return {
+        ...row,
+        id,
+        daily_dragon_id: updates.daily_dragon_id ?? row.daily_dragon_id,
+        daily_dragon_date: updates.daily_dragon_date ?? row.daily_dragon_date,
+        active_dragon_id:
+          updates.active_dragon_id ?? row.active_dragon_id ?? updates.daily_dragon_id ?? null,
+      };
+    };
+
+    // Optimistic FIRST (before auth await): Lock in must open Today even if network is slow.
+    const current = profileRef.current;
+    if (lockingToday && current) {
+      const locked = applyPendingDailyDragonLock(
+        withLockStamp({ ...current, ...updates, id: current.id }, current.id),
+        todayISODate(),
+      );
+      applyProfile(locked);
+      void saveCachedProfile(locked);
+    }
+
     let nextSession = sessionRef.current;
     if (!nextSession) {
       nextSession = await withTimeout(ensureAuthSession(), AUTH_VALIDATE_MS, null);
@@ -446,8 +505,39 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     if (nextSession !== sessionRef.current) setSession(nextSession);
     const userId = nextSession.user.id;
 
+    let payload: Partial<Profile> & { id: string } = { ...updates, id: userId };
+    if (updates.dragon_progress) {
+      try {
+        const latest = opts?.baseProfile ?? (await fetchProfile(userId));
+        if (latest) {
+          const mergedProgress = mergeDragonProgressMaps(
+            latest.dragon_progress,
+            updates.dragon_progress,
+            mode,
+          );
+          const maxDragonXp = Object.values(mergedProgress).reduce(
+            (m, d) => Math.max(m, Number(d?.xp) || 0),
+            0,
+          );
+          payload = {
+            ...payload,
+            dragon_progress: mergedProgress,
+            xp:
+              mode === 'award'
+                ? Math.max(Number(latest.xp) || 0, Number(updates.xp) || 0, maxDragonXp)
+                : updates.xp ?? latest.xp,
+          };
+        }
+      } catch {
+        // Fall through with client payload if refresh fails.
+      }
+    }
+
     try {
-      const saved = await upsertProfile({ ...updates, id: userId });
+      const saved = applyPendingDailyDragonLock(
+        withLockStamp(await upsertProfile(payload), userId),
+        todayISODate(),
+      );
       await saveCachedProfile(saved);
       applyProfile(saved);
       return;
@@ -459,7 +549,13 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       const recovered = await withTimeout(continueAsGuest(), AUTH_VALIDATE_MS, null);
       if (!recovered) throw e;
       setSession(recovered);
-      const saved = await upsertProfile({ ...updates, id: recovered.user.id });
+      const saved = applyPendingDailyDragonLock(
+        withLockStamp(
+          await upsertProfile({ ...payload, id: recovered.user.id }),
+          recovered.user.id,
+        ),
+        todayISODate(),
+      );
       await saveCachedProfile(saved);
       applyProfile(saved);
     }

@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import {
   FlatList,
   Modal,
@@ -26,6 +26,7 @@ import { ProgressRing } from '@/components/ProgressRing';
 import { TrainerRankCard } from '@/components/TrainerRankCard';
 import { WeekDateStrip } from '@/components/WeekDateStrip';
 import { trackEvent } from '@/lib/analytics';
+import { claimCareXp } from '@/lib/care-quests';
 import {
   countLifetimeMeals,
   countTodayPhotoScans,
@@ -33,6 +34,7 @@ import {
   fetchDailyTotals,
   fetchLatestMealAt,
   fetchLogsForDate,
+  fetchProfile,
   getFoodPhotoUrl,
   peekFoodPhotoUrl,
   prefetchFoodPhotoUrls,
@@ -44,15 +46,26 @@ import {
   displayDragonName,
   dragonById,
   isDailyDragonLockedForToday,
+  levelForXp,
+  reconcileDragonXpFromTodayMeals,
   warmAllDragonArt,
   warmDragonArt,
 } from '@/lib/character';
+import {
+  getDailyDragonLockEpoch,
+  subscribeDailyDragonLock,
+} from '@/lib/daily-dragon-lock';
 import { hungerFromLastMealAt, hungerVoice } from '@/lib/dragon-hunger';
 import { contentColumnStyle, flexFill, flexScroll, useLayout, useTabBarScrollInset } from '@/lib/layout';
 import { useSpecialDeviceLayout } from '@/lib/special-device';
 import { needsFirstScan } from '@/lib/first-scan';
 import { scheduleStreakAtRiskNudge } from '@/lib/meal-reminders';
-import { hasUnlimitedScans, isPro, remainingFreeScans } from '@/lib/paywall-gate';
+import {
+  hasUnlimitedScans,
+  isInHabitGracePeriod,
+  isPro,
+  remainingFreeScans,
+} from '@/lib/paywall-gate';
 import { resolveCalorieAim, todayISODate } from '@/lib/protein';
 import { getRetention } from '@/lib/retention';
 import { useSession } from '@/lib/session';
@@ -164,6 +177,8 @@ export default function TodayScreen() {
     food?: string;
   }>();
   const { profile, saveProfile } = useSession();
+  // Re-render the instant Lock in marks the in-memory daily lock.
+  useSyncExternalStore(subscribeDailyDragonLock, getDailyDragonLockEpoch, getDailyDragonLockEpoch);
   const [viewedISO, setViewedISO] = useState(() => todayISODate());
   const [dayTotals, setDayTotals] = useState<Record<string, number>>({});
   const [logs, setLogs] = useState<ProteinLog[]>([]);
@@ -172,6 +187,9 @@ export default function TodayScreen() {
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [fedPulse, setFedPulse] = useState(false);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const toastQueueRef = useRef<string[]>([]);
+  const toastShowingRef = useRef(false);
+  const toastGapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const starveTrackedDay = useRef<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -358,6 +376,43 @@ export default function TodayScreen() {
     }, [profile?.id]),
   );
 
+  const drainToastQueue = useCallback(() => {
+    if (toastShowingRef.current || toastGapTimerRef.current) return;
+    const next = toastQueueRef.current.shift();
+    if (!next) return;
+    toastShowingRef.current = true;
+    setToastMsg(next);
+  }, []);
+
+  const enqueueToasts = useCallback(
+    (msgs: Array<string | null | false | undefined>) => {
+      const clean = msgs
+        .map((m) => (typeof m === 'string' ? m.trim() : ''))
+        .filter((m) => m.length > 0);
+      if (!clean.length) return;
+      toastQueueRef.current.push(...clean);
+      drainToastQueue();
+    },
+    [drainToastQueue],
+  );
+
+  const onToastHide = useCallback(() => {
+    toastShowingRef.current = false;
+    setToastMsg(null);
+    if (toastGapTimerRef.current) clearTimeout(toastGapTimerRef.current);
+    // Pause so each toast reads alone before the next pops in.
+    toastGapTimerRef.current = setTimeout(() => {
+      toastGapTimerRef.current = null;
+      drainToastQueue();
+    }, 650);
+  }, [drainToastQueue]);
+
+  useEffect(() => {
+    return () => {
+      if (toastGapTimerRef.current) clearTimeout(toastGapTimerRef.current);
+    };
+  }, []);
+
   useEffect(() => {
     if (fed !== '1') return;
     if (profile?.id) invalidateTodayHomeCache(profile.id);
@@ -368,13 +423,13 @@ export default function TodayScreen() {
     const g = protein ? Number(protein) : 0;
     const meal = typeof food === 'string' && food.trim() ? food.trim().slice(0, 36) : null;
     const loved = meal ? `${name} loved the ${meal}` : `${name} loved that`;
-    const parts = [
+    // One toast at a time: loved → XP → loot → freeze.
+    enqueueToasts([
       loved,
-      g > 0 ? `+${Math.round(g)}g` : null,
+      g > 0 ? `+${Math.round(g)} XP` : null,
       loot === '1' ? 'Egg shard!' : null,
       freeze === '1' ? 'Streak freeze' : null,
-    ].filter(Boolean);
-    setToastMsg(parts.join(' · '));
+    ]);
     trackEvent('fed_celebration_shown', {
       protein_g: g || undefined,
       loot: loot === '1',
@@ -390,7 +445,7 @@ export default function TodayScreen() {
     });
     const t = setTimeout(() => setFedPulse(false), 2400);
     return () => clearTimeout(t);
-  }, [fed, protein, loot, freeze, food, profile?.id]);
+  }, [fed, protein, loot, freeze, food, profile?.id, enqueueToasts]);
 
   function hungerDragonNameSafe() {
     if (!profile) return 'Dragon';
@@ -426,6 +481,60 @@ export default function TodayScreen() {
     ? displayDragonName(profile, displayDragonId(profile, todayISO))
     : 'Your dragon';
   const shards = getRetention(profile).egg_shards ?? 0;
+
+  // Grant fixed care-task XP once per day when each checklist step first completes.
+  const careClaimInFlight = useRef(false);
+  useEffect(() => {
+    if (!profile || !isViewingToday || careClaimInFlight.current) return;
+    const result = claimCareXp({
+      profile,
+      mealsToday: logs.length,
+      consumed,
+      goal,
+      todayISO,
+      dragonName: hungerDragonName,
+      levelForXp,
+    });
+    if (!result.updates || result.gained <= 0) return;
+    careClaimInFlight.current = true;
+    void saveProfile(result.updates)
+      .then(() => {
+        enqueueToasts([`+${result.gained} XP · today’s care`]);
+      })
+      .catch(() => {})
+      .finally(() => {
+        careClaimInFlight.current = false;
+      });
+  }, [
+    profile,
+    isViewingToday,
+    logs.length,
+    consumed,
+    goal,
+    todayISO,
+    hungerDragonName,
+    saveProfile,
+    enqueueToasts,
+  ]);
+
+  // Heal dragons that have today meals but missing meal XP (stale overwrite / failed save).
+  const xpReconcileInFlight = useRef(false);
+  useEffect(() => {
+    if (!profile || !isViewingToday || xpReconcileInFlight.current) return;
+    if (logs.length === 0 || consumed <= 0) return;
+    const patch = reconcileDragonXpFromTodayMeals({
+      profile,
+      consumedProteinG: consumed,
+      todayISO,
+    });
+    if (!patch) return;
+    xpReconcileInFlight.current = true;
+    void saveProfile(patch)
+      .catch(() => {})
+      .finally(() => {
+        xpReconcileInFlight.current = false;
+      });
+  }, [profile, isViewingToday, logs.length, consumed, todayISO, saveProfile]);
 
   useEffect(() => {
     if (hunger < 3 || !profile) return;
@@ -475,13 +584,15 @@ export default function TodayScreen() {
     try {
       await deleteLog(log.id);
       if (profile) {
-        const updates = applyDeleteLogToCharacter({
-          profile,
+        const freshProfile =
+          (await fetchProfile(profile.id).catch(() => null)) ?? profile;
+        const { updates } = applyDeleteLogToCharacter({
+          profile: freshProfile,
           deletedProteinG: Number(log.protein_g),
           todayTotalAfterDelete: todayTotalAfter,
           todayISO: viewedISO,
         });
-        await saveProfile(updates);
+        await saveProfile(updates, { dragonProgressMode: 'replace' });
       }
       setDayTotals((prev) => ({
         ...prev,
@@ -529,6 +640,13 @@ export default function TodayScreen() {
       : `Logged on ${loggedOnLabel}`;
 
   function renderHeader() {
+    const onTrial = !isPro(profile) && isInHabitGracePeriod(profile);
+    const statusLabel = isPro(profile) ? 'PRO' : onTrial ? '1 day free trial' : 'FREE';
+    const statusA11y = isPro(profile)
+      ? 'Pro account. Open settings'
+      : onTrial
+        ? '1 day free trial. Open upgrade options'
+        : 'Free account. Upgrade to Pro';
     return (
       <View style={headerTopPad > 0 ? { paddingTop: headerTopPad } : undefined}>
         <View style={styles.header}>
@@ -537,9 +655,7 @@ export default function TodayScreen() {
               onPress={() => router.push(isPro(profile) ? '/settings' : '/paywall')}
               hitSlop={8}
               accessibilityRole="button"
-              accessibilityLabel={
-                isPro(profile) ? 'Pro account. Open settings' : 'Free account. Upgrade to Pro'
-              }
+              accessibilityLabel={statusA11y}
               style={[
                 styles.statusTag,
                 isPro(profile) ? styles.statusTagPro : styles.statusTagFree,
@@ -552,9 +668,10 @@ export default function TodayScreen() {
                 selectable={false}
                 style={[
                   styles.statusTagText,
+                  onTrial && styles.statusTagTextTrial,
                   isPro(profile) ? styles.statusTagTextPro : styles.statusTagTextFree,
                 ]}>
-                {isPro(profile) ? 'PRO' : 'FREE'}
+                {statusLabel}
               </Text>
             </Pressable>
             <Text style={styles.eyebrow} numberOfLines={1}>
@@ -610,8 +727,8 @@ export default function TodayScreen() {
             <Ionicons name="sparkles" size={14} color={colors.accent} />
             <Text style={styles.scansPillText}>
               {scansLeft > 0
-                ? `${scansLeft} free scan${scansLeft === 1 ? '' : 's'} left today`
-                : 'Out of free scans. Go Pro'}
+                ? `${scansLeft} free meal${scansLeft === 1 ? '' : 's'} left today`
+                : 'Out of free meals. Go Pro'}
             </Text>
           </Pressable>
         ) : null}
@@ -831,7 +948,7 @@ export default function TodayScreen() {
   return (
     <PageCanvas>
       <SafeAreaView style={styles.safe} edges={['top']}>
-        <FeedToast visible={!!toastMsg} message={toastMsg ?? ''} onHide={() => setToastMsg(null)} />
+        <FeedToast visible={!!toastMsg} message={toastMsg ?? ''} onHide={onToastHide} />
         <Modal
           visible={deleteModalVisible}
           transparent
@@ -1018,6 +1135,10 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: '800',
     letterSpacing: 1.4,
+  },
+  statusTagTextTrial: {
+    letterSpacing: 0.4,
+    textTransform: 'none',
   },
   statusTagTextPro: { color: colors.bg },
   statusTagTextFree: { color: colors.textSecondary },
@@ -1224,7 +1345,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
   },
   confirmBackdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(6, 5, 10, 0.72)',
     ...(Platform.OS === 'web'
       ? ({

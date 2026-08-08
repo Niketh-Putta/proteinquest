@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
     Image,
+    InteractionManager,
     Keyboard,
     Linking,
     Platform,
@@ -19,6 +20,7 @@ import {
     useWindowDimensions,
     type LayoutChangeEvent,
 } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
 import Animated, {
     Easing,
     FadeIn,
@@ -42,6 +44,8 @@ import {
     analyzeFoodPhoto,
     countLifetimeMeals,
     countTodayPhotoScans,
+    deleteLog,
+    fetchProfile,
     fetchTodayMealSummary,
     getFoodPhotoUrl,
     insertLog,
@@ -157,6 +161,13 @@ function brandWordmarkWidth(fontSize: number, letterSpacing = BRAND_LETTER_SPACI
   const n = BRAND_WORD.length;
   return fontSize * BRAND_CHAR_EM * n + letterSpacing * Math.max(0, n - 1);
 }
+
+const IS_NATIVE = Platform.OS !== 'web';
+/** Reanimated entering + photo under adjust jetsam-kills iOS on ingredient tap. */
+const Enter = IS_NATIVE ? View : Animated.View;
+const enterProps = (delay = 0, duration = 400) =>
+  IS_NATIVE ? {} : { entering: FadeInDown.delay(delay).duration(duration) };
+const enterFade = () => (IS_NATIVE ? {} : { entering: FadeIn });
 
 function isDemoAutoScan(): boolean {
   if (Platform.OS !== 'web') return false;
@@ -696,8 +707,12 @@ export default function ScanScreen() {
   const [cameraInitialized, setCameraInitialized] = useState(false);
   const [pictureSize, setPictureSize] = useState<string | undefined>(undefined);
   const [capturing, setCapturing] = useState(false);
+  /** Unmount CameraView while the photo picker is open (memory + crash avoidance). */
+  const [libraryPicking, setLibraryPicking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [displayUri, setDisplayUri] = useState<string | null>(null);
+  /** Unmount meal photo while adjust/add is open so iOS does not jetsam. */
+  const [screenFocused, setScreenFocused] = useState(true);
   /** Square frame only for live camera viewfinder crops — library keeps full aspect. */
   const [previewSquare, setPreviewSquare] = useState(true);
   const [imageBase64, setImageBase64] = useState<string | null>(null);
@@ -730,6 +745,8 @@ export default function ScanScreen() {
   const [analyzeProgress, setAnalyzeProgress] = useState(0);
   const analyzeStepRef = useRef(0);
   const analyzeDoneRef = useRef(false);
+  /** Real pipeline stage floors for the analyzing bar (not fake-only crawl). */
+  const analyzeStageRef = useRef<'prep' | 'ready' | 'request' | 'done'>('prep');
   const [saving, setSaving] = useState(false);
   const [scansLeft, setScansLeft] = useState<number | null>(null);
   const [celebration, setCelebration] = useState<{
@@ -868,17 +885,21 @@ export default function ScanScreen() {
     if (phase !== 'analyzing') {
       setAnalyzeProgress(0);
       analyzeDoneRef.current = false;
+      analyzeStageRef.current = 'prep';
       return;
     }
     analyzeDoneRef.current = false;
-    setAnalyzeProgress(0.1);
+    const stageFloor = (stage: typeof analyzeStageRef.current) =>
+      stage === 'ready' ? 0.38 : stage === 'request' ? 0.55 : stage === 'done' ? 1 : 0.15;
+    setAnalyzeProgress(stageFloor(analyzeStageRef.current));
     const startedAt = Date.now();
     const tick = () => {
       if (analyzeDoneRef.current) return;
+      const floor = stageFloor(analyzeStageRef.current);
       const elapsed = Date.now() - startedAt;
-      const stepBase = [0.18, 0.42, 0.62][analyzeStepRef.current] ?? 0.62;
-      const timeBoost = 0.28 * (1 - Math.exp(-elapsed / 2400));
-      setAnalyzeProgress(Math.min(0.92, stepBase + timeBoost));
+      // Light crawl above the real stage floor so the bar never feels stuck.
+      const timeBoost = 0.18 * (1 - Math.exp(-elapsed / 2000));
+      setAnalyzeProgress(Math.min(0.92, floor + timeBoost));
     };
     tick();
     const t = setInterval(tick, Platform.OS === 'android' ? 250 : 80);
@@ -911,10 +932,10 @@ export default function ScanScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     triggerShutterFlash();
     try {
-      // Full-quality capture, never mirrored. Analysis must use the unmirrored sensor frame
-      // (do not bake front-camera CSS scaleX(-1) / CameraView mirror into the photo).
+      // Cap JPEG quality so capture + crop do not jetsam with the live camera session.
+      // Analysis must use the unmirrored sensor frame (never bake preview scaleX(-1)).
       const photo = await cameraRef.current?.takePictureAsync({
-        quality: 1,
+        quality: 0.85,
         skipProcessing: false,
         shutterSound: false,
         mirror: false,
@@ -931,8 +952,16 @@ export default function ScanScreen() {
           height: finderH,
         },
       };
-      // Keep the live preview in place until the exact viewfinder crop is ready.
-      // Showing the raw capture here would briefly use a different cover crop.
+      // Drop the live CameraView before decode/crop (same jetsam class as library pick).
+      setCameraInitialized(false);
+      setAnalyzeStep(0);
+      phaseRef.current = 'analyzing';
+      setPhase('analyzing');
+      trackEvent('first_scan_started', {});
+      // Let React commit the unmount before ImageManipulator allocates.
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      });
       await analyze(photo.uri, cameraCrop);
     } catch (e: any) {
       showError(e.message ?? 'Could not capture the photo. Try again.');
@@ -947,6 +976,10 @@ export default function ScanScreen() {
     if (busyRef.current) return;
     busyRef.current = true;
     setCapturing(true);
+    // Unmount live camera while the system picker + HEIC decode run — prevents
+    // iOS jetsam (app "just closes") from camera + full-res bitmap together.
+    setLibraryPicking(true);
+    setCameraInitialized(false);
     try {
       try {
         const allowed = await ensureCanScan();
@@ -963,6 +996,7 @@ export default function ScanScreen() {
     } finally {
       busyRef.current = false;
       setCapturing(false);
+      setLibraryPicking(false);
     }
   }
 
@@ -1030,9 +1064,9 @@ export default function ScanScreen() {
       }).catch(() => {});
     }
 
+    analyzeStageRef.current = 'done';
     setAnalyzeProgress(1);
     analyzeDoneRef.current = true;
-    await new Promise((r) => setTimeout(r, 60));
     setPhase('result');
   }
 
@@ -1124,23 +1158,28 @@ export default function ScanScreen() {
 
     if (scanModeRef.current !== 'photo') return;
 
-    if (!cameraCrop) {
+    // Unmount live camera before any ImageManipulator work (iOS jetsam otherwise).
+    if (phaseRef.current === 'camera') {
+      setCameraInitialized(false);
       setAnalyzeStep(0);
+      phaseRef.current = 'analyzing';
       setPhase('analyzing');
       trackEvent('first_scan_started', {});
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      });
     }
     try {
+      analyzeStageRef.current = 'prep';
+      setAnalyzeProgress(0.15);
       const square = await prepareSquareMealPhoto(uri, cameraCrop);
 
       if (scanModeRef.current !== 'photo') return;
 
       setDisplayUri(square.uri);
       setPreviewSquare(Boolean(cameraCrop));
-      if (cameraCrop) {
-        setAnalyzeStep(0);
-        setPhase('analyzing');
-        trackEvent('first_scan_started', {});
-      }
+      analyzeStageRef.current = 'ready';
+      setAnalyzeProgress(0.38);
 
       const usedNow = usedAtStart;
       if (needsScanQuota && usedNow !== null) {
@@ -1152,6 +1191,8 @@ export default function ScanScreen() {
       }
       setImageBase64(square.base64);
 
+      analyzeStageRef.current = 'request';
+      setAnalyzeProgress(0.55);
       const res = await analyzeFoodPhoto(square.base64, 'image/jpeg');
       if (scanModeRef.current !== 'photo') return;
       if (!res.is_food) {
@@ -1188,9 +1229,9 @@ export default function ScanScreen() {
         }).catch(() => {});
       }
 
+      analyzeStageRef.current = 'done';
       setAnalyzeProgress(1);
       analyzeDoneRef.current = true;
-      await new Promise((r) => setTimeout(r, 60));
       setPhase('result');
     } catch (e: any) {
       if (scanModeRef.current !== 'photo') return;
@@ -1252,36 +1293,45 @@ export default function ScanScreen() {
       const foodName = analysis.food_name.trim() || 'Meal';
       const uploadPromise =
         photoUploadRef.current ??
-        (imageBase64
-          ? uploadFoodPhoto(session.user.id, imageBase64)
-          : Promise.resolve(null));
+        (imageBase64 ? uploadFoodPhoto(session.user.id, imageBase64) : null);
 
-      // Upload usually finishes during review; await it so Today has image_path immediately.
+      // Don't block Log on storage. If upload already finished during review, take it;
+      // otherwise attach image_path in the background after insert.
       const [todaySummary, wasFirstEver, imagePath] = await Promise.all([
         fetchTodayMealSummary(todayISO),
         needsFirstScan(),
-        uploadPromise.catch(() => null),
+        uploadPromise
+          ? Promise.race([
+              uploadPromise.catch(() => null),
+              new Promise<null>((resolve) => setTimeout(() => resolve(null), 0)),
+            ])
+          : Promise.resolve(null),
       ]);
 
-      const log = await insertLog({
-        userId: session.user.id,
-        foodName,
-        items: analysis.items,
-        proteinG,
-        calories,
-        confidence: analysis.confidence,
-        imagePath: imagePath ?? null,
-        source: manualEntry ? 'manual' : 'photo',
-      });
+      // Insert + fresh profile in parallel (one less serial RTT).
+      const [log, freshProfile] = await Promise.all([
+        insertLog({
+          userId: session.user.id,
+          foodName,
+          items: analysis.items,
+          proteinG,
+          calories,
+          confidence: analysis.confidence,
+          imagePath: imagePath ?? null,
+          source: manualEntry ? 'manual' : 'photo',
+        }),
+        fetchProfile(session.user.id)
+          .catch(() => null)
+          .then((p) => p ?? profile!),
+      ]);
 
       // Instant Today thumb from the local capture (before signed URL is ready).
       if (displayUri) rememberLocalMealPhoto(log.id, displayUri);
 
       if (imagePath) {
         void getFoodPhotoUrl(imagePath);
-      } else if (imageBase64) {
-        // Upload lagged or failed — attach in background without blocking home.
-        void uploadFoodPhoto(session.user.id, imageBase64)
+      } else if (uploadPromise || imageBase64) {
+        void (uploadPromise ?? uploadFoodPhoto(session.user.id, imageBase64!))
           .then(async (path) => {
             if (!path) return;
             await updateLogImagePath(log.id, path);
@@ -1301,22 +1351,31 @@ export default function ScanScreen() {
         stageBeforeIndex,
         streakFreezeUsed,
       } = applyLogToCharacter({
-        profile,
+        profile: freshProfile,
         todayTotalBefore: todaySummary.proteinSum,
         loggedProtein: proteinG,
         todayISO,
         yesterdayISO: todayISODate(-1),
       });
 
-      let retention = markCareDay(getRetention({ ...profile, ...updates }), todayISO);
+      let retention = markCareDay(getRetention({ ...freshProfile, ...updates }), todayISO);
       const loot = rollLootDrop(retention);
       retention = loot.next;
       const merged = { ...updates, retention };
-      await Promise.all([saveProfile(merged), clearNeedsFirstScan()]);
+      try {
+        await Promise.all([
+          saveProfile(merged, { baseProfile: freshProfile }),
+          clearNeedsFirstScan(),
+        ]);
+      } catch (saveErr) {
+        // Don't leave orphan meals that never awarded XP.
+        await deleteLog(log.id).catch(() => {});
+        throw saveErr;
+      }
 
       const mealsToday = todaySummary.mealCount + 1;
-      const dragonId = displayDragonId(profile, todayISO);
-      const dragonName = displayDragonName(profile, dragonId);
+      const dragonId = displayDragonId(freshProfile, todayISO);
+      const dragonName = displayDragonName(freshProfile, dragonId);
       trackEvent(wasFirstEver ? 'first_meal_logged' : 'meal_logged', {
         protein_g: proteinG,
         meals_today: mealsToday,
@@ -1479,10 +1538,33 @@ export default function ScanScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      setScreenFocused(true);
       const edit = consumePendingIngredientEdit();
       if (edit) applyIngredientEdit(edit);
+      return () => {
+        setScreenFocused(false);
+        if (Platform.OS !== 'web') {
+          try {
+            ExpoImage.clearMemoryCache();
+          } catch {
+            /* ignore */
+          }
+        }
+      };
     }, [applyIngredientEdit]),
   );
+
+  const freeScanPhotoMemory = useCallback(() => {
+    setScreenFocused(false);
+    setImageBase64(null);
+    if (Platform.OS !== 'web') {
+      try {
+        ExpoImage.clearMemoryCache();
+      } catch {
+        /* ignore */
+      }
+    }
+  }, []);
 
   const requestLeaveUnsaved = useCallback((action: () => void) => {
     // Refs avoid stale closures skipping the confirm and calling router.back immediately.
@@ -1579,7 +1661,7 @@ export default function ScanScreen() {
             },
           ]}
           onLayout={onCameraLayout}>
-          {hasCameraPermission ? (
+          {hasCameraPermission && !libraryPicking ? (
             <CameraView
               ref={setCameraRef}
               style={styles.camera}
@@ -1597,7 +1679,7 @@ export default function ScanScreen() {
                     } | null;
                     const sizes = await cam?.getAvailablePictureSizesAsync?.();
                     if (!sizes?.length) return;
-                    // Prefer ~1920–2560px long side for sharp food detail; export may cap at 1600.
+                    // Prefer ~1280px long side (matches EXPORT_MAX_SIDE). Larger stills jetsam on crop.
                     const ranked = sizes
                       .map((size) => {
                         const [a, b] = size.split('x').map((n) => Number(n));
@@ -1607,7 +1689,7 @@ export default function ScanScreen() {
                       .filter((s) => s.long > 0)
                       .sort((x, y) => {
                         const score = (long: number) =>
-                          Math.abs(long - 2200) + (long > 3200 ? (long - 3200) * 0.5 : 0);
+                          Math.abs(long - 1280) + (long > 2200 ? (long - 2200) * 0.75 : 0);
                         return score(x.long) - score(y.long);
                       });
                     if (ranked[0]?.size) setPictureSize(ranked[0].size);
@@ -1617,6 +1699,11 @@ export default function ScanScreen() {
                 })();
               }}
             />
+          ) : libraryPicking ? (
+            <View style={[styles.camera, styles.cameraDenied]} accessibilityLabel="Opening photo library">
+              <ActivityIndicator size="large" color={colors.textSecondary} />
+              <Text style={[styles.deniedTitle, { marginTop: spacing.md }]}>Opening photos</Text>
+            </View>
           ) : cameraPermissionUi === 'loading' || cameraPermissionUi === 'requesting' ? (
             <View style={[styles.camera, styles.cameraDenied]} accessibilityLabel="Requesting camera access">
               <ActivityIndicator size="large" color={colors.textSecondary} />
@@ -2079,9 +2166,9 @@ export default function ScanScreen() {
           keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
           onScrollBeginDrag={dismissMealKeyboard}
           showsVerticalScrollIndicator={false}>
-          {displayUri ? (
-            <Animated.View
-              entering={FadeIn}
+          {displayUri && screenFocused ? (
+            <Enter
+              {...enterFade()}
               style={[
                 styles.resultImageWrap,
                 {
@@ -2114,10 +2201,23 @@ export default function ScanScreen() {
                   </Text>
                 </View>
               </Pressable>
-            </Animated.View>
+            </Enter>
+          ) : displayUri ? (
+            <View
+              style={[
+                styles.resultImageWrap,
+                {
+                  maxWidth: Math.min(
+                    stageMaxWidth,
+                    isTablet || isDesktop ? 480 : 420,
+                  ),
+                  aspectRatio: previewSquare ? 1 : 3 / 4,
+                },
+              ]}
+            />
           ) : null}
 
-          <Animated.View entering={FadeInDown.delay(80).duration(400)} style={styles.resultTitleBlock}>
+          <Enter {...enterProps(80)} style={styles.resultTitleBlock}>
             <View style={styles.foodNameRow}>
               <TextInput
                 ref={foodNameRef}
@@ -2147,9 +2247,9 @@ export default function ScanScreen() {
             <Pressable onPress={dismissMealKeyboard} accessibilityRole="none">
               <Text style={styles.metaText}>{formatScanMeta(scannedAt)}</Text>
             </Pressable>
-          </Animated.View>
+          </Enter>
 
-          <Animated.View entering={FadeInDown.delay(160).duration(400)} style={styles.nutritionCard}>
+          <Enter {...enterProps(160)} style={styles.nutritionCard}>
             <View style={styles.nutritionCol}>
               <Pressable onPress={dismissMealKeyboard} accessibilityRole="none">
                 <Text style={styles.totalLabel}>TOTAL PROTEIN</Text>
@@ -2215,9 +2315,9 @@ export default function ScanScreen() {
                 </Text>
               </Pressable>
             </View>
-          </Animated.View>
+          </Enter>
 
-          <Animated.View entering={FadeInDown.delay(220).duration(400)}>
+          <Enter {...enterProps(220)}>
             <View style={styles.ingredientsCard}>
               <Pressable
                 onPress={dismissMealKeyboard}
@@ -2242,6 +2342,7 @@ export default function ScanScreen() {
                     key={`${item.name}-${i}`}
                     onPress={() => {
                       dismissMealKeyboard();
+                      freeScanPhotoMemory();
                       Haptics.selectionAsync().catch(() => {});
                       const q = new URLSearchParams({
                         index: String(i),
@@ -2253,7 +2354,10 @@ export default function ScanScreen() {
                       if (item.estimated_grams != null) {
                         q.set('grams', String(item.estimated_grams));
                       }
-                      router.push(`/scan-adjust?${q.toString()}` as never);
+                      const href = `/scan-adjust?${q.toString()}`;
+                      InteractionManager.runAfterInteractions(() => {
+                        router.push(href as never);
+                      });
                     }}
                     style={[styles.ingredientRow, i > 0 && styles.ingredientRowBorder]}
                     accessibilityRole="button"
@@ -2283,13 +2387,14 @@ export default function ScanScreen() {
 
             <Pressable
               onPress={() => {
-                // Free multi-MB base64 before push — otherwise Android OOM-kills on Add.
-                setImageBase64(null);
-                // Navigate immediately. Catalog warm / keyboard must never run on press.
-                router.push('/scan-ingredient' as never);
-                runAfterNav(() => {
-                  dismissMealKeyboard();
-                  Haptics.selectionAsync().catch(() => {});
+                // Free multi-MB base64 + photo before push — otherwise OOM-kills on Add.
+                freeScanPhotoMemory();
+                InteractionManager.runAfterInteractions(() => {
+                  router.push('/scan-ingredient' as never);
+                  runAfterNav(() => {
+                    dismissMealKeyboard();
+                    Haptics.selectionAsync().catch(() => {});
+                  });
                 });
               }}
               hitSlop={8}
@@ -2307,9 +2412,9 @@ export default function ScanScreen() {
                 Add ingredient
               </Text>
             </Pressable>
-          </Animated.View>
+          </Enter>
 
-          <Animated.View entering={FadeInDown.delay(320)} style={styles.resultActions}>
+          <Enter {...enterProps(320)} style={styles.resultActions}>
             <Pressable
               onPress={handleSave}
               disabled={saving}
@@ -2370,7 +2475,7 @@ export default function ScanScreen() {
                 </Text>
               </View>
             </Pressable>
-          </Animated.View>
+          </Enter>
         </ScrollView>
       )}
 

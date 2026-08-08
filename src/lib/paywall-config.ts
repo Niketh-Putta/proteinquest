@@ -6,7 +6,7 @@ import { supabase } from './supabase';
 /** Bundled defaults (used until remote loads, or if fetch fails). */
 export const DEFAULT_PAYWALL_CONFIG = {
   freeDailyScans: 1,
-  habitGraceDays: 2,
+  habitGraceDays: 1,
   grandfatherFreeDailyScans: 1,
   /**
    * Inclusive local YYYY-MM-DD; null = promo off.

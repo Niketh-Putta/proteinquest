@@ -4,10 +4,10 @@ import test from 'node:test';
 import { cameraViewfinderCrop, libraryExportResize } from './camera-geometry.ts';
 
 test('library export keeps full aspect — downscales longest side only', () => {
-  assert.deepEqual(libraryExportResize(4000, 3000), { width: 1600 });
-  assert.deepEqual(libraryExportResize(3000, 4000), { height: 1600 });
+  assert.deepEqual(libraryExportResize(4000, 3000), { width: 1280 });
+  assert.deepEqual(libraryExportResize(3000, 4000), { height: 1280 });
   assert.equal(libraryExportResize(400, 300), null);
-  assert.equal(libraryExportResize(1600, 1600), null);
+  assert.equal(libraryExportResize(1280, 1280), null);
   assert.equal(libraryExportResize(1200, 900), null);
 });
 

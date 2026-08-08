@@ -53,7 +53,7 @@ export function cameraViewfinderCrop(
 export function libraryExportResize(
   width: number,
   height: number,
-  maxSide = 1600,
+  maxSide = 1280,
 ): { width: number } | { height: number } | null {
   const long = Math.max(width, height);
   if (long <= maxSide) return null;

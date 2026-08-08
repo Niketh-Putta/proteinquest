@@ -4,6 +4,7 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { trackEvent } from '@/lib/analytics';
+import { CARE_STEP_XP, getCareSteps } from '@/lib/care-quests';
 import { colors, fonts, pressableWeb, spacing } from '@/theme';
 
 interface Props {
@@ -14,15 +15,7 @@ interface Props {
 }
 
 export function FeedQuest({ dragonName, mealsToday, consumed, goal }: Props) {
-  const halfGoal = goal > 0 ? Math.round(goal * 0.5) : 0;
-  const steps = [
-    { done: mealsToday >= 1, label: `Feed ${dragonName}` },
-    { done: mealsToday >= 2, label: 'Log a second meal' },
-    {
-      done: goal > 0 ? consumed >= goal * 0.5 : mealsToday >= 3,
-      label: goal > 0 ? `Reach ${halfGoal}g protein (half of ${goal}g)` : 'Log a third meal',
-    },
-  ];
+  const steps = getCareSteps({ dragonName, mealsToday, consumed, goal });
   const doneCount = steps.filter((s) => s.done).length;
   const allDone = doneCount === steps.length;
 
@@ -35,14 +28,15 @@ export function FeedQuest({ dragonName, mealsToday, consumed, goal }: Props) {
         </Text>
       </View>
       <View style={styles.steps}>
-        {steps.map((s) => (
-          <View key={s.label} style={styles.row}>
+        {steps.map((s, i) => (
+          <View key={s.id} style={styles.row}>
             <Ionicons
               name={s.done ? 'checkmark-circle' : 'ellipse-outline'}
               size={13}
               color={s.done ? colors.accent : colors.textTertiary}
             />
             <Text style={[styles.label, s.done && styles.labelDone]}>{s.label}</Text>
+            <Text style={[styles.xp, s.done && styles.xpDone]}>+{CARE_STEP_XP[i]}xp</Text>
           </View>
         ))}
       </View>
@@ -96,11 +90,19 @@ const styles = StyleSheet.create({
   steps: { gap: 5 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   label: {
+    flex: 1,
     fontFamily: fonts.displayMedium,
     fontSize: 13,
     color: colors.text,
   },
   labelDone: { color: colors.textTertiary, textDecorationLine: 'line-through' },
+  xp: {
+    fontFamily: fonts.monoBold,
+    fontSize: 10,
+    letterSpacing: 0.4,
+    color: colors.accent,
+  },
+  xpDone: { color: colors.textTertiary },
   cta: {
     marginTop: 2,
     alignSelf: 'flex-start',

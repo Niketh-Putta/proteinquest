@@ -4,6 +4,7 @@ import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  InteractionManager,
   Keyboard,
   Modal,
   Platform,
@@ -14,14 +15,23 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { Celebration } from '@/components/Celebration';
 import { GlassPanel } from '@/components/GlassPanel';
 import { ModalMotionLayer } from '@/components/ModalMotionLayer';
 import { MealPhotoPreview } from '@/components/MealPhotoPreview';
 import { PageCanvas } from '@/components/PageCanvas';
-import { fetchLogById, getFoodPhotoUrl, updateLog } from '@/lib/api';
+import { fetchLogById, fetchProfile, fetchTodayMealSummary, getFoodPhotoUrl, updateLog } from '@/lib/api';
+import {
+  XP_GOAL_BONUS,
+  XP_PER_GRAM,
+  applyDeleteLogToCharacter,
+  applyLogToCharacter,
+} from '@/lib/character';
+import { dayBeforeISO } from '@/lib/goal-streak';
 import { getLocalMealPhoto } from '@/lib/local-meal-photo';
 import { useContentColumn, useLayout } from '@/lib/layout';
 import {
@@ -42,6 +52,7 @@ import {
   type ScanIngredientEdit,
 } from '@/lib/scan-ingredient-edit';
 import { runAfterNav } from '@/lib/navigate-responsive';
+import { useSession } from '@/lib/session';
 import type { FoodItem, ProteinLog } from '@/lib/types';
 import {
   colors,
@@ -53,6 +64,13 @@ import {
   spacing,
   textInputWeb,
 } from '@/theme';
+
+const IS_NATIVE = Platform.OS !== 'web';
+/** Reanimated entering + photo decode under stacked modals jetsam-kills iOS on ingredient tap. */
+const Enter = IS_NATIVE ? View : Animated.View;
+const enterProps = (delay = 0, duration = 400) =>
+  IS_NATIVE ? {} : { entering: FadeInDown.delay(delay).duration(duration) };
+const enterFade = () => (IS_NATIVE ? {} : { entering: FadeIn });
 
 function asItems(raw: ProteinLog['items']): FoodItem[] {
   return Array.isArray(raw) ? raw : [];
@@ -100,12 +118,16 @@ function formatMealMeta(createdAt: string | null | undefined): string {
 
 export default function MealDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const { profile, saveProfile } = useSession();
   const { formWidth, height, horizontalPad, isTablet, isDesktop, width } = useLayout();
   const insets = useSafeAreaInsets();
   const column = useContentColumn('form');
   const formSideInset = Math.max(0, (width - formWidth) / 2);
   const headerPadLeft = Math.max(horizontalPad, insets.left - formSideInset);
   const headerPadRight = Math.max(horizontalPad, insets.right - formSideInset);
+  // Explicit top pad (not SafeAreaView edges top): fullScreenModal can report insets.top=0 on first open.
+  const headerTopPad =
+    Math.max(insets.top, Platform.OS === 'web' ? 20 : 12) + spacing.sm;
   const tinyH = height < 700;
   const compactH = height < 780;
   const stageMaxWidth = Math.min(formWidth, isDesktop ? 560 : isTablet ? 520 : 480);
@@ -132,6 +154,21 @@ export default function MealDetailScreen() {
   const [error, setError] = useState<string | null>(null);
   const [saveConfirmOpen, setSaveConfirmOpen] = useState(false);
   const [saveConfirmModalVisible, setSaveConfirmModalVisible] = useState(false);
+  const [celebration, setCelebration] = useState<{
+    evolved: boolean;
+    leveledUp: boolean;
+    leveledDown: boolean;
+    goalJustHit: boolean;
+    goalUndone: boolean;
+    xpGained: number;
+    xpLost: number;
+    perkUnlocked: string | null;
+    levelBefore: number;
+    levelAfter: number;
+    previousStageIndex: number;
+    proteinG: number;
+    foodName: string;
+  } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -222,14 +259,75 @@ export default function MealDetailScreen() {
     });
   }, []);
 
+  const [screenFocused, setScreenFocused] = useState(true);
+
   useEffect(() => registerIngredientEditApplier(applyIngredientEdit), [applyIngredientEdit]);
 
   useFocusEffect(
     useCallback(() => {
+      setScreenFocused(true);
       const edit = consumePendingIngredientEdit();
       if (edit) applyIngredientEdit(edit);
+      return () => {
+        setScreenFocused(false);
+        if (Platform.OS !== 'web') {
+          try {
+            ExpoImage.clearMemoryCache();
+          } catch {
+            /* ignore */
+          }
+        }
+      };
     }, [applyIngredientEdit]),
   );
+
+  const openIngredientAdjust = useCallback(
+    (item: FoodItem, index: number, itemCalories: number) => {
+      dismissMealKeyboard();
+      setScreenFocused(false);
+      if (Platform.OS !== 'web') {
+        try {
+          ExpoImage.clearMemoryCache();
+        } catch {
+          /* ignore */
+        }
+      }
+      Haptics.selectionAsync().catch(() => {});
+      const q = new URLSearchParams({
+        index: String(index),
+        name: item.name,
+        portion: item.portion || '1 serving',
+        protein: String(item.protein_g),
+        calories: String(itemCalories),
+      });
+      if (item.estimated_grams != null) {
+        q.set('grams', String(item.estimated_grams));
+      }
+      const href = `/scan-adjust?${q.toString()}`;
+      InteractionManager.runAfterInteractions(() => {
+        router.push(href as never);
+      });
+    },
+    [dismissMealKeyboard],
+  );
+
+  const openAddIngredient = useCallback(() => {
+    setScreenFocused(false);
+    if (Platform.OS !== 'web') {
+      try {
+        ExpoImage.clearMemoryCache();
+      } catch {
+        /* ignore */
+      }
+    }
+    InteractionManager.runAfterInteractions(() => {
+      router.push('/scan-ingredient' as never);
+      runAfterNav(() => {
+        dismissMealKeyboard();
+        Haptics.selectionAsync().catch(() => {});
+      });
+    });
+  }, [dismissMealKeyboard]);
 
   const isDirty = useMemo(() => {
     if (!log) return false;
@@ -279,13 +377,115 @@ export default function MealDetailScreen() {
 
     setSaving(true);
     setError(null);
+    setSaveConfirmOpen(false);
+    setSaveConfirmModalVisible(false);
     try {
+      const todayISO = todayISODate();
+      const oldProtein = Number(log.protein_g) || 0;
+      const delta = proteinG - oldProtein;
+      const mealDayISO = log.logged_date || todayISO;
+      const savedName = foodName.trim() || 'Meal';
+
+      // Snapshot day total before the edit so goal/XP math uses pre-edit sum + delta.
+      const daySummary =
+        profile && delta !== 0 ? await fetchTodayMealSummary(mealDayISO) : null;
+
       await updateLog(log.id, {
-        foodName: foodName.trim() || 'Meal',
+        foodName: savedName,
         proteinG,
         calories: calorieClamp.value,
         items,
       });
+
+      const freshProfile =
+        profile && delta !== 0
+          ? (await fetchProfile(profile.id).catch(() => null)) ?? profile
+          : profile;
+
+      if (daySummary && freshProfile && delta > 0) {
+        const {
+          updates,
+          goalJustHit,
+          evolved,
+          leveledUp,
+          perkUnlocked,
+          levelBefore,
+          levelAfter,
+          stageBeforeIndex,
+        } = applyLogToCharacter({
+          profile: freshProfile,
+          todayTotalBefore: daySummary.proteinSum,
+          loggedProtein: delta,
+          todayISO: mealDayISO,
+          yesterdayISO: dayBeforeISO(mealDayISO),
+        });
+        await saveProfile(updates, { baseProfile: freshProfile });
+
+        const xpGained =
+          Math.round(delta * XP_PER_GRAM) + (goalJustHit ? XP_GOAL_BONUS : 0);
+
+        if (goalJustHit || evolved || leveledUp) {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+          setCelebration({
+            evolved,
+            leveledUp,
+            leveledDown: false,
+            goalJustHit,
+            goalUndone: false,
+            xpGained,
+            xpLost: 0,
+            perkUnlocked,
+            levelBefore,
+            levelAfter,
+            previousStageIndex: stageBeforeIndex,
+            proteinG: delta,
+            foodName: savedName,
+          });
+          return;
+        }
+      }
+
+      if (daySummary && freshProfile && delta < 0) {
+        const {
+          updates,
+          leveledDown,
+          goalUndone,
+          levelBefore,
+          levelAfter,
+          xpLost,
+          stageAfterIndex,
+        } = applyDeleteLogToCharacter({
+          profile: freshProfile,
+          deletedProteinG: -delta,
+          todayTotalAfterDelete: daySummary.proteinSum + delta,
+          todayISO: mealDayISO,
+        });
+        await saveProfile(updates, {
+          dragonProgressMode: 'replace',
+          baseProfile: freshProfile,
+        });
+
+        if (leveledDown || goalUndone) {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+          setCelebration({
+            evolved: false,
+            leveledUp: false,
+            leveledDown,
+            goalJustHit: false,
+            goalUndone,
+            xpGained: 0,
+            xpLost,
+            perkUnlocked: null,
+            levelBefore,
+            levelAfter,
+            previousStageIndex: stageAfterIndex,
+            proteinG: delta,
+            foodName: savedName,
+          });
+          return;
+        }
+      }
+
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       // Prefer back so Today stays mounted (keeps thumbs/dragon warm).
       leave();
@@ -310,7 +510,7 @@ export default function MealDetailScreen() {
 
   return (
     <PageCanvas>
-      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+      <SafeAreaView style={styles.safe} edges={['bottom']}>
         <Modal
           visible={saveConfirmModalVisible}
           transparent
@@ -376,7 +576,11 @@ export default function MealDetailScreen() {
           style={[
             styles.topBar,
             column,
-            { paddingLeft: headerPadLeft, paddingRight: headerPadRight },
+            {
+              paddingTop: headerTopPad,
+              paddingLeft: headerPadLeft,
+              paddingRight: headerPadRight,
+            },
           ]}>
           <Pressable
             onPress={requestClose}
@@ -418,9 +622,9 @@ export default function MealDetailScreen() {
               column,
               { paddingLeft: headerPadLeft, paddingRight: headerPadRight },
             ]}>
-            {photoUri ? (
-              <Animated.View
-                entering={FadeIn}
+            {photoUri && screenFocused ? (
+              <Enter
+                {...enterFade()}
                 style={[
                   styles.resultImageWrap,
                   {
@@ -452,12 +656,21 @@ export default function MealDetailScreen() {
                     </View>
                   ) : null}
                 </Pressable>
-              </Animated.View>
+              </Enter>
+            ) : photoUri ? (
+              <View
+                style={[
+                  styles.resultImageWrap,
+                  {
+                    maxWidth: Math.min(stageMaxWidth, isTablet || isDesktop ? 480 : 420),
+                    // Keep layout height so scroll doesn't jump when photo remounts.
+                    aspectRatio: 1,
+                  },
+                ]}
+              />
             ) : null}
 
-            <Animated.View
-              entering={FadeInDown.delay(80).duration(400)}
-              style={styles.resultTitleBlock}>
+            <Enter {...enterProps(80)} style={styles.resultTitleBlock}>
               <View style={styles.foodNameRow}>
                 <TextInput
                   ref={foodNameRef}
@@ -485,11 +698,9 @@ export default function MealDetailScreen() {
               <Pressable onPress={dismissMealKeyboard} accessibilityRole="none">
                 <Text style={styles.metaText}>{formatMealMeta(log.created_at)}</Text>
               </Pressable>
-            </Animated.View>
+            </Enter>
 
-            <Animated.View
-              entering={FadeInDown.delay(160).duration(400)}
-              style={styles.nutritionCard}>
+            <Enter {...enterProps(160)} style={styles.nutritionCard}>
               <View style={styles.nutritionCol}>
                 <Pressable onPress={dismissMealKeyboard} accessibilityRole="none">
                   <Text style={styles.totalLabel}>TOTAL PROTEIN</Text>
@@ -556,9 +767,9 @@ export default function MealDetailScreen() {
                   </Text>
                 </Pressable>
               </View>
-            </Animated.View>
+            </Enter>
 
-            <Animated.View entering={FadeInDown.delay(220).duration(400)}>
+            <Enter {...enterProps(220)}>
               <View style={styles.ingredientsCard}>
                 <Pressable
                   onPress={dismissMealKeyboard}
@@ -582,21 +793,7 @@ export default function MealDetailScreen() {
                   return (
                     <Pressable
                       key={`${item.name}-${i}`}
-                      onPress={() => {
-                        dismissMealKeyboard();
-                        Haptics.selectionAsync().catch(() => {});
-                        const q = new URLSearchParams({
-                          index: String(i),
-                          name: item.name,
-                          portion: item.portion || '1 serving',
-                          protein: String(item.protein_g),
-                          calories: String(itemCalories),
-                        });
-                        if (item.estimated_grams != null) {
-                          q.set('grams', String(item.estimated_grams));
-                        }
-                        router.push(`/scan-adjust?${q.toString()}` as never);
-                      }}
+                      onPress={() => openIngredientAdjust(item, i, itemCalories)}
                       style={[styles.ingredientRow, i > 0 && styles.ingredientRowBorder]}
                       accessibilityRole="button"
                       accessibilityLabel={`Adjust ${item.name}`}>
@@ -622,13 +819,7 @@ export default function MealDetailScreen() {
               </View>
 
               <Pressable
-                onPress={() => {
-                  router.push('/scan-ingredient' as never);
-                  runAfterNav(() => {
-                    dismissMealKeyboard();
-                    Haptics.selectionAsync().catch(() => {});
-                  });
-                }}
+                onPress={openAddIngredient}
                 hitSlop={8}
                 style={({ pressed }) => [
                   styles.addIngredientRow,
@@ -644,9 +835,9 @@ export default function MealDetailScreen() {
                   Add ingredient
                 </Text>
               </Pressable>
-            </Animated.View>
+            </Enter>
 
-            <Animated.View entering={FadeInDown.delay(320)} style={styles.resultActions}>
+            <Enter {...enterProps(320)} style={styles.resultActions}>
               <Pressable
                 onPress={() => {
                   void handleSave();
@@ -671,9 +862,31 @@ export default function MealDetailScreen() {
                   </>
                 )}
               </Pressable>
-            </Animated.View>
+            </Enter>
           </ScrollView>
         )}
+
+        {profile ? (
+          <Celebration
+            visible={!!celebration}
+            profile={profile}
+            evolved={celebration?.evolved ?? false}
+            leveledUp={celebration?.leveledUp ?? false}
+            leveledDown={celebration?.leveledDown ?? false}
+            goalJustHit={celebration?.goalJustHit ?? false}
+            goalUndone={celebration?.goalUndone ?? false}
+            xpGained={celebration?.xpGained}
+            xpLost={celebration?.xpLost}
+            perkUnlocked={celebration?.perkUnlocked}
+            levelBefore={celebration?.levelBefore}
+            levelAfter={celebration?.levelAfter}
+            previousStageIndex={celebration?.previousStageIndex}
+            onDone={() => {
+              setCelebration(null);
+              leave();
+            }}
+          />
+        ) : null}
       </SafeAreaView>
     </PageCanvas>
   );
@@ -685,7 +898,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingTop: spacing.sm,
     paddingBottom: spacing.sm,
   },
   iconBtn: {
@@ -951,7 +1163,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
   },
   confirmBackdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(6, 5, 10, 0.72)',
     ...(Platform.OS === 'web'
       ? ({

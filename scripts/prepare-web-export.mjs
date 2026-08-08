@@ -80,6 +80,33 @@ function main() {
 
   let html = fs.readFileSync(indexPath, 'utf8');
 
+  // iPhone Safari: without viewport-fit=cover, safe-area insets stay 0 and chrome
+  // sits under the status bar / Dynamic Island.
+  if (!html.includes('viewport-fit=cover')) {
+    html = html.replace(
+      /(<meta\s+name="viewport"\s+content=")([^"]*)("\s*\/?>)/i,
+      (_, open, content, close) => {
+        const next = content.includes('viewport-fit=cover')
+          ? content
+          : `${content.replace(/,?\s*$/, '')}, viewport-fit=cover`;
+        return `${open}${next}${close}`;
+      },
+    );
+  }
+
+  // Zero webkit input vertical padding so placeholders center in fixed-height fields.
+  if (!html.includes('data-pq-input-pad')) {
+    const inputCss = `<style data-pq-input-pad>
+input, textarea, [contenteditable="true"] {
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+}
+</style>`;
+    html = html.includes('</head>')
+      ? html.replace('</head>', `${inputCss}\n</head>`)
+      : html;
+  }
+
   // Remove any existing favicon / apple-touch-icon links injected by Expo.
   html = html.replace(/<link rel="(?:icon|apple-touch-icon)[^>]*>\s*/g, '');
 
@@ -91,7 +118,7 @@ function main() {
 
   html = html.replace('</head>', `  ${block}\n</head>`);
   fs.writeFileSync(indexPath, html);
-  console.log('Updated dist/index.html with branded favicon links');
+  console.log('Updated dist/index.html with branded favicon links + viewport-fit=cover');
 
   // SPA fallback only — existing static files win on Vercel.
   const vercelConfig = {

@@ -1,10 +1,14 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, Tabs } from 'expo-router';
-import React from 'react';
+import React, { useSyncExternalStore } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { isDailyDragonLockedForToday } from '@/lib/character';
+import {
+  getDailyDragonLockEpoch,
+  subscribeDailyDragonLock,
+} from '@/lib/daily-dragon-lock';
 import { useLayout } from '@/lib/layout';
 import {
   hasUnlimitedScans,
@@ -26,6 +30,7 @@ function ScanTabBar({ state, navigation }: TabBarProps) {
   const { contentMaxWidth, isWide } = useLayout();
   const special = useSpecialDeviceLayout();
   const { profile } = useSession();
+  useSyncExternalStore(subscribeDailyDragonLock, getDailyDragonLockEpoch, getDailyDragonLockEpoch);
 
   function openScan() {
     if (profile && !isDailyDragonLockedForToday(profile, todayISODate())) {
