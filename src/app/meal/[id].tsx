@@ -4,7 +4,6 @@ import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  InteractionManager,
   Keyboard,
   Modal,
   Platform,
@@ -51,7 +50,7 @@ import {
   registerIngredientEditApplier,
   type ScanIngredientEdit,
 } from '@/lib/scan-ingredient-edit';
-import { runAfterNav } from '@/lib/navigate-responsive';
+import { pushThen } from '@/lib/navigate-responsive';
 import { useSession } from '@/lib/session';
 import type { FoodItem, ProteinLog } from '@/lib/types';
 import {
@@ -283,7 +282,6 @@ export default function MealDetailScreen() {
 
   const openIngredientAdjust = useCallback(
     (item: FoodItem, index: number, itemCalories: number) => {
-      dismissMealKeyboard();
       setScreenFocused(false);
       if (Platform.OS !== 'web') {
         try {
@@ -292,7 +290,6 @@ export default function MealDetailScreen() {
           /* ignore */
         }
       }
-      Haptics.selectionAsync().catch(() => {});
       const q = new URLSearchParams({
         index: String(index),
         name: item.name,
@@ -304,8 +301,9 @@ export default function MealDetailScreen() {
         q.set('grams', String(item.estimated_grams));
       }
       const href = `/scan-adjust?${q.toString()}`;
-      InteractionManager.runAfterInteractions(() => {
-        router.push(href as never);
+      pushThen(href as never, () => {
+        dismissMealKeyboard();
+        Haptics.selectionAsync().catch(() => {});
       });
     },
     [dismissMealKeyboard],
@@ -320,14 +318,13 @@ export default function MealDetailScreen() {
         /* ignore */
       }
     }
-    InteractionManager.runAfterInteractions(() => {
-      router.push('/scan-ingredient' as never);
-      runAfterNav(() => {
-        dismissMealKeyboard();
-        Haptics.selectionAsync().catch(() => {});
-      });
+    const mealId = id ? String(id) : '';
+    const returnTo = mealId ? `/meal/${mealId}` : '/scan';
+    pushThen(`/scan-ingredient?returnTo=${encodeURIComponent(returnTo)}` as never, () => {
+      dismissMealKeyboard();
+      Haptics.selectionAsync().catch(() => {});
     });
-  }, [dismissMealKeyboard]);
+  }, [dismissMealKeyboard, id]);
 
   const isDirty = useMemo(() => {
     if (!log) return false;
@@ -806,12 +803,17 @@ export default function MealDetailScreen() {
                           {item.portion}
                         </Text>
                       </View>
-                      <Text style={styles.itemProtein}>
-                        {item.protein_g < 10
-                          ? item.protein_g.toFixed(1)
-                          : Math.round(item.protein_g)}
-                        g
-                      </Text>
+                      <View style={styles.itemRight}>
+                        <Text style={styles.itemProtein}>
+                          {item.protein_g < 10
+                            ? item.protein_g.toFixed(1)
+                            : Math.round(item.protein_g)}
+                          g
+                        </Text>
+                        <Text style={styles.itemCalories}>
+                          {Math.round(itemCalories)} kcal
+                        </Text>
+                      </View>
                       <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
                     </Pressable>
                   );
@@ -1093,10 +1095,18 @@ const styles = StyleSheet.create({
     color: colors.textTertiary,
     marginTop: 2,
   },
+  itemRight: { alignItems: 'flex-end', justifyContent: 'center', gap: 1 },
   itemProtein: {
     fontFamily: fonts.display,
     fontSize: 15,
     color: colors.text,
+    fontVariant: ['tabular-nums'],
+  },
+  itemCalories: {
+    fontFamily: fonts.mono,
+    fontSize: 10,
+    letterSpacing: 0.2,
+    color: colors.textTertiary,
     fontVariant: ['tabular-nums'],
   },
   totalLabel: {

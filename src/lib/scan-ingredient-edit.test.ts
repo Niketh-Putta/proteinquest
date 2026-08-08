@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  formatAdjustWheelUnit,
   formatCountUnitLabel,
   resolveAdjustCountUnit,
 } from './scan-ingredient-edit.ts';
@@ -28,4 +29,13 @@ test('formatCountUnitLabel pluralizes spoonful and drizzle', () => {
   assert.equal(formatCountUnitLabel('spoonful', 1), 'spoonful');
   assert.equal(formatCountUnitLabel('spoonful', 2), 'spoonfuls');
   assert.equal(formatCountUnitLabel('drizzle', 2), 'drizzles');
+});
+
+test('whole foods keep count labels even when portion is grams-only', () => {
+  assert.equal(resolveAdjustCountUnit('Banana', '20 g'), 'banana');
+  assert.equal(resolveAdjustCountUnit('Egg', '50 g'), 'egg');
+  assert.equal(formatAdjustWheelUnit('Banana', '20 g', 14.75), 'bananas');
+  assert.equal(formatAdjustWheelUnit('Banana', '1 banana', 14.75), 'bananas');
+  assert.equal(formatAdjustWheelUnit('Egg', '1 egg', 2), 'eggs');
+  assert.equal(formatAdjustWheelUnit('Apple', '1 medium apple', 3), 'apples');
 });

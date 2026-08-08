@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { router, useFocusEffect } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, startTransition } from 'react';
 import {
   InteractionManager,
@@ -31,6 +31,7 @@ import {
   loadHeavyFoodCatalog,
 } from '@/lib/food-catalog';
 import { useContentColumn } from '@/lib/layout';
+import { pushThen } from '@/lib/navigate-responsive';
 import { colors, fonts, layout, pressableWeb, radius, spacing, textInputWeb } from '@/theme';
 
 const IS_ANDROID = Platform.OS === 'android';
@@ -42,7 +43,14 @@ const Enter = IS_NATIVE ? View : Animated.View;
 const enterProps = (delay = 0) =>
   IS_NATIVE ? {} : { entering: FadeInDown.delay(delay).duration(280) };
 
-function openAdjust(food: CatalogFood) {
+function safeReturnTo(raw: unknown): string {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  const s = typeof value === 'string' ? value.trim() : '';
+  if (s === '/scan' || s.startsWith('/meal/')) return s;
+  return '/scan';
+}
+
+function openAdjust(food: CatalogFood, returnTo: string) {
   void pushRecentFood(food);
   const q = new URLSearchParams({
     index: '-1',
@@ -51,12 +59,11 @@ function openAdjust(food: CatalogFood) {
     protein: String(food.protein_g),
     calories: String(food.calories_g),
     mode: 'add',
+    returnTo,
   });
   if (food.estimated_grams != null) q.set('grams', String(food.estimated_grams));
   const href = `/scan-adjust?${q.toString()}`;
-  InteractionManager.runAfterInteractions(() => {
-    router.push(href as never);
-  });
+  pushThen(href as never);
 }
 
 function SectionLabel({ label }: { label: string }) {
@@ -73,14 +80,16 @@ function FoodRow({
   food,
   icon,
   isLast,
+  returnTo,
 }: {
   food: CatalogFood;
   icon: keyof typeof Ionicons.glyphMap;
   isLast: boolean;
+  returnTo: string;
 }) {
   return (
     <Pressable
-      onPress={() => openAdjust(food)}
+      onPress={() => openAdjust(food, returnTo)}
       style={({ pressed }) => [
         styles.foodRow,
         !isLast && styles.foodRowBorder,
@@ -105,6 +114,8 @@ const BROWSE_PAGE = IS_ANDROID ? 36 : 80;
 export default function ScanIngredientScreen() {
   const column = useContentColumn('form');
   const insets = useSafeAreaInsets();
+  const params = useLocalSearchParams<{ returnTo?: string | string[] }>();
+  const returnTo = useMemo(() => safeReturnTo(params.returnTo), [params.returnTo]);
   const [query, setQuery] = useState('');
   const deferredQuery = useDeferredValue(query);
   const [recent, setRecent] = useState<CatalogFood[]>([]);
@@ -387,6 +398,7 @@ export default function ScanIngredientScreen() {
                             food={food}
                             icon="time-outline"
                             isLast={i === recentMatches.length - 1}
+                            returnTo={returnTo}
                           />
                         ))}
                       </GlassPanel>
@@ -414,6 +426,7 @@ export default function ScanIngredientScreen() {
                                 food={food}
                                 icon="nutrition-outline"
                                 isLast={i === exactResults.length - 1}
+                                returnTo={returnTo}
                               />
                             ))}
                           </GlassPanel>
@@ -429,6 +442,7 @@ export default function ScanIngredientScreen() {
                                 food={food}
                                 icon="sparkles-outline"
                                 isLast={i === similarResults.length - 1}
+                                returnTo={returnTo}
                               />
                             ))}
                           </GlassPanel>
@@ -449,6 +463,7 @@ export default function ScanIngredientScreen() {
                             food={food}
                             icon="time-outline"
                             isLast={i === recent.length - 1}
+                            returnTo={returnTo}
                           />
                         ))}
                       </GlassPanel>
@@ -464,6 +479,7 @@ export default function ScanIngredientScreen() {
                           food={food}
                           icon="sparkles"
                           isLast={i === common.length - 1 && browseVisible.length === 0}
+                          returnTo={returnTo}
                         />
                       ))}
                       {browseVisible.map((food, i) => (
@@ -472,6 +488,7 @@ export default function ScanIngredientScreen() {
                           food={food}
                           icon="nutrition-outline"
                           isLast={i === browseVisible.length - 1 && !browseHasMore}
+                          returnTo={returnTo}
                         />
                       ))}
                       {showBrowseSkeleton ? (

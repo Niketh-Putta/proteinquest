@@ -132,6 +132,16 @@ async function pickLibraryImageWeb(): Promise<PickedImage | null> {
     input.accept = isIOSWeb() ? IMAGE_ACCEPT_IOS_NO_CAMERA : IMAGE_ACCEPT;
     input.style.display = 'none';
     input.multiple = false;
+    let settled = false;
+
+    const finish = (value: PickedImage | null) => {
+      if (settled) return;
+      settled = true;
+      window.removeEventListener('focus', onWindowFocus);
+      window.clearTimeout(focusTimer);
+      cleanup();
+      resolve(value);
+    };
 
     const cleanup = () => {
       input.removeEventListener('change', onChange);
@@ -140,27 +150,39 @@ async function pickLibraryImageWeb(): Promise<PickedImage | null> {
     };
 
     const onCancel = () => {
-      cleanup();
-      resolve(null);
+      finish(null);
     };
 
     const onChange = () => {
       const file = input.files?.[0];
-      cleanup();
       if (!file) {
-        resolve(null);
+        finish(null);
         return;
       }
       if (!isAcceptableImageFile(file)) {
-        resolve(null);
+        finish(null);
         return;
       }
-      resolve({ uri: URL.createObjectURL(file) });
+      finish({ uri: URL.createObjectURL(file) });
+    };
+
+    // Many browsers never fire `cancel` when the dialog is dismissed. When the
+    // window regains focus with no file, treat it as cancel so UI cannot stick.
+    let focusTimer = 0;
+    const onWindowFocus = () => {
+      focusTimer = window.setTimeout(() => {
+        if (!input.files?.length) finish(null);
+      }, 300);
     };
 
     input.addEventListener('change', onChange);
     input.addEventListener('cancel', onCancel);
+    window.addEventListener('focus', onWindowFocus);
     document.body.appendChild(input);
-    input.click();
+    try {
+      input.click();
+    } catch {
+      finish(null);
+    }
   });
 }

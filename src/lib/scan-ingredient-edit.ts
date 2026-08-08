@@ -880,9 +880,18 @@ function foodBaseForUnit(name: string, unit: string): string {
   return cleaned || foodDisplayName(name);
 }
 
+/** Bare mass/volume tokens left after stripping a leading number ("20 g" → "g"). */
+const BARE_WEIGHT_UNIT_RE =
+  /^(g|grams?|kg|oz|ml|millilit(?:er|re)s?|l|lit(?:er|re)s?)$/i;
+
+function isBareWeightUnit(unit: string): boolean {
+  return BARE_WEIGHT_UNIT_RE.test(unit.trim());
+}
+
 function isWeightOnlyPortion(portion: string): boolean {
   const trimmed = portion.trim();
   if (!trimmed) return false;
+  if (isBareWeightUnit(trimmed)) return true;
   if (EMBEDDED_COUNT_UNIT_RE.test(trimmed)) return false;
   return WEIGHT_OR_VOLUME_RE.test(trimmed) || LEADING_WEIGHT_RE.test(trimmed);
 }
@@ -1081,12 +1090,13 @@ export function formatCountUnitLabel(unit: string, qty: number): string {
 /** Wheel / summary label for count mode (prefers cups/spoonfuls over "serving"). */
 export function formatAdjustWheelUnit(name: string, portion: string, qty: number): string {
   const unit = resolveAdjustCountUnit(name, portion);
-  if (MEASURE_UNITS.has(unit) || unit === 'serving') {
-    return formatCountUnitLabel(unit === 'serving' ? foodLower(name) : unit, qty);
+  // Always pluralize from the resolved unit. Never echo portion leftovers like
+  // "g" from "20 g" (that produced broken labels like "14.75 g" for bananas).
+  if (isBareWeightUnit(unit)) {
+    return formatCountUnitLabel(foodLower(name), qty);
   }
-  const { rest } = parsePortionQuantity(portion);
-  if (rest && !/^servings?$/i.test(rest.trim()) && !isWeightOnlyPortion(rest)) {
-    return rest;
+  if (unit === 'serving') {
+    return formatCountUnitLabel(foodLower(name), qty);
   }
   return formatCountUnitLabel(unit, qty);
 }

@@ -196,9 +196,15 @@ export default function ScanAdjustScreen() {
     calories?: string;
     grams?: string;
     mode?: string;
+    returnTo?: string;
   }>();
 
   const isAdd = paramString(params.mode) === 'add';
+  const returnTo = (() => {
+    const raw = paramString(params.returnTo, '/scan');
+    if (raw === '/scan' || raw.startsWith('/meal/')) return raw;
+    return '/scan';
+  })();
 
   const index = useMemo(() => {
     const n = parseInt(paramString(params.index, '0'), 10);
@@ -383,7 +389,7 @@ export default function ScanAdjustScreen() {
   const heroSubtitle = `~${Math.round(gramsPerUnit)}g per 1 ${unitSingular}`;
   const conversionBadge =
     inputMode === 'unit'
-      ? `1 ${unitSingular} ≈ ${Math.round(gramsPerUnit)} g`
+      ? `${formatQuantityLabel(qty === 0 ? 1 : qty)} ${formatCountUnitLabel(countUnit, qty === 0 ? 1 : qty)} ≈ ${activeGrams} g`
       : `${activeGrams} g ≈ ${formatApproxQty(approxQtyFromGrams)} ${formatCountUnitLabel(countUnit, approxQtyFromGrams)}`;
 
   const estimatedLabel = inputMode === 'unit' ? 'Estimated mass' : `Estimated ${unitPlural}`;
@@ -679,15 +685,39 @@ export default function ScanAdjustScreen() {
 
   function goBack() {
     if (isAdd) {
-      // Stack: Confirm/Meal → Search → Adjust. Pop both so we land on Confirm/Meal.
-      // Single back() incorrectly returns to Search.
-      if (router.canDismiss()) {
-        router.dismiss(2);
+      // Stack: Confirm/Meal → Search → Adjust. Must skip Search.
+      // Web often can't use canDismiss/dismiss(2); dismissTo pops to Confirm without remount.
+      try {
+        router.dismissTo(returnTo as never);
+        return;
+      } catch {
+        /* fall through */
+      }
+      try {
+        if (router.canDismiss()) {
+          router.dismiss(2);
+          return;
+        }
+      } catch {
+        /* fall through */
+      }
+      // Last resort: pop Adjust then Search.
+      if (router.canGoBack()) {
+        router.back();
+        requestAnimationFrame(() => {
+          try {
+            if (router.canGoBack()) router.back();
+          } catch {
+            /* ignore */
+          }
+        });
         return;
       }
+      router.replace(returnTo as never);
+      return;
     }
     if (router.canGoBack()) router.back();
-    else router.replace('/scan');
+    else router.replace(returnTo as never);
   }
 
   /**
@@ -869,7 +899,7 @@ export default function ScanAdjustScreen() {
                     showsVerticalScrollIndicator={false}
                     snapToInterval={ITEM_H}
                     // Native only: web snapToOffsets fights our settle + CSS snap.
-                    {...(Platform.OS === 'web' ? null : { snapToOffsets })}
+                    {...(Platform.OS === 'web' ? {} : { snapToOffsets: snapOffsets })}
                     snapToAlignment="start"
                     disableIntervalMomentum
                     decelerationRate="fast"

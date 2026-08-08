@@ -7,7 +7,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
     Image,
-    InteractionManager,
     Keyboard,
     Linking,
     Platform,
@@ -97,7 +96,7 @@ import {
     registerIngredientEditApplier,
     type ScanIngredientEdit,
 } from '@/lib/scan-ingredient-edit';
-import { prefetchRoute, runAfterNav } from '@/lib/navigate-responsive';
+import { prefetchRoute, pushThen } from '@/lib/navigate-responsive';
 import { useSession } from '@/lib/session';
 import type { Analysis } from '@/lib/types';
 import { bindUnmirroredWebCameraPreview } from '@/lib/web-camera-preview';
@@ -734,9 +733,13 @@ export default function ScanScreen() {
     Keyboard.dismiss();
   }, []);
   const [discardOpen, setDiscardOpen] = useState(false);
+  /** Which leave confirm is open — analyzing cancel vs result discard. */
+  const [discardKind, setDiscardKind] = useState<'analyzing' | 'result'>('result');
   const discardActionRef = useRef<null | (() => void)>(null);
   const phaseRef = useRef<Phase>(phase);
   const analysisRef = useRef<Analysis | null>(analysis);
+  /** Bumped to ignore in-flight analyze after user cancels. */
+  const analyzeGenRef = useRef(0);
   /** Upload starts as soon as analysis succeeds so Log it rarely waits on storage. */
   const photoUploadRef = useRef<Promise<string | null> | null>(null);
   phaseRef.current = phase;
@@ -955,6 +958,7 @@ export default function ScanScreen() {
       // Drop the live CameraView before decode/crop (same jetsam class as library pick).
       setCameraInitialized(false);
       setAnalyzeStep(0);
+      analyzeGenRef.current += 1;
       phaseRef.current = 'analyzing';
       setPhase('analyzing');
       trackEvent('first_scan_started', {});
@@ -962,6 +966,7 @@ export default function ScanScreen() {
       await new Promise<void>((resolve) => {
         requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
       });
+      if (phaseRef.current !== 'analyzing') return;
       await analyze(photo.uri, cameraCrop);
     } catch (e: any) {
       showError(e.message ?? 'Could not capture the photo. Try again.');
@@ -976,20 +981,39 @@ export default function ScanScreen() {
     if (busyRef.current) return;
     busyRef.current = true;
     setCapturing(true);
-    // Unmount live camera while the system picker + HEIC decode run — prevents
-    // iOS jetsam (app "just closes") from camera + full-res bitmap together.
-    setLibraryPicking(true);
-    setCameraInitialized(false);
+    const isWeb = Platform.OS === 'web';
+    // Native: unmount camera before picker (jetsam). Web: open the file dialog
+    // in this same user gesture — any await first kills activation and the picker
+    // never appears, leaving "Opening photos" stuck.
+    if (!isWeb) {
+      setLibraryPicking(true);
+      setCameraInitialized(false);
+    }
     try {
-      try {
-        const allowed = await ensureCanScan();
-        if (needsScanQuota && allowed === null) return;
-      } catch {
-        /* count failed — allow picker; analyze rechecks */
+      let picked: { uri: string } | null = null;
+      if (isWeb) {
+        picked = await pickLibraryImage();
+        if (!picked?.uri) return;
+        setLibraryPicking(true);
+        setCameraInitialized(false);
+        try {
+          const allowed = await ensureCanScan();
+          if (needsScanQuota && allowed === null) return;
+        } catch {
+          /* count failed — analyze rechecks */
+        }
+      } else {
+        try {
+          const allowed = await ensureCanScan();
+          if (needsScanQuota && allowed === null) return;
+        } catch {
+          /* count failed — allow picker; analyze rechecks */
+        }
+        if (scanModeRef.current !== 'photo') return;
+        picked = await pickLibraryImage();
+        if (!picked?.uri) return;
       }
       if (scanModeRef.current !== 'photo') return;
-      const picked = await pickLibraryImage();
-      if (!picked?.uri) return;
       await analyze(picked.uri);
     } catch (e: any) {
       showError(e?.message ?? 'Could not open your photo library. Try again.');
@@ -1159,9 +1183,11 @@ export default function ScanScreen() {
     if (scanModeRef.current !== 'photo') return;
 
     // Unmount live camera before any ImageManipulator work (iOS jetsam otherwise).
+    // Bump gen when entering analyzing so cancel-X can invalidate this run.
     if (phaseRef.current === 'camera') {
       setCameraInitialized(false);
       setAnalyzeStep(0);
+      analyzeGenRef.current += 1;
       phaseRef.current = 'analyzing';
       setPhase('analyzing');
       trackEvent('first_scan_started', {});
@@ -1169,12 +1195,14 @@ export default function ScanScreen() {
         requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
       });
     }
+    if (phaseRef.current !== 'analyzing') return;
+    const runId = analyzeGenRef.current;
     try {
       analyzeStageRef.current = 'prep';
       setAnalyzeProgress(0.15);
       const square = await prepareSquareMealPhoto(uri, cameraCrop);
 
-      if (scanModeRef.current !== 'photo') return;
+      if (scanModeRef.current !== 'photo' || runId !== analyzeGenRef.current) return;
 
       setDisplayUri(square.uri);
       setPreviewSquare(Boolean(cameraCrop));
@@ -1194,7 +1222,7 @@ export default function ScanScreen() {
       analyzeStageRef.current = 'request';
       setAnalyzeProgress(0.55);
       const res = await analyzeFoodPhoto(square.base64, 'image/jpeg');
-      if (scanModeRef.current !== 'photo') return;
+      if (scanModeRef.current !== 'photo' || runId !== analyzeGenRef.current) return;
       if (!res.is_food) {
         showError(res.notes || "This doesn't look like food. Point the camera at your meal.");
         return;
@@ -1234,7 +1262,7 @@ export default function ScanScreen() {
       analyzeDoneRef.current = true;
       setPhase('result');
     } catch (e: any) {
-      if (scanModeRef.current !== 'photo') return;
+      if (scanModeRef.current !== 'photo' || runId !== analyzeGenRef.current) return;
       showError(e.message ?? 'Analysis failed. Check your connection and try again.');
     }
   }
@@ -1568,8 +1596,16 @@ export default function ScanScreen() {
 
   const requestLeaveUnsaved = useCallback((action: () => void) => {
     // Refs avoid stale closures skipping the confirm and calling router.back immediately.
+    if (phaseRef.current === 'analyzing') {
+      discardActionRef.current = action;
+      setDiscardKind('analyzing');
+      Keyboard.dismiss();
+      setDiscardOpen(true);
+      return;
+    }
     if (phaseRef.current === 'result' && analysisRef.current) {
       discardActionRef.current = action;
+      setDiscardKind('result');
       Keyboard.dismiss();
       setDiscardOpen(true);
       return;
@@ -1581,6 +1617,11 @@ export default function ScanScreen() {
     const action = discardActionRef.current;
     discardActionRef.current = null;
     setDiscardOpen(false);
+    if (phaseRef.current === 'analyzing') {
+      analyzeGenRef.current += 1;
+      busyRef.current = false;
+      setCapturing(false);
+    }
     action?.();
   }, []);
 
@@ -1630,7 +1671,9 @@ export default function ScanScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['bottom']}>
-      {phase === 'result' || (demoAutoScan && phase === 'camera') ? renderHeader() : null}
+      {phase === 'result' || phase === 'analyzing' || (demoAutoScan && phase === 'camera')
+        ? renderHeader()
+        : null}
 
       {error && !(scanMode === 'text' && isFoodAnalyzeError(error)) ? (
         <Animated.View
@@ -2072,20 +2115,11 @@ export default function ScanScreen() {
               maxWidth: formMaxWidth,
               width: '100%',
               alignSelf: 'center',
-              paddingTop: headerTop,
               paddingBottom: Math.max(insets.bottom, spacing.md),
-              paddingHorizontal: horizontalPad,
+              paddingLeft: resultPadLeft,
+              paddingRight: resultPadRight,
             },
           ]}>
-          <Pressable
-            onPressIn={onLeavePress}
-            onPress={onLeavePress}
-            hitSlop={12}
-            style={[styles.iconBtn, styles.analyzingCloseBtn]}
-            accessibilityLabel={firstScanRequired ? 'Skip for now' : 'Close'}>
-            <Ionicons name="close" size={22} color={colors.text} />
-          </Pressable>
-
           <View style={styles.analyzingHero}>
             <Ionicons
               name="scan-outline"
@@ -2341,9 +2375,7 @@ export default function ScanScreen() {
                   <Pressable
                     key={`${item.name}-${i}`}
                     onPress={() => {
-                      dismissMealKeyboard();
                       freeScanPhotoMemory();
-                      Haptics.selectionAsync().catch(() => {});
                       const q = new URLSearchParams({
                         index: String(i),
                         name: item.name,
@@ -2355,8 +2387,10 @@ export default function ScanScreen() {
                         q.set('grams', String(item.estimated_grams));
                       }
                       const href = `/scan-adjust?${q.toString()}`;
-                      InteractionManager.runAfterInteractions(() => {
-                        router.push(href as never);
+                      // Push immediately — InteractionManager defer hangs on web.
+                      pushThen(href as never, () => {
+                        dismissMealKeyboard();
+                        Haptics.selectionAsync().catch(() => {});
                       });
                     }}
                     style={[styles.ingredientRow, i > 0 && styles.ingredientRowBorder]}
@@ -2371,12 +2405,17 @@ export default function ScanScreen() {
                         {item.portion}
                       </Text>
                     </View>
-                    <Text style={styles.itemProtein}>
-                      {item.protein_g < 10
-                        ? item.protein_g.toFixed(1)
-                        : Math.round(item.protein_g)}
-                      g
-                    </Text>
+                    <View style={styles.itemRight}>
+                      <Text style={styles.itemProtein}>
+                        {item.protein_g < 10
+                          ? item.protein_g.toFixed(1)
+                          : Math.round(item.protein_g)}
+                        g
+                      </Text>
+                      <Text style={styles.itemCalories}>
+                        {Math.round(itemCalories)} kcal
+                      </Text>
+                    </View>
                     <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
                   </Pressable>
                 );
@@ -2389,12 +2428,10 @@ export default function ScanScreen() {
               onPress={() => {
                 // Free multi-MB base64 + photo before push — otherwise OOM-kills on Add.
                 freeScanPhotoMemory();
-                InteractionManager.runAfterInteractions(() => {
-                  router.push('/scan-ingredient' as never);
-                  runAfterNav(() => {
-                    dismissMealKeyboard();
-                    Haptics.selectionAsync().catch(() => {});
-                  });
+                // Push immediately — InteractionManager defer hangs on web ("Opening…" forever).
+                pushThen('/scan-ingredient?returnTo=/scan' as never, () => {
+                  dismissMealKeyboard();
+                  Haptics.selectionAsync().catch(() => {});
                 });
               }}
               hitSlop={8}
@@ -2497,32 +2534,44 @@ export default function ScanScreen() {
           }>
             <GlassPanel modal style={styles.discardCard}>
               <View style={styles.discardSheen} pointerEvents="none" />
-              <Text style={styles.discardTitle}>Save this scan?</Text>
+              <Text style={styles.discardTitle}>
+                {discardKind === 'analyzing' ? 'Cancel scan?' : 'Save this scan?'}
+              </Text>
               <Text style={styles.discardBody}>
-                Are you sure you do not want to save this? It will be lost.
+                {discardKind === 'analyzing'
+                  ? 'Are you sure you want to cancel scan?'
+                  : 'Are you sure you do not want to save this? It will be lost.'}
               </Text>
               <View style={styles.discardActions}>
                 <Pressable
                   onPress={cancelDiscard}
                   hitSlop={10}
                   accessibilityRole="button"
-                  accessibilityLabel="Keep editing"
+                  accessibilityLabel={
+                    discardKind === 'analyzing' ? 'Keep analyzing' : 'Keep editing'
+                  }
                   style={({ pressed }) => [
                     styles.discardPrimary,
                     pressed && styles.discardPrimaryPressed,
                   ]}>
-                  <Text style={styles.discardPrimaryLabel}>Keep editing</Text>
+                  <Text style={styles.discardPrimaryLabel}>
+                    {discardKind === 'analyzing' ? 'Keep analyzing' : 'Keep editing'}
+                  </Text>
                 </Pressable>
                 <Pressable
                   onPress={confirmDiscard}
                   hitSlop={10}
                   accessibilityRole="button"
-                  accessibilityLabel="Discard scan"
+                  accessibilityLabel={
+                    discardKind === 'analyzing' ? 'Cancel scan' : 'Discard scan'
+                  }
                   style={({ pressed }) => [
                     styles.discardSecondary,
                     pressed && styles.discardSecondaryPressed,
                   ]}>
-                  <Text style={styles.discardSecondaryLabel}>Discard</Text>
+                  <Text style={styles.discardSecondaryLabel}>
+                    {discardKind === 'analyzing' ? 'Cancel scan' : 'Discard'}
+                  </Text>
                 </Pressable>
               </View>
             </GlassPanel>
@@ -3070,12 +3119,6 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
   },
-  analyzingCloseBtn: {
-    position: 'absolute',
-    top: spacing.sm,
-    left: 0,
-    zIndex: 2,
-  },
   analyzingHero: {
     alignItems: 'center',
     paddingHorizontal: spacing.md,
@@ -3322,11 +3365,18 @@ const styles = StyleSheet.create({
     color: colors.textTertiary,
     marginTop: 2,
   },
-  itemRight: { alignItems: 'flex-end' },
+  itemRight: { alignItems: 'flex-end', justifyContent: 'center', gap: 1 },
   itemProtein: {
     fontFamily: fonts.display,
     fontSize: 15,
     color: colors.text,
+    fontVariant: ['tabular-nums'],
+  },
+  itemCalories: {
+    fontFamily: fonts.mono,
+    fontSize: 10,
+    letterSpacing: 0.2,
+    color: colors.textTertiary,
     fontVariant: ['tabular-nums'],
   },
   itemLowConf: {
