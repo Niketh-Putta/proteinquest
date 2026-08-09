@@ -212,50 +212,53 @@ export default function MealDetailScreen() {
     };
   }, [id]);
 
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
+
   const applyIngredientEdit = useCallback((edit: ScanIngredientEdit) => {
-    setItems((prev) => {
-      const action = edit.action ?? 'update';
-      let next = [...prev];
+    const action = edit.action ?? 'update';
+    let next = [...itemsRef.current];
 
-      if (action === 'delete') {
-        if (edit.index < 0 || edit.index >= next.length) return prev;
-        next = next.filter((_, i) => i !== edit.index);
-      } else if (action === 'add') {
-        next.push({
-          name: edit.name,
-          portion: edit.portion,
-          protein_g: edit.protein_g,
-          calories_g: edit.calories_g,
-          estimated_grams: edit.estimated_grams,
-          confidence: 'medium',
-        });
-      } else {
-        const current = next[edit.index];
-        if (!current) return prev;
-        next[edit.index] = {
-          ...current,
-          name: edit.name,
-          portion: edit.portion,
-          protein_g: edit.protein_g,
-          calories_g: edit.calories_g,
-          estimated_grams: edit.estimated_grams,
-        };
-      }
+    if (action === 'delete') {
+      if (edit.index < 0 || edit.index >= next.length) return;
+      next = next.filter((_, i) => i !== edit.index);
+    } else if (action === 'add') {
+      next.push({
+        name: edit.name,
+        portion: edit.portion,
+        protein_g: edit.protein_g,
+        calories_g: edit.calories_g,
+        estimated_grams: edit.estimated_grams,
+        confidence: 'medium',
+      });
+    } else {
+      const current = next[edit.index];
+      if (!current) return;
+      next[edit.index] = {
+        ...current,
+        name: edit.name,
+        portion: edit.portion,
+        protein_g: edit.protein_g,
+        calories_g: edit.calories_g,
+        estimated_grams: edit.estimated_grams,
+      };
+    }
 
-      const totalProtein = next.reduce((s, i) => s + (Number(i.protein_g) || 0), 0);
-      const itemCalSum = next.reduce((s, i) => {
-        const c = Number(i.calories_g);
-        return s + (Number.isFinite(c) && c >= 0 ? c : 0);
-      }, 0);
-      const nextProtein = Math.round(totalProtein * 10) / 10;
-      const nextCalories = Math.round(itemCalSum);
+    const totalProtein = next.reduce((s, i) => s + (Number(i.protein_g) || 0), 0);
+    const itemCalSum = next.reduce((s, i) => {
+      const c = Number(i.calories_g);
+      return s + (Number.isFinite(c) && c >= 0 ? c : 0);
+    }, 0);
+    const nextProtein = Math.round(totalProtein * 10) / 10;
+    const nextCalories = Math.round(itemCalSum);
 
-      setAnchorProtein(nextProtein);
-      setAnchorCalories(nextCalories);
-      setProteinOverride(String(nextProtein));
-      setCalorieOverride(String(nextCalories));
-      return next;
-    });
+    itemsRef.current = next;
+    setItems(next);
+    setAnchorProtein(nextProtein);
+    setAnchorCalories(nextCalories);
+    // Set totals outside any updater so the summary inputs remeasure full width.
+    setProteinOverride(String(nextProtein));
+    setCalorieOverride(String(nextCalories));
   }, []);
 
   const [screenFocused, setScreenFocused] = useState(true);
@@ -708,9 +711,7 @@ export default function MealDetailScreen() {
                     style={[
                       styles.totalInput,
                       textInputWeb,
-                      Platform.OS === 'web'
-                        ? ({ width: `${Math.max(proteinOverride.length, 1)}ch` } as object)
-                        : null,
+                      { width: Math.max(64, Math.max(proteinOverride.length, 1) * 28) },
                     ]}
                     value={proteinOverride}
                     onChangeText={(t) => setProteinOverride(sanitizeNutritionDraft(t))}
@@ -740,9 +741,7 @@ export default function MealDetailScreen() {
                     style={[
                       styles.totalInput,
                       textInputWeb,
-                      Platform.OS === 'web'
-                        ? ({ width: `${Math.max(calorieOverride.length, 1)}ch` } as object)
-                        : null,
+                      { width: Math.max(64, Math.max(calorieOverride.length, 1) * 28) },
                     ]}
                     value={calorieOverride}
                     onChangeText={(t) => setCalorieOverride(sanitizeNutritionDraft(t))}
@@ -1129,8 +1128,11 @@ const styles = StyleSheet.create({
     color: colors.accent,
     fontVariant: ['tabular-nums'],
     padding: 0,
-    minWidth: 28,
+    minWidth: 64,
     letterSpacing: -1.2,
+    ...(Platform.OS === 'web'
+      ? ({ overflow: 'visible', fieldSizing: 'content' } as object)
+      : null),
   },
   totalUnit: {
     fontSize: 18,

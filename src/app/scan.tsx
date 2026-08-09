@@ -1507,58 +1507,60 @@ export default function ScanScreen() {
   }, []);
 
   const applyIngredientEdit = useCallback((edit: ScanIngredientEdit) => {
-    setAnalysis((prev) => {
-      if (!prev) return prev;
-      const action = edit.action ?? 'update';
-      let items = [...prev.items];
+    const prev = analysisRef.current;
+    if (!prev) return;
+    const action = edit.action ?? 'update';
+    let items = [...prev.items];
 
-      if (action === 'delete') {
-        if (edit.index < 0 || edit.index >= items.length) return prev;
-        items = items.filter((_, i) => i !== edit.index);
-      } else if (action === 'add') {
-        items.push({
-          name: edit.name,
-          portion: edit.portion,
-          protein_g: edit.protein_g,
-          calories_g: edit.calories_g,
-          estimated_grams: edit.estimated_grams,
-          confidence: 'medium',
-        });
-      } else {
-        const current = items[edit.index];
-        if (!current) return prev;
-        items[edit.index] = {
-          ...current,
-          name: edit.name,
-          portion: edit.portion,
-          protein_g: edit.protein_g,
-          calories_g: edit.calories_g,
-          estimated_grams: edit.estimated_grams,
-        };
-      }
-
-      const totalProtein = items.reduce((s, i) => s + (Number(i.protein_g) || 0), 0);
-      const totalCalories = items.reduce((s, i) => {
-        const c = Number(i.calories_g);
-        return s + (Number.isFinite(c) && c >= 0 ? c : 0);
-      }, 0);
-      const nextProtein = Math.round(totalProtein * 10) / 10;
-      const nextCalories = Math.round(totalCalories);
-      setProteinOverride(String(nextProtein));
-      setCalorieOverride(String(nextCalories));
-      return {
-        ...prev,
-        items,
-        total_protein_g: nextProtein,
-        calories: nextCalories,
-        food_name:
-          items.length === 0
-            ? prev.food_name
-            : items.length === 1
-              ? items[0].name
-              : items.map((i) => i.name).slice(0, 3).join(' + '),
+    if (action === 'delete') {
+      if (edit.index < 0 || edit.index >= items.length) return;
+      items = items.filter((_, i) => i !== edit.index);
+    } else if (action === 'add') {
+      items.push({
+        name: edit.name,
+        portion: edit.portion,
+        protein_g: edit.protein_g,
+        calories_g: edit.calories_g,
+        estimated_grams: edit.estimated_grams,
+        confidence: 'medium',
+      });
+    } else {
+      const current = items[edit.index];
+      if (!current) return;
+      items[edit.index] = {
+        ...current,
+        name: edit.name,
+        portion: edit.portion,
+        protein_g: edit.protein_g,
+        calories_g: edit.calories_g,
+        estimated_grams: edit.estimated_grams,
       };
-    });
+    }
+
+    const totalProtein = items.reduce((s, i) => s + (Number(i.protein_g) || 0), 0);
+    const totalCalories = items.reduce((s, i) => {
+      const c = Number(i.calories_g);
+      return s + (Number.isFinite(c) && c >= 0 ? c : 0);
+    }, 0);
+    const nextProtein = Math.round(totalProtein * 10) / 10;
+    const nextCalories = Math.round(totalCalories);
+    const next = {
+      ...prev,
+      items,
+      total_protein_g: nextProtein,
+      calories: nextCalories,
+      food_name:
+        items.length === 0
+          ? prev.food_name
+          : items.length === 1
+            ? items[0].name
+            : items.map((i) => i.name).slice(0, 3).join(' + '),
+    };
+    analysisRef.current = next;
+    setAnalysis(next);
+    // Set totals outside any updater so the summary inputs remeasure full width.
+    setProteinOverride(String(nextProtein));
+    setCalorieOverride(String(nextCalories));
   }, []);
 
   // Prefer immediate flush from scan-adjust; keep focus consume as fallback.
@@ -2294,9 +2296,7 @@ export default function ScanScreen() {
                   style={[
                     styles.totalInput,
                     textInputWeb,
-                    Platform.OS === 'web'
-                      ? ({ width: `${Math.max(proteinOverride.length, 1)}ch` } as object)
-                      : null,
+                    { width: Math.max(64, Math.max(proteinOverride.length, 1) * 28) },
                   ]}
                   value={proteinOverride}
                   onChangeText={(t) => setProteinOverride(sanitizeNutritionDraft(t))}
@@ -2327,9 +2327,7 @@ export default function ScanScreen() {
                   style={[
                     styles.totalInput,
                     textInputWeb,
-                    Platform.OS === 'web'
-                      ? ({ width: `${Math.max(calorieOverride.length, 1)}ch` } as object)
-                      : null,
+                    { width: Math.max(64, Math.max(calorieOverride.length, 1) * 28) },
                   ]}
                   value={calorieOverride}
                   onChangeText={(t) => setCalorieOverride(sanitizeNutritionDraft(t))}
@@ -3415,8 +3413,11 @@ const styles = StyleSheet.create({
     color: colors.accent,
     fontVariant: ['tabular-nums'],
     padding: 0,
-    minWidth: 28,
+    minWidth: 64,
     letterSpacing: -1.2,
+    ...(Platform.OS === 'web'
+      ? ({ overflow: 'visible', fieldSizing: 'content' } as object)
+      : null),
   },
   totalUnit: {
     fontSize: 18,
