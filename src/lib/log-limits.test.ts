@@ -7,7 +7,13 @@ import {
   clampCalorieOverride,
   clampProteinOverride,
   maxAllowedOverride,
+  nutritionClampAnchor,
 } from './log-limits.ts';
+
+test('nutritionClampAnchor uses the strongest signal', () => {
+  assert.equal(nutritionClampAnchor(20, 5.6, 0), 20);
+  assert.equal(nutritionClampAnchor(20, 45), 45);
+});
 
 test('maxAllowedOverride applies tolerance plus absolute buffer', () => {
   assert.equal(maxAllowedOverride(40, PROTEIN_OVERRIDE_BUFFER_G), Math.ceil(40 * 1.5 + 15));

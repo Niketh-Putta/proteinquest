@@ -24,6 +24,16 @@ export type ClampResult = {
   max: number;
 };
 
+/** Clamp against the strongest signal: original AI, current header, or ingredient sum. */
+export function nutritionClampAnchor(...values: number[]): number {
+  let max = 0;
+  for (const value of values) {
+    const n = Number(value);
+    if (Number.isFinite(n) && n > max) max = n;
+  }
+  return max;
+}
+
 /** Highest value a user may enter for a given AI anchor. */
 export function maxAllowedOverride(
   anchor: number,

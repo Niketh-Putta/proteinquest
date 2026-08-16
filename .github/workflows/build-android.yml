@@ -131,7 +131,7 @@ jobs:
           cp eas.json eas.json.bak
           trap 'mv app.json.bak app.json; mv eas.json.bak eas.json' EXIT
           node -e 'const fs=require("fs");const p="eas.json";const j=JSON.parse(fs.readFileSync(p,"utf8"));j.cli=j.cli||{};j.cli.appVersionSource="local";j.build=j.build||{};j.build.production=j.build.production||{};j.build.production.credentialsSource="local";fs.writeFileSync(p,JSON.stringify(j,null,2)+"\n");'
-          node -e 'const fs=require("fs");const p="app.json";const j=JSON.parse(fs.readFileSync(p,"utf8"));j.expo=j.expo||{};j.expo.android=j.expo.android||{};j.expo.android.versionCode=Math.max(129,Number(j.expo.android.versionCode||0));fs.writeFileSync(p,JSON.stringify(j,null,2)+"\n");'
+          node -e 'const fs=require("fs");const p="app.json";const j=JSON.parse(fs.readFileSync(p,"utf8"));j.expo=j.expo||{};j.expo.android=j.expo.android||{};j.expo.android.versionCode=Math.max(144,Number(j.expo.android.versionCode||0));fs.writeFileSync(p,JSON.stringify(j,null,2)+"\n");'
           node scripts/patch-eas-project.mjs restore
           for name in EXPO_PUBLIC_SUPABASE_URL EXPO_PUBLIC_SUPABASE_KEY EXPO_PUBLIC_REVENUECAT_IOS_KEY EXPO_PUBLIC_REVENUECAT_ANDROID_KEY; do
             val="${!name:-}"
@@ -140,8 +140,10 @@ jobs:
             fi
           done
           npx eas-cli whoami
-          npx eas-cli build --platform android --profile production --non-interactive --wait
-          echo "build_id=latest" >> "$GITHUB_OUTPUT"
+          BUILD_JSON="$(npx eas-cli build --platform android --profile production --non-interactive --wait --json)"
+          BUILD_ID="$(node -e 'const j=JSON.parse(process.argv[1]); const b=Array.isArray(j)?j[0]:j; if(!b?.id){console.error("No build id", process.argv[1].slice(0,500)); process.exit(1);} process.stdout.write(b.id);' "$BUILD_JSON")"
+          echo "build_id=$BUILD_ID" >> "$GITHUB_OUTPUT"
+          echo "Built Android AAB: $BUILD_ID"
           trap - EXIT
           mv app.json.bak app.json
           mv eas.json.bak eas.json
@@ -152,6 +154,12 @@ jobs:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
           set -euo pipefail
+          BUILD_ID="${{ steps.eas_build.outputs.build_id }}"
+          if [ -z "$BUILD_ID" ] || [ "$BUILD_ID" = "latest" ]; then
+            echo "::error::Missing concrete EAS build id from build step"
+            exit 1
+          fi
           node scripts/patch-eas-project.mjs restore
-          npx eas-cli submit --platform android --latest --profile production --non-interactive
+          # Pin the just-built AAB. --latest can pick a concurrent wrong-keystore build.
+          npx eas-cli submit --platform android --id "$BUILD_ID" --profile production --non-interactive
           node scripts/patch-eas-project.mjs restore

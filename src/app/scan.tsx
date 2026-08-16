@@ -70,6 +70,7 @@ import {
     clampCalorieOverride,
     clampProteinOverride,
     maxAllowedOverride,
+    nutritionClampAnchor,
 } from '@/lib/log-limits';
 import { prepareSquareMealPhoto, type CameraCrop } from '@/lib/meal-photo';
 import { scheduleSecondMealNudge } from '@/lib/meal-reminders';
@@ -450,6 +451,16 @@ function ScanViewfinder({
   );
 }
 
+/** Text-continue meals must stay unclamped across scan-adjust navigation. */
+let persistManualMeal = false;
+try {
+  if (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('pq_manual_meal') === '1') {
+    persistManualMeal = true;
+  }
+} catch {
+  /* ignore */
+}
+
 export default function ScanScreen() {
   const { session, profile, saveProfile } = useSession();
   const {
@@ -719,7 +730,27 @@ export default function ScanScreen() {
   const [proteinOverride, setProteinOverride] = useState('');
   const [calorieOverride, setCalorieOverride] = useState('');
   /** True when confirm/log was opened from "add in text" (manual empty meal). */
-  const [manualEntry, setManualEntry] = useState(false);
+  const [manualEntry, setManualEntry] = useState(persistManualMeal);
+  const manualEntryRef = useRef(persistManualMeal);
+  const proteinOverrideRef = useRef(proteinOverride);
+  const calorieOverrideRef = useRef(calorieOverride);
+  proteinOverrideRef.current = proteinOverride;
+  calorieOverrideRef.current = calorieOverride;
+  const clampAnchorProteinRef = useRef(0);
+  const clampAnchorCaloriesRef = useRef(0);
+  const setManualMeal = useCallback((on: boolean) => {
+    persistManualMeal = on;
+    manualEntryRef.current = on;
+    setManualEntry(on);
+    if (Platform.OS === 'web') {
+      try {
+        if (on) sessionStorage.setItem('pq_manual_meal', '1');
+        else sessionStorage.removeItem('pq_manual_meal');
+      } catch {
+        /* ignore */
+      }
+    }
+  }, []);
   const [scannedAt, setScannedAt] = useState<Date | null>(null);
   const scanModeRef = useRef<ScanMode>(scanMode);
   scanModeRef.current = scanMode;
@@ -1063,7 +1094,9 @@ export default function ScanScreen() {
       Number.isFinite(caloriesN) && caloriesN > 0
         ? Math.round(caloriesN)
         : Math.max(safeProtein * 8, 50);
-    setManualEntry(false);
+    setManualMeal(false);
+    clampAnchorProteinRef.current = safeProtein;
+    clampAnchorCaloriesRef.current = safeCalories;
     setAnalysis({ ...res, total_protein_g: safeProtein, calories: safeCalories });
     setProteinOverride(String(safeProtein));
     setCalorieOverride(String(safeCalories));
@@ -1130,7 +1163,9 @@ export default function ScanScreen() {
       setPreviewSquare(false);
       setImageBase64(null);
       photoUploadRef.current = null;
-      setManualEntry(true);
+      setManualMeal(true);
+      clampAnchorProteinRef.current = 0;
+      clampAnchorCaloriesRef.current = 0;
       setAnalysis({
         is_food: true,
         food_name: '',
@@ -1235,7 +1270,7 @@ export default function ScanScreen() {
         Number.isFinite(caloriesN) && caloriesN > 0
           ? Math.round(caloriesN)
           : Math.max(safeProtein * 8, 50);
-      setManualEntry(false);
+      setManualMeal(false);
       setAnalysis({ ...res, total_protein_g: safeProtein, calories: safeCalories });
       setProteinOverride(String(safeProtein));
       setCalorieOverride(String(safeCalories));
@@ -1274,13 +1309,26 @@ export default function ScanScreen() {
       return;
     }
     const proteinEntered = parseNutritionNumber(proteinOverride);
+    const itemProteinSum = analysis.items.reduce((s, i) => s + (Number(i.protein_g) || 0), 0);
+    const itemCalorieSum = analysis.items.reduce((s, i) => {
+      const c = Number(i.calories_g);
+      return s + (Number.isFinite(c) && c >= 0 ? c : 0);
+    }, 0);
     if (proteinEntered == null || proteinEntered < 0) {
       setError('Enter the protein amount in grams.');
       return;
     }
     let proteinG = proteinEntered;
-    if (!manualEntry) {
-      const proteinClamp = clampProteinOverride(proteinEntered, analysis.total_protein_g);
+    const isManual =
+      manualEntryRef.current || persistManualMeal || scanModeRef.current === 'text';
+    const skipClamp = isManual;
+    const proteinAnchor = nutritionClampAnchor(
+      clampAnchorProteinRef.current,
+      analysis.total_protein_g,
+      itemProteinSum,
+    );
+    if (!skipClamp) {
+      const proteinClamp = clampProteinOverride(proteinEntered, proteinAnchor);
       if (proteinClamp.clamped) {
         setProteinOverride(String(proteinClamp.max));
         setError(
@@ -1304,8 +1352,15 @@ export default function ScanScreen() {
           ? Math.round(analysis.calories)
           : Math.max(Math.round(proteinG) * 8, 50);
     let calories = caloriesEntered;
-    if (!manualEntry) {
-      const calorieClamp = clampCalorieOverride(caloriesEntered, analysis.calories);
+    if (!skipClamp) {
+      const calorieClamp = clampCalorieOverride(
+        caloriesEntered,
+        nutritionClampAnchor(
+          clampAnchorCaloriesRef.current,
+          analysis.calories,
+          itemCalorieSum,
+        ),
+      );
       if (calorieClamp.clamped) {
         setCalorieOverride(String(calorieClamp.max));
         setError(
@@ -1346,7 +1401,7 @@ export default function ScanScreen() {
           calories,
           confidence: analysis.confidence,
           imagePath: imagePath ?? null,
-          source: manualEntry ? 'manual' : 'photo',
+          source: isManual ? 'manual' : 'photo',
         }),
         fetchProfile(session.user.id)
           .catch(() => null)
@@ -1416,6 +1471,10 @@ export default function ScanScreen() {
 
       const xpGained =
         Math.round(proteinG * XP_PER_GRAM) + (goalJustHit ? XP_GOAL_BONUS : 0);
+
+      persistManualMeal = false;
+      manualEntryRef.current = false;
+      setManualMeal(false);
 
       if (goalJustHit || evolved || leveledUp) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
@@ -1503,8 +1562,9 @@ export default function ScanScreen() {
     setProteinOverride('');
     setCalorieOverride('');
     setScannedAt(null);
+    setManualMeal(false);
     setPhase('camera');
-  }, []);
+  }, [setManualMeal]);
 
   const applyIngredientEdit = useCallback((edit: ScanIngredientEdit) => {
     const prev = analysisRef.current;
@@ -1558,9 +1618,19 @@ export default function ScanScreen() {
     };
     analysisRef.current = next;
     setAnalysis(next);
-    // Set totals outside any updater so the summary inputs remeasure full width.
-    setProteinOverride(String(nextProtein));
-    setCalorieOverride(String(nextCalories));
+    const enteredP = parseNutritionNumber(proteinOverrideRef.current);
+    const enteredC = parseNutritionNumber(calorieOverrideRef.current);
+    const userEditedHeader =
+      (enteredP != null && Math.abs(enteredP - prev.total_protein_g) > 0.05) ||
+      (enteredC != null && Math.abs(enteredC - prev.calories) > 0.5);
+    const keepTypedTotals =
+      userEditedHeader ||
+      persistManualMeal ||
+      manualEntryRef.current;
+    if (!keepTypedTotals) {
+      setProteinOverride(String(nextProtein));
+      setCalorieOverride(String(nextCalories));
+    }
   }, []);
 
   // Prefer immediate flush from scan-adjust; keep focus consume as fallback.
@@ -2312,7 +2382,14 @@ export default function ScanScreen() {
                 <Text style={styles.totalHint}>
                   {manualEntry
                     ? 'tap to adjust • add ingredients below'
-                    : `tap to adjust • max ${maxAllowedOverride(analysis.total_protein_g, PROTEIN_OVERRIDE_BUFFER_G)}g`}
+                    : `tap to adjust • max ${maxAllowedOverride(
+                        nutritionClampAnchor(
+                          clampAnchorProteinRef.current,
+                          analysis.total_protein_g,
+                          analysis.items.reduce((s, i) => s + (Number(i.protein_g) || 0), 0),
+                        ),
+                        PROTEIN_OVERRIDE_BUFFER_G,
+                      )}g`}
                 </Text>
               </Pressable>
             </View>
@@ -2343,7 +2420,17 @@ export default function ScanScreen() {
                 <Text style={styles.totalHint}>
                   {manualEntry
                     ? 'tap to adjust • add ingredients below'
-                    : `tap to adjust • max ${maxAllowedOverride(analysis.calories, CALORIE_OVERRIDE_BUFFER)}`}
+                    : `tap to adjust • max ${maxAllowedOverride(
+                        nutritionClampAnchor(
+                          clampAnchorCaloriesRef.current,
+                          analysis.calories,
+                          analysis.items.reduce((s, i) => {
+                            const c = Number(i.calories_g);
+                            return s + (Number.isFinite(c) && c >= 0 ? c : 0);
+                          }, 0),
+                        ),
+                        CALORIE_OVERRIDE_BUFFER,
+                      )}`}
                 </Text>
               </Pressable>
             </View>

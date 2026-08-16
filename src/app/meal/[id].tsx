@@ -39,6 +39,7 @@ import {
   clampCalorieOverride,
   clampProteinOverride,
   maxAllowedOverride,
+  nutritionClampAnchor,
 } from '@/lib/log-limits';
 import { todayISODate } from '@/lib/protein';
 import {
@@ -146,6 +147,10 @@ export default function MealDetailScreen() {
   const [items, setItems] = useState<FoodItem[]>([]);
   const [proteinOverride, setProteinOverride] = useState('');
   const [calorieOverride, setCalorieOverride] = useState('');
+  const proteinOverrideRef = useRef(proteinOverride);
+  const calorieOverrideRef = useRef(calorieOverride);
+  proteinOverrideRef.current = proteinOverride;
+  calorieOverrideRef.current = calorieOverride;
   const [anchorProtein, setAnchorProtein] = useState(0);
   const [anchorCalories, setAnchorCalories] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -254,11 +259,14 @@ export default function MealDetailScreen() {
 
     itemsRef.current = next;
     setItems(next);
-    setAnchorProtein(nextProtein);
-    setAnchorCalories(nextCalories);
-    // Set totals outside any updater so the summary inputs remeasure full width.
-    setProteinOverride(String(nextProtein));
-    setCalorieOverride(String(nextCalories));
+    const enteredP = parseNutritionNumber(proteinOverrideRef.current);
+    const enteredC = parseNutritionNumber(calorieOverrideRef.current);
+    const keepTypedTotals =
+      (enteredP != null && enteredP > 0) || (enteredC != null && enteredC > 0);
+    if (!keepTypedTotals) {
+      setProteinOverride(String(nextProtein));
+      setCalorieOverride(String(nextCalories));
+    }
   }, []);
 
   const [screenFocused, setScreenFocused] = useState(true);
@@ -350,7 +358,18 @@ export default function MealDetailScreen() {
       setSaveConfirmOpen(false);
       return;
     }
-    const proteinClamp = clampProteinOverride(proteinEntered, anchorProtein);
+    const skipClamp = log.source === 'manual';
+    const itemProteinSum = items.reduce((s, i) => s + (Number(i.protein_g) || 0), 0);
+    const itemCalorieSum = items.reduce((s, i) => {
+      const c = Number(i.calories_g);
+      return s + (Number.isFinite(c) && c >= 0 ? c : 0);
+    }, 0);
+    const proteinClamp = skipClamp
+      ? { value: proteinEntered, clamped: false, max: proteinEntered }
+      : clampProteinOverride(
+          proteinEntered,
+          nutritionClampAnchor(anchorProtein, itemProteinSum),
+        );
     // Soft-clamp: apply the max and still save (do not dead-end the CTA).
     if (proteinClamp.clamped) {
       setProteinOverride(String(proteinClamp.max));
@@ -370,7 +389,12 @@ export default function MealDetailScreen() {
         : anchorCalories > 0
           ? Math.round(anchorCalories)
           : Math.max(Math.round(proteinG) * 8, 50);
-    const calorieClamp = clampCalorieOverride(caloriesEntered, anchorCalories || caloriesEntered);
+    const calorieClamp = skipClamp
+      ? { value: caloriesEntered, clamped: false, max: caloriesEntered }
+      : clampCalorieOverride(
+          caloriesEntered,
+          nutritionClampAnchor(anchorCalories, itemCalorieSum),
+        );
     if (calorieClamp.clamped) {
       setCalorieOverride(String(calorieClamp.max));
     }
@@ -725,8 +749,15 @@ export default function MealDetailScreen() {
                 </View>
                 <Pressable onPress={dismissMealKeyboard} accessibilityRole="none">
                   <Text style={styles.totalHint}>
-                    tap to adjust • max{' '}
-                    {maxAllowedOverride(anchorProtein, PROTEIN_OVERRIDE_BUFFER_G)}g
+                    {log.source === 'manual'
+                      ? 'tap to adjust • add ingredients below'
+                      : `tap to adjust • max ${maxAllowedOverride(
+                          nutritionClampAnchor(
+                            anchorProtein,
+                            items.reduce((s, i) => s + (Number(i.protein_g) || 0), 0),
+                          ),
+                          PROTEIN_OVERRIDE_BUFFER_G,
+                        )}g`}
                   </Text>
                 </Pressable>
               </View>
@@ -755,11 +786,18 @@ export default function MealDetailScreen() {
                 </View>
                 <Pressable onPress={dismissMealKeyboard} accessibilityRole="none">
                   <Text style={styles.totalHint}>
-                    tap to adjust • max{' '}
-                    {maxAllowedOverride(
-                      anchorCalories || Number(calorieOverride) || 0,
-                      CALORIE_OVERRIDE_BUFFER,
-                    )}
+                    {log.source === 'manual'
+                      ? 'tap to adjust • add ingredients below'
+                      : `tap to adjust • max ${maxAllowedOverride(
+                          nutritionClampAnchor(
+                            anchorCalories,
+                            items.reduce((s, i) => {
+                              const c = Number(i.calories_g);
+                              return s + (Number.isFinite(c) && c >= 0 ? c : 0);
+                            }, 0),
+                          ),
+                          CALORIE_OVERRIDE_BUFFER,
+                        )}`}
                   </Text>
                 </Pressable>
               </View>
