@@ -69,6 +69,14 @@ async function main() {
 
   download(PLAY_BADGE_URL, path.join(badgesDir, 'google-play.png'));
   download(APP_STORE_BADGE_URL, path.join(badgesDir, 'app-store.svg'));
+  download(
+    'https://cdn.jsdelivr.net/npm/simple-icons@16/icons/apple.svg',
+    path.join(badgesDir, 'apple-mark.svg'),
+  );
+  download(
+    'https://cdn.jsdelivr.net/npm/simple-icons@16/icons/googleplay.svg',
+    path.join(badgesDir, 'google-play-mark.svg'),
+  );
 
   for (const shot of STORE_SCREENSHOTS) {
     await resizeScreenshot(shot.src, shot.dest, 540);
