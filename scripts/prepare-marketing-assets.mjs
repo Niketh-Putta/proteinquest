@@ -42,11 +42,11 @@ async function resizeScreenshot(srcRel, destRel, maxWidth) {
 }
 
 const STORE_SCREENSHOTS = [
-  { src: 'store/screenshots/iphone67/01.png', dest: 'screenshots/ios-01.png' },
-  { src: 'store/screenshots/iphone67/02.png', dest: 'screenshots/ios-02.png' },
-  { src: 'store/screenshots/iphone67/03.png', dest: 'screenshots/ios-03.png' },
-  { src: 'store/screenshots/iphone67/04.png', dest: 'screenshots/ios-04.png' },
-  { src: 'store/screenshots/iphone67/05.png', dest: 'screenshots/ios-05.png' },
+  { src: 'marketing/source/screenshots/ios-01.png', dest: 'screenshots/ios-01.png' },
+  { src: 'marketing/source/screenshots/ios-02.png', dest: 'screenshots/ios-02.png' },
+  { src: 'marketing/source/screenshots/ios-03.png', dest: 'screenshots/ios-03.png' },
+  { src: 'marketing/source/screenshots/ios-04.png', dest: 'screenshots/ios-04.png' },
+  { src: 'marketing/source/screenshots/ios-05.png', dest: 'screenshots/ios-05.png' },
 ];
 
 function download(url, dest) {
