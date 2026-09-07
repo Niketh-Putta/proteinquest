@@ -81,9 +81,18 @@ async function main() {
   for (const shot of STORE_SCREENSHOTS) {
     await resizeScreenshot(shot.src, shot.dest, 540);
   }
+  for (const name of ['today', 'scan', 'trends', 'dragons', 'league']) {
+    copyFile(
+      'marketing/source/screenshots/phone-' + name + '.png',
+      'screenshots/phone-' + name + '.png',
+    );
+  }
 
   const fontsDir = path.join(outDir, 'fonts');
   ensureDir(fontsDir);
+  for (const weight of [400, 600, 700]) {
+    copyFile('marketing/source/fonts/manrope-' + weight + '.ttf', 'fonts/manrope-' + weight + '.ttf');
+  }
   download(
     'https://fonts.gstatic.com/s/sora/v17/xMQ9uFFYT72X5wkB_18qmnndmSdSnh2BAfO5mnuyOo1lfiQAVaW2gaU.woff2',
     path.join(fontsDir, 'sora-latin.woff2'),
