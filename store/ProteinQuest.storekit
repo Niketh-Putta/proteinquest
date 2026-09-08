@@ -16,7 +16,7 @@
       "name": "ProteinQuest Pro",
       "subscriptions": [
         {
-          "adGroupDisplayName": "ProteinQuest Pro Weekly",
+          "adGroupDisplayName": "ProteinQuest Pro Monthly",
           "displayPrice": "9.99",
           "familyShareable": false,
           "groupNumber": 1,
@@ -24,18 +24,18 @@
           "localizations": [
             {
               "description": "Unlimited AI meal scans and full trends.",
-              "displayName": "ProteinQuest Pro Weekly",
+              "displayName": "ProteinQuest Pro Monthly",
               "locale": "en_GB"
             }
           ],
-          "productID": "pro_weekly",
-          "recurringSubscriptionPeriod": "P1W",
-          "referenceName": "ProteinQuest Pro Weekly",
+          "productID": "pro_monthly",
+          "recurringSubscriptionPeriod": "P1M",
+          "referenceName": "ProteinQuest Pro Monthly",
           "type": "RecurringSubscription"
         },
         {
           "adGroupDisplayName": "ProteinQuest Pro Yearly",
-          "displayPrice": "59.99",
+          "displayPrice": "29.99",
           "familyShareable": false,
           "groupNumber": 2,
           "internalID": "6781793936",

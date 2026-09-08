@@ -36,16 +36,16 @@ export interface PaymentProvider {
 
 export const PLANS: PaymentPlan[] = [
   {
-    id: 'pro_weekly',
-    title: 'Weekly',
-    price: '$9.99/wk',
+    id: 'pro_monthly',
+    title: 'Monthly',
+    price: '£9.99/mo',
     caption: 'Full Pro access. Cancel anytime.',
   },
   {
     id: 'pro_yearly',
     title: 'Yearly',
-    price: '$4.99/mo',
-    caption: 'Billed as $59.99 annually',
+    price: '£2.49/mo',
+    caption: 'Billed as £29.99 annually',
   },
 ];
 

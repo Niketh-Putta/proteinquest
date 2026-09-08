@@ -99,20 +99,20 @@
   },
   "inAppPurchases": [
     {
-      "productId": "pro_weekly",
+      "productId": "pro_monthly",
       "type": "auto-renewable subscription",
       "subscriptionGroup": "ProteinQuest Pro",
       "priceUsd": "9.99",
-      "period": "1 week",
-      "referenceName": "ProteinQuest Pro Weekly",
-      "displayName": "ProteinQuest Pro Weekly",
+      "period": "1 month",
+      "referenceName": "ProteinQuest Pro Monthly",
+      "displayName": "ProteinQuest Pro Monthly",
       "reviewDescription": "Unlimited AI meal scans and full trends."
     },
     {
       "productId": "pro_yearly",
       "type": "auto-renewable subscription",
       "subscriptionGroup": "ProteinQuest Pro",
-      "priceUsd": "59.99",
+      "priceGbp": "29.99",
       "period": "1 year",
       "referenceName": "ProteinQuest Pro Yearly",
       "displayName": "ProteinQuest Pro Yearly",

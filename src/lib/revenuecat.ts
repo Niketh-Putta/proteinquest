@@ -6,7 +6,7 @@ export const REVENUECAT_ENTITLEMENT_ID = 'pro';
 
 /** Package / plan IDs — must match App Store Connect, Play Console, and RevenueCat offerings */
 export const REVENUECAT_PRODUCT_IDS = {
-  weekly: 'pro_weekly',
+  monthly: 'pro_monthly',
   yearly: 'pro_yearly',
 } as const;
 
@@ -108,24 +108,23 @@ function resolveCurrentOffering(offerings: PurchasesOfferingsLike): PurchasesOff
   );
 }
 
-function productMatchesPlan(productId: string, plan: 'weekly' | 'yearly'): boolean {
+function productMatchesPlan(productId: string, plan: 'monthly' | 'yearly'): boolean {
   const target = REVENUECAT_PRODUCT_IDS[plan];
   return productId === target || productId.startsWith(`${target}:`);
 }
 
-function isWeeklyOrYearlyPackage(p: {
+function isMonthlyOrYearlyPackage(p: {
   product: { identifier: string; priceString?: string };
   packageType: string;
   identifier: string;
 }): boolean {
   const id = p.product.identifier;
   return (
-    productMatchesPlan(id, 'weekly') ||
+    productMatchesPlan(id, 'monthly') ||
     productMatchesPlan(id, 'yearly') ||
-    p.packageType === 'WEEKLY' ||
     p.packageType === 'ANNUAL' ||
     p.packageType === 'MONTHLY' ||
-    p.identifier === '$rc_weekly' ||
+    p.identifier === '$rc_monthly' ||
     p.identifier === '$rc_annual'
   );
 }
@@ -136,7 +135,7 @@ function isPurchasablePackage(p: {
   packageType: string;
   identifier: string;
 }): boolean {
-  return isWeeklyOrYearlyPackage(p) && !!p.product.priceString?.trim();
+  return isMonthlyOrYearlyPackage(p) && !!p.product.priceString?.trim();
 }
 
 async function fetchOfferingsWithRetry(): Promise<PurchasesOfferingsLike> {
@@ -186,7 +185,7 @@ function offeringsConfigurationError(e: unknown): string | null {
   return null;
 }
 
-/** True when RevenueCat returns a current offering with at least one weekly/yearly package. */
+/** True when RevenueCat returns a current offering with at least one monthly/yearly package. */
 export async function hasLiveOfferings(): Promise<boolean> {
   const status = await getOfferingsStatus();
   return status.ready;
@@ -242,15 +241,15 @@ function formatCurrency(amount: number, currency: string): string {
   }
 }
 
-function formatWeeklyPrice(product: PurchasesProductLike): string {
-  const currency = product.currencyCode ?? 'USD';
+function formatMonthlyPrice(product: PurchasesProductLike): string {
+  const currency = product.currencyCode ?? 'GBP';
   const amount = product.price ?? 9.99;
-  return `${formatCurrency(roundToNinetyNine(amount), currency)}/wk`;
+  return `${formatCurrency(roundToNinetyNine(amount), currency)}/mo`;
 }
 
 function formatYearlyPlan(product: PurchasesProductLike): { price: string; caption: string } {
-  const currency = product.currencyCode ?? 'USD';
-  const annualAmount = product.price ?? 59.99;
+  const currency = product.currencyCode ?? 'GBP';
+  const annualAmount = product.price ?? 29.99;
   const annualRounded = roundToNinetyNine(annualAmount);
   // £52.99/12 ≈ £4.42 — roundToNinetyNine would wrongly show £4.99
   const monthly = monthlyFromAnnual(annualRounded);
@@ -264,17 +263,17 @@ function formatYearlyPlan(product: PurchasesProductLike): { price: string; capti
 export async function getRevenueCatPlans(): Promise<RevenueCatPlan[]> {
   const fallback: RevenueCatPlan[] = [
     {
-      id: REVENUECAT_PRODUCT_IDS.weekly,
-      title: 'Weekly',
-      price: '$9.99/wk',
+      id: REVENUECAT_PRODUCT_IDS.monthly,
+      title: 'Monthly',
+      price: '£9.99/mo',
       caption: 'Full Pro access. Cancel anytime.',
-      packageIdentifier: '$rc_weekly',
+      packageIdentifier: '$rc_monthly',
     },
     {
       id: REVENUECAT_PRODUCT_IDS.yearly,
       title: 'Yearly',
-      price: '$4.99/mo',
-      caption: 'Billed as $59.99 annually',
+      price: '£2.49/mo',
+      caption: 'Billed as £29.99 annually',
       packageIdentifier: '$rc_annual',
     },
   ];
@@ -294,22 +293,22 @@ export async function getRevenueCatPlans(): Promise<RevenueCatPlan[]> {
         productMatchesPlan(productId, 'yearly') ||
         pkg.packageType === 'ANNUAL' ||
         pkg.identifier === '$rc_annual';
-      const isWeekly =
-        productMatchesPlan(productId, 'weekly') ||
-        pkg.packageType === 'WEEKLY' ||
-        pkg.identifier === '$rc_weekly';
+      const isMonthly =
+        productMatchesPlan(productId, 'monthly') ||
+        pkg.packageType === 'MONTHLY' ||
+        pkg.identifier === '$rc_monthly';
 
-      if (!isYearly && !isWeekly) continue;
+      if (!isYearly && !isMonthly) continue;
       const livePrice = pkg.product.priceString?.trim();
       if (!livePrice) continue;
 
       const { price, caption } = isYearly
         ? formatYearlyPlan(pkg.product)
-        : { price: formatWeeklyPrice(pkg.product), caption: 'Full Pro access. Cancel anytime.' };
+        : { price: formatMonthlyPrice(pkg.product), caption: 'Full Pro access. Cancel anytime.' };
 
       mapped.push({
-        id: isYearly ? REVENUECAT_PRODUCT_IDS.yearly : REVENUECAT_PRODUCT_IDS.weekly,
-        title: isYearly ? 'Yearly' : 'Weekly',
+        id: isYearly ? REVENUECAT_PRODUCT_IDS.yearly : REVENUECAT_PRODUCT_IDS.monthly,
+        title: isYearly ? 'Yearly' : 'Monthly',
         price,
         caption,
         packageIdentifier: pkg.identifier,
@@ -340,7 +339,7 @@ export async function checkProEntitlement(): Promise<boolean> {
   }
 }
 
-/** Purchase a plan by our plan ID (pro_weekly | pro_yearly). Returns true when Pro is active. */
+/** Purchase a plan by our plan ID (pro_monthly | pro_yearly). Returns true when Pro is active. */
 export async function purchasePlan(planId: string): Promise<boolean> {
   if (!isRevenueCatConfigured()) {
     console.warn('[RevenueCat] purchasePlan: not configured');
@@ -372,9 +371,9 @@ export async function purchasePlan(planId: string): Promise<boolean> {
       );
     }
     return (
-      productMatchesPlan(p.product.identifier, 'weekly') ||
-      p.packageType === 'WEEKLY' ||
-      p.identifier === '$rc_weekly'
+      productMatchesPlan(p.product.identifier, 'monthly') ||
+      p.packageType === 'MONTHLY' ||
+      p.identifier === '$rc_monthly'
     );
   };
 

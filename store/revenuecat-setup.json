@@ -9,33 +9,33 @@
     "Optional: deploy supabase/functions/revenuecat-webhook and add the URL in RevenueCat → Integrations → Webhooks."
   ],
   "products": {
-    "weekly": {
-      "planId": "pro_weekly",
+    "monthly": {
+      "planId": "pro_monthly",
       "priceUsd": "9.99",
-      "billingPeriod": "1 week",
+      "billingPeriod": "1 month",
       "appStoreConnect": {
-        "productId": "pro_weekly",
+        "productId": "pro_monthly",
         "subscriptionGroup": "ProteinQuest Pro",
-        "displayName": "ProteinQuest Pro Weekly",
+        "displayName": "ProteinQuest Pro Monthly",
         "description": "Unlimited AI meal scans and full trends."
       },
       "googlePlay": {
-        "productId": "pro_weekly",
-        "basePlanId": "weekly",
-        "displayName": "ProteinQuest Pro Weekly",
+        "productId": "pro_monthly",
+        "basePlanId": "monthly",
+        "displayName": "ProteinQuest Pro Monthly",
         "description": "Unlimited AI meal scans and full trends."
       },
       "revenueCat": {
-        "packageIdentifier": "$rc_weekly",
+        "packageIdentifier": "$rc_monthly",
         "storeProductIds": {
-          "ios": "pro_weekly",
-          "android": "pro_weekly"
+          "ios": "pro_monthly",
+          "android": "pro_monthly"
         }
       }
     },
     "yearly": {
       "planId": "pro_yearly",
-      "priceUsd": "59.99",
+      "priceGbp": "29.99",
       "billingPeriod": "1 year",
       "appStoreConnect": {
         "productId": "pro_yearly",
@@ -63,14 +63,14 @@
     "2. Add iOS app (bundle com.proteinquest.app) with App Store Connect shared secret / StoreKit 2.",
     "3. Add Android app (package com.proteinquest.app) with Google Play service credentials JSON.",
     "4. Create entitlement identifier: pro",
-    "5. Create products pro_weekly and pro_yearly linked to store product IDs above.",
-    "6. Create offering 'default' with packages $rc_weekly → pro_weekly and $rc_annual → pro_yearly.",
+    "5. Create products pro_monthly and pro_yearly linked to store product IDs above.",
+    "6. Create offering 'default' with packages $rc_monthly → pro_monthly and $rc_annual → pro_yearly.",
     "7. Copy public SDK keys to EXPO_PUBLIC_REVENUECAT_IOS_KEY and EXPO_PUBLIC_REVENUECAT_ANDROID_KEY.",
     "8. (Recommended) Configure RevenueCat → Supabase webhook to set profiles.is_premium server-side."
   ],
   "stripeWeb": {
-    "planIds": ["pro_weekly", "pro_yearly"],
-    "supabaseSecrets": ["STRIPE_SECRET_KEY", "STRIPE_PRICE_WEEKLY", "STRIPE_PRICE_YEARLY"],
+    "planIds": ["pro_monthly", "pro_yearly"],
+    "supabaseSecrets": ["STRIPE_SECRET_KEY", "STRIPE_PRICE_MONTHLY", "STRIPE_PRICE_YEARLY"],
     "envFlag": "EXPO_PUBLIC_STRIPE_ENABLED=true"
   }
 }
