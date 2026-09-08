@@ -67,6 +67,7 @@ export default function RootLayout() {
                 }}>
                 <Stack.Screen name="index" />
                 <Stack.Screen name="intro" />
+                <Stack.Screen name="auth/callback" options={{ animation: 'fade' }} />
                 <Stack.Screen name="onboarding" />
                 <Stack.Screen
                   name="paywall"

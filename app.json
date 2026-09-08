@@ -2,7 +2,7 @@
   "expo": {
     "name": "ProteinQuest",
     "slug": "proteinquest",
-    "version": "1.0.38",
+    "version": "1.0.39",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "proteinquest",
@@ -12,8 +12,10 @@
       "bundleIdentifier": "com.proteinquest.app",
       "buildNumber": "78",
       "supportsTablet": true,
+      "usesAppleSignIn": true,
       "entitlements": {
-        "aps-environment": "production"
+        "aps-environment": "production",
+        "com.apple.developer.applesignin": ["Default"]
       },
       "infoPlist": {
         "CFBundleDisplayName": "ProteinQuest",
@@ -36,7 +38,7 @@
         "com.android.vending.BILLING",
         "android.permission.POST_NOTIFICATIONS"
       ],
-      "versionCode": 144
+      "versionCode": 145
     },
     "web": {
       "output": "single",
@@ -74,6 +76,7 @@
       ],
       "expo-font",
       "expo-web-browser",
+      "expo-apple-authentication",
       "expo-secure-store",
       "expo-video",
       "expo-image",

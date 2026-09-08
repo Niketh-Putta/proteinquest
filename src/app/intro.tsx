@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Modal,
@@ -27,7 +27,7 @@ import {
 } from '@/components/onboarding/TrendChart';
 import { WeightInput, WeightRuler } from '@/components/onboarding/WeightRuler';
 import { ob } from '@/components/onboarding/theme';
-import { isRegisteredUser, signInWithSocial } from '@/lib/onboarding-auth';
+import { isRegisteredUser, signInWithSocial, subscribeOAuthDeepLinks } from '@/lib/onboarding-auth';
 import {
   buildProfileUpdatesFromAnswers,
   clearOnboardingDraft,
@@ -66,6 +66,7 @@ type ModalKind =
 
 export default function Intro() {
   const { session, profile, saveProfile } = useSession();
+  const params = useLocalSearchParams<{ auth?: string }>();
   const [ready, setReady] = useState(false);
   const [step, setStep] = useState(0);
   const [a, setA] = useState<OnboardingAnswers>({ ...INITIAL_ONBOARDING_ANSWERS });
@@ -261,6 +262,37 @@ export default function Intro() {
     go(30);
   }
 
+  // Web OAuth return lands on /auth/callback then here with ?auth=done.
+  useEffect(() => {
+    if (params.auth !== 'done') return;
+    let alive = true;
+    (async () => {
+      const { data } = await supabase.auth.getUser();
+      if (!alive) return;
+      if (data.user && isRegisteredUser(data.user)) {
+        const provider = String(data.user.app_metadata?.provider || 'Google');
+        const label = provider.charAt(0).toUpperCase() + provider.slice(1);
+        finishAuth(label === 'Email' ? 'Email' : label === 'Apple' ? 'Apple' : 'Google');
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.auth]);
+
+  useEffect(() => {
+    return subscribeOAuthDeepLinks(
+      (oauthSession) => {
+        const provider = String(oauthSession.user.app_metadata?.provider || 'Google');
+        const label = provider.charAt(0).toUpperCase() + provider.slice(1);
+        finishAuth(label === 'Apple' ? 'Apple' : 'Google');
+      },
+      (msg) => setError(msg),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function startAuth(provider: 'Apple' | 'Google' | 'Email') {
     if (authBusy) return;
     if (!login && !a.terms) {
@@ -274,7 +306,10 @@ export default function Intro() {
     }
     setAuthBusy(true);
     try {
-      await signInWithSocial(provider === 'Apple' ? 'apple' : 'google');
+      const oauthSession = await signInWithSocial(provider === 'Apple' ? 'apple' : 'google');
+      if (!isRegisteredUser(oauthSession.user)) {
+        throw new Error('Sign-in did not create a real account. Please try again.');
+      }
       finishAuth(provider);
     } catch (authError) {
       setError(authError instanceof Error ? authError.message : 'Sign-in could not start.');
