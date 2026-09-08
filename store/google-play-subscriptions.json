@@ -1,11 +1,11 @@
 {
   "packageName": "com.proteinquest.app",
-  "currency": "USD",
+  "currency": "GBP",
   "subscriptions": [
     {
-      "productId": "pro_weekly",
-      "name": "ProteinQuest Pro Weekly",
-      "description": "Unlimited AI meal scans and full trends. Billed weekly.",
+      "productId": "pro_monthly",
+      "name": "ProteinQuest Pro Monthly",
+      "description": "Unlimited AI meal scans and full trends. Billed monthly.",
       "benefits": [
         "Unlimited AI meal scans every day",
         "Full trends and history",
@@ -13,8 +13,8 @@
       ],
       "basePlans": [
         {
-          "basePlanId": "weekly",
-          "billingPeriod": "P1W",
+          "basePlanId": "monthly",
+          "billingPeriod": "P1M",
           "price": "9.99",
           "renewalType": "AUTO_RENEWING",
           "gracePeriodDays": 3,
@@ -22,7 +22,7 @@
         }
       ],
       "playConsolePath": "Monetize → Products → Subscriptions → Create subscription",
-      "revenueCatPackage": "$rc_weekly"
+      "revenueCatPackage": "$rc_monthly"
     },
     {
       "productId": "pro_yearly",
@@ -37,7 +37,7 @@
         {
           "basePlanId": "yearly",
           "billingPeriod": "P1Y",
-          "price": "59.99",
+          "price": "29.99",
           "renewalType": "AUTO_RENEWING",
           "gracePeriodDays": 3,
           "accountHoldDays": 30
@@ -59,7 +59,7 @@
   },
   "reviewNotes": {
     "licenseTesters": "Add Google account emails under Setup → License testing before sandbox purchases.",
-    "testInstructions": "Open app → complete onboarding → paywall shows Weekly $9.99 and Yearly $4.99/mo ($59.99 annually, BEST VALUE). Use license tester account to purchase. Free tier: 2-day unlimited trial, then 1 free scan/day (soft paywall); Pro for unlimited.",
+    "testInstructions": "Open app → complete onboarding → paywall shows Monthly £9.99 and Annual £29.99 (BEST VALUE). Use license tester account to purchase. Free tier: 2-day unlimited trial, then 1 free scan/day (soft paywall); Pro for unlimited.",
     "privacyPolicyUrl": "https://proteinquest.app/privacy",
     "termsUrl": "https://proteinquest.app/terms"
   }

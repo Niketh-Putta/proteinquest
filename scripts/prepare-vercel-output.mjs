@@ -72,6 +72,7 @@ function main() {
   fs.copyFileSync(path.join(marketingDir, 'index.html'), path.join(staticDir, 'index.html'));
   fs.copyFileSync(path.join(marketingDir, 'fonts.css'), path.join(staticDir, 'fonts.css'));
   fs.copyFileSync(path.join(marketingDir, 'styles.css'), path.join(staticDir, 'styles.css'));
+  fs.copyFileSync(path.join(marketingDir, 'refinements.css'), path.join(staticDir, 'refinements.css'));
   fs.copyFileSync(path.join(marketingDir, 'legal.css'), path.join(staticDir, 'legal.css'));
   fs.copyFileSync(path.join(marketingDir, 'main.js'), path.join(staticDir, 'main.js'));
   copyRecursive(path.join(marketingDir, 'assets'), path.join(staticDir, 'assets'));

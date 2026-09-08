@@ -1,8 +1,8 @@
 // Creates a Stripe Checkout Session for ProteinQuest Pro.
-// Secrets: STRIPE_SECRET_KEY, STRIPE_PRICE_WEEKLY, STRIPE_PRICE_YEARLY (optional)
+// Secrets: STRIPE_SECRET_KEY, STRIPE_PRICE_MONTHLY, STRIPE_PRICE_YEARLY (optional)
 
 const STRIPE_SECRET_KEY = Deno.env.get("STRIPE_SECRET_KEY");
-const PRICE_WEEKLY = Deno.env.get("STRIPE_PRICE_WEEKLY") ?? Deno.env.get("STRIPE_PRICE_MONTHLY");
+const PRICE_MONTHLY = Deno.env.get("STRIPE_PRICE_MONTHLY");
 const PRICE_YEARLY = Deno.env.get("STRIPE_PRICE_YEARLY");
 
 const corsHeaders = {
@@ -25,7 +25,7 @@ Deno.serve(async (req) => {
 
   try {
     const { plan_id, success_url, cancel_url, customer_email, user_id } = await req.json();
-    const priceId = plan_id === "pro_yearly" ? PRICE_YEARLY : PRICE_WEEKLY;
+    const priceId = plan_id === "pro_yearly" ? PRICE_YEARLY : PRICE_MONTHLY;
     if (!priceId) {
       return json({ error: "Stripe price ID not configured for this plan." }, 503);
     }

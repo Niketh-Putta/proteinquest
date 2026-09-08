@@ -1,0 +1,52 @@
+/* Native app screens, without the store-poster backgrounds or baked-in copy. */
+.onboarding[hidden]{display:none}
+.onboarding{display:flex;align-items:center;justify-content:space-between;gap:48px;padding-block:72px}
+.onboarding-copy{max-width:580px}
+.onboarding h2{font-size:36px;letter-spacing:-1.4px;line-height:1.2;margin:14px 0 18px}
+.onboarding p{font-size:16px;line-height:1.8;color:#686868;margin:0 0 16px}
+.onboarding-note{font-size:13px;color:#858585}
+.onboarding-action{display:flex;flex-direction:column;align-items:center;gap:13px;flex-shrink:0}
+.onboarding-book{display:inline-flex;justify-content:center;align-items:center;padding:17px 23px;min-height:54px;background:#191919;color:#fff;border:0;border-radius:12px;font:600 14px/1.4 Manrope,sans-serif;transition:background .2s,transform .2s}
+.onboarding-book:hover{background:#353535;transform:translateY(-2px)}
+.onboarding-action>span{font-size:12px;color:#858585}
+@media(max-width:760px){.onboarding{flex-direction:column;align-items:flex-start;gap:28px;padding-block:54px}.onboarding h2{font-size:30px}.onboarding-action{align-items:flex-start}.onboarding p{font-size:15px}}
+body{font-family:Manrope,sans-serif}
+.hero{padding-top:64px;padding-bottom:94px;gap:70px}
+.hero h1{font-size:clamp(48px,5.1vw,68px);letter-spacing:-3px;line-height:1.08}
+.hero-copy>p{font-size:16px;max-width:440px;margin:26px 0 29px;line-height:1.8}
+.hero-product{height:590px}
+.device{background:#0c0b10;padding:14px 6px 10px;border:1px solid #777579;border-radius:36px;box-shadow:0 2px 0 1px #c2c0c1,0 22px 38px -22px #25201a55;overflow:hidden}
+.device img{display:block;width:100%;height:auto;border-radius:25px;box-shadow:none}
+.hero-phone.device{width:260px;border-radius:39px;margin:0}
+.hero-phone.device img{border-radius:28px}
+.glow{inset:12% 1%;background:radial-gradient(ellipse,#faf0e880,transparent 72%)}
+.showcase{background:#f8f8f7;color:#191919;padding:85px max(5%,calc((100vw - 1320px)/2)) 88px}
+.showcase .eyebrow{color:#a64c34}
+.showcase-head{max-width:650px;margin-bottom:60px}
+.showcase-head p{color:#686868;font-size:16px}
+.screen-rail{grid-template-columns:repeat(5,minmax(0,1fr));gap:28px;overflow:visible}
+.screen-rail .device{width:100%;border-radius:29px;padding:11px 5px 8px}
+.screen-rail .device img{border-radius:20px;box-shadow:none}
+.screen-rail figcaption{padding:25px 0 0;gap:6px}
+.screen-rail b{font-size:14px;font-weight:600;letter-spacing:-.2px}
+.screen-rail span{font-size:12px;color:#777;line-height:1.6}
+.steps p,.value p,.section-head p{font-size:16px}
+.store-button small,.store-button strong{font-family:Manrope,sans-serif}
+.store-button strong{font-size:19px}
+.available{font-size:12px}
+@media(max-width:1050px){
+  .screen-rail{grid-template-columns:repeat(5,210px);overflow-x:auto;scroll-snap-type:x mandatory;padding:3px 3px 32px;gap:30px}
+  .screen-rail figure{scroll-snap-align:center}
+}
+@media(max-width:700px){
+  .hero{padding:38px 7% 55px;gap:40px}
+  .hero-copy>p{font-size:15px;margin:24px auto}
+  .hero h1{font-size:clamp(44px,10vw,63px);letter-spacing:-2px}
+  .hero-product{height:555px}
+  .hero-phone.device{width:240px}
+  .showcase{padding:60px 0 50px}
+  .showcase-head{padding:0 7%;margin-bottom:38px}
+  .screen-rail{grid-template-columns:repeat(5,218px);padding:3px 7% 28px;gap:25px}
+  .store-button strong{font-size:17px}
+  .steps p,.value p,.section-head p,.showcase-head p{font-size:15px}
+}

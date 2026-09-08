@@ -42,11 +42,11 @@ async function resizeScreenshot(srcRel, destRel, maxWidth) {
 }
 
 const STORE_SCREENSHOTS = [
-  { src: 'store/screenshots/iphone67/01.png', dest: 'screenshots/ios-01.png' },
-  { src: 'store/screenshots/iphone67/02.png', dest: 'screenshots/ios-02.png' },
-  { src: 'store/screenshots/iphone67/03.png', dest: 'screenshots/ios-03.png' },
-  { src: 'store/screenshots/iphone67/04.png', dest: 'screenshots/ios-04.png' },
-  { src: 'store/screenshots/iphone67/05.png', dest: 'screenshots/ios-05.png' },
+  { src: 'marketing/source/screenshots/ios-01.png', dest: 'screenshots/ios-01.png' },
+  { src: 'marketing/source/screenshots/ios-02.png', dest: 'screenshots/ios-02.png' },
+  { src: 'marketing/source/screenshots/ios-03.png', dest: 'screenshots/ios-03.png' },
+  { src: 'marketing/source/screenshots/ios-04.png', dest: 'screenshots/ios-04.png' },
+  { src: 'marketing/source/screenshots/ios-05.png', dest: 'screenshots/ios-05.png' },
 ];
 
 function download(url, dest) {
@@ -69,13 +69,30 @@ async function main() {
 
   download(PLAY_BADGE_URL, path.join(badgesDir, 'google-play.png'));
   download(APP_STORE_BADGE_URL, path.join(badgesDir, 'app-store.svg'));
+  download(
+    'https://cdn.jsdelivr.net/npm/simple-icons@16/icons/apple.svg',
+    path.join(badgesDir, 'apple-mark.svg'),
+  );
+  download(
+    'https://cdn.jsdelivr.net/npm/simple-icons@16/icons/googleplay.svg',
+    path.join(badgesDir, 'google-play-mark.svg'),
+  );
 
   for (const shot of STORE_SCREENSHOTS) {
     await resizeScreenshot(shot.src, shot.dest, 540);
   }
+  for (const name of ['today', 'scan', 'trends', 'dragons', 'league']) {
+    copyFile(
+      'marketing/source/screenshots/phone-' + name + '.png',
+      'screenshots/phone-' + name + '.png',
+    );
+  }
 
   const fontsDir = path.join(outDir, 'fonts');
   ensureDir(fontsDir);
+  for (const weight of [400, 600, 700]) {
+    copyFile('marketing/source/fonts/manrope-' + weight + '.ttf', 'fonts/manrope-' + weight + '.ttf');
+  }
   download(
     'https://fonts.gstatic.com/s/sora/v17/xMQ9uFFYT72X5wkB_18qmnndmSdSnh2BAfO5mnuyOo1lfiQAVaW2gaU.woff2',
     path.join(fontsDir, 'sora-latin.woff2'),

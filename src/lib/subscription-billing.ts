@@ -58,8 +58,8 @@ function productIdToPlanLabel(productId: string): string {
   if (productId === REVENUECAT_PRODUCT_IDS.yearly || /year|annual/i.test(productId)) {
     return 'Yearly';
   }
-  if (productId === REVENUECAT_PRODUCT_IDS.weekly || /week/i.test(productId)) {
-    return 'Weekly';
+  if (productId === REVENUECAT_PRODUCT_IDS.monthly || /month/i.test(productId)) {
+    return 'Monthly';
   }
   return 'Pro';
 }

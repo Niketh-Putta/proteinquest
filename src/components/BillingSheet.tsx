@@ -219,8 +219,8 @@ export function BillingSheet({ visible, isPro, onClose, onRestored }: Props) {
                 title="View Pro plans"
                 subtitle={
                   IS_WEB
-                    ? 'See weekly and yearly Pro plans, then get the app to subscribe'
-                    : 'Open the paywall for weekly and yearly Pro'
+                    ? 'See monthly and annual Pro plans, then get the app to subscribe'
+                    : 'Open the paywall for monthly and annual Pro'
                 }
                 onPress={openPaywallPlans}
               />
