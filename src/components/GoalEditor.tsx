@@ -69,7 +69,7 @@ export function GoalEditor({
   const { isNarrow } = useLayout();
   const details = getRetention(profile).onboarding ?? {};
   const [height, setHeight] = useState(String(details.height ?? ''));
-  const [target, setTarget] = useState(String(details.target ?? profile?.weight_kg ?? ''));
+  const [target, setTarget] = useState('');
   const [pace, setPace] = useState(String(details.pace ?? 0.5));
   const [diet, setDiet] = useState(String(details.diet ?? 'Balanced'));
   const [birthday, setBirthday] = useState(String(details.birthday ?? ''));
@@ -78,7 +78,7 @@ export function GoalEditor({
   const [unit, setUnit] = useState<'kg' | 'lbs'>(initialUnit);
   const [weight, setWeight] = useState(() => {
     if (!profile?.weight_kg) return '';
-    const v = initialUnit === 'kg' ? profile.weight_kg : profile.weight_kg / 0.45359237;
+    const v = initialUnit === 'kg' ? profile.weight_kg : profile.weight_kg / KG_PER_LB;
     return String(Math.round(v * 10) / 10);
   });
   const [sex, setSex] = useState<Sex | null>(profile?.sex ?? null);
@@ -102,6 +102,31 @@ export function GoalEditor({
   const ageNum = parseInt(age, 10);
   const weightNum = parseFloat(weight);
   const weightKg = Number.isFinite(weightNum) ? kgFromInput(weightNum, unit) : NaN;
+  const ageValid = Number.isFinite(ageNum) && ageNum >= AGE_MIN && ageNum <= AGE_MAX;
+  const weightValid =
+    Number.isFinite(weightKg) && weightKg >= WEIGHT_KG_MIN && weightKg <= WEIGHT_KG_MAX;
+
+  // Seed target in the active unit once weight is known.
+  useEffect(() => {
+    if (target !== '') return;
+    const raw = Number(details.target ?? profile?.weight_kg);
+    if (!Number.isFinite(raw)) return;
+    const display = unit === 'kg' ? raw : raw / KG_PER_LB;
+    setTarget(String(Math.round(display * 10) / 10));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-time seed from profile
+  }, []);
+
+  // Keep age in sync with birthday when editing extended details.
+  useEffect(() => {
+    if (!extended || !/^\d{4}-\d{2}-\d{2}$/.test(birthday)) return;
+    const [y, m, d] = birthday.split('-').map(Number);
+    const now = new Date();
+    const nextAge =
+      now.getFullYear() -
+      y -
+      (now.getMonth() + 1 < m || (now.getMonth() + 1 === m && now.getDate() < d) ? 1 : 0);
+    if (Number.isFinite(nextAge) && nextAge > 0) setAge(String(nextAge));
+  }, [birthday, extended]);
 
   const changeUnit = (next: 'kg' | 'lbs') => {
     if (next === unit) return;
@@ -110,44 +135,76 @@ export function GoalEditor({
         String(Math.round((next === 'kg' ? weightKg : weightKg / KG_PER_LB) * 10) / 10),
       );
     }
+    const targetNum = parseFloat(target);
+    if (Number.isFinite(targetNum)) {
+      const targetKg = unit === 'kg' ? targetNum : targetNum * KG_PER_LB;
+      setTarget(
+        String(Math.round((next === 'kg' ? targetKg : targetKg / KG_PER_LB) * 10) / 10),
+      );
+    }
     setUnit(next);
   };
 
   useEffect(() => {
     setProteinDirty(false);
     setCalorieDirty(false);
-  }, [age, weight, sex, activity, goalType, height, target, pace]);
+  }, [age, weight, sex, activity, goalType, height, target, pace, unit]);
 
+  const targetNum = parseFloat(target);
+  const targetKg = Number.isFinite(targetNum)
+    ? kgFromInput(targetNum, unit)
+    : NaN;
+
+  /** Same Mifflin–St Jeor + paced adjustment used by onboarding. */
   let personalized: ReturnType<typeof nutritionEstimate> | null = null;
   let detailsError: string | null = null;
-  if (extended) {
-    try {
-      personalized = nutritionEstimate({
-        age: ageNum,
-        heightCm: Number(height),
-        weightKg,
-        targetKg: goalType === 'maintain' ? weightKg : Number(target),
-        sex: sex ?? '',
-        activity: activity ?? '',
-        goal: goalType ?? '',
-        pace: Number(pace),
-      });
-      if (
-        (goalType === 'lose_fat' && Number(target) > weightKg) ||
-        (goalType === 'build_muscle' && Number(target) < weightKg)
-      ) {
-        detailsError = 'Choose a target weight that matches your goal.';
+  const heightCm = Number(height);
+  const paceNum = Number(pace);
+  const canUseEstimate =
+    ageValid &&
+    Number.isFinite(weightKg) &&
+    Number.isFinite(heightCm) &&
+    heightCm >= 100 &&
+    (goalType === 'maintain' || Number.isFinite(targetKg)) &&
+    !!activity &&
+    !!goalType &&
+    Number.isFinite(paceNum);
+
+  if (extended || canUseEstimate) {
+    if (canUseEstimate) {
+      try {
+        personalized = nutritionEstimate({
+          age: ageNum,
+          heightCm,
+          weightKg,
+          targetKg: goalType === 'maintain' ? weightKg : targetKg,
+          sex: sex ?? '',
+          activity,
+          goal: goalType!,
+          pace: Math.min(1, Math.max(0, paceNum || 0.5)),
+        });
+        if (
+          goalType === 'lose_fat' &&
+          Number.isFinite(targetKg) &&
+          targetKg > weightKg
+        ) {
+          detailsError = 'Choose a target weight that matches your goal.';
+        } else if (
+          goalType === 'build_muscle' &&
+          Number.isFinite(targetKg) &&
+          targetKg < weightKg
+        ) {
+          detailsError = 'Choose a target weight that matches your goal.';
+        }
+      } catch (e) {
+        detailsError = e instanceof Error ? e.message : 'Check your details.';
       }
-    } catch (e) {
-      detailsError = e instanceof Error ? e.message : 'Check your details.';
+    } else if (extended) {
+      detailsError = 'Enter age, height, weight, training and goal for accurate targets.';
     }
   }
 
   // Mirror the profiles table check constraints so invalid values never reach the DB.
-  const ageValid = Number.isFinite(ageNum) && ageNum >= AGE_MIN && ageNum <= AGE_MAX;
-  const weightValid =
-    Number.isFinite(weightKg) && weightKg >= WEIGHT_KG_MIN && weightKg <= WEIGHT_KG_MAX;
-
   const ageError =
     age !== '' && Number.isFinite(ageNum) && !ageValid
       ? `Enter an age between ${AGE_MIN} and ${AGE_MAX}.`
@@ -180,8 +237,12 @@ export function GoalEditor({
     });
   }, [weightValid, weightKg, sex, activity, goalType]);
 
-  const suggestedCalories = personalized?.calories ?? calorieCalc?.kcal ?? null;
-  const suggestedProtein = personalized?.protein ?? calc?.grams ?? null;
+  // Prefer onboarding-accurate estimate whenever height is present.
+  const suggestedCalories = personalized?.calories ?? (extended ? null : calorieCalc?.kcal ?? null);
+  const suggestedProtein = personalized?.protein ?? (extended ? null : calc?.grams ?? null);
+  const reasoningLines =
+    personalized?.reasoning ??
+    [...(calc?.reasoning ?? []), ...(calorieCalc?.reasoning ?? [])];
 
   useEffect(() => {
     if (suggestedProtein == null || proteinDirty) return;
@@ -202,10 +263,17 @@ export function GoalEditor({
     calorieNum >= CALORIE_AIM_MIN &&
     calorieNum <= CALORIE_AIM_MAX;
   const canSubmit =
-    !!calc && ageValid && weightValid && proteinValid && calorieValid && !detailsError;
+    ageValid &&
+    weightValid &&
+    !!activity &&
+    !!goalType &&
+    proteinValid &&
+    calorieValid &&
+    !detailsError &&
+    (!extended || !!personalized);
 
   function handleSubmit() {
-    if (!canSubmit || !calc) return;
+    if (!canSubmit) return;
     const retention = {
       ...getRetention(profile),
       calorie_goal_kcal: calorieNum,
@@ -215,10 +283,13 @@ export function GoalEditor({
               ...details,
               age: ageNum,
               birthday: birthday || details.birthday || '',
-              height: height === '' ? '' : Number(height),
+              height: height === '' ? details.height : heightCm,
               weight: Math.round(weightKg * 10) / 10,
-              target: goalType === 'maintain' ? weightKg : Number(target),
-              pace: Number(pace),
+              target:
+                goalType === 'maintain'
+                  ? Math.round(weightKg * 10) / 10
+                  : Math.round(targetKg * 10) / 10,
+              pace: Math.min(1, Math.max(0, paceNum || 0.5)),
               diet,
               sex: sex === 'male' ? 'Male' : sex === 'female' ? 'Female' : 'Other',
               goal:
@@ -255,12 +326,11 @@ export function GoalEditor({
   const proteinHint =
     proteinValid && weightValid
       ? `${(proteinNum / weightKg).toFixed(1)} g per kg bodyweight`
-      : calc
-        ? `${calc.gPerKg} g per kg suggested`
+      : suggestedProtein != null && weightValid
+        ? `${(suggestedProtein / weightKg).toFixed(1)} g per kg suggested`
         : 'g per kg bodyweight';
 
   const showProteinReset =
-    !!calc &&
     proteinDirty &&
     proteinValid &&
     suggestedProtein != null &&
@@ -352,11 +422,11 @@ export function GoalEditor({
             placeholder="170"
             keyboardType="decimal-pad"
           />
-          <FieldLabel>Target weight (kg)</FieldLabel>
+          <FieldLabel>Target weight ({unit})</FieldLabel>
           <NumberField
             value={target}
             onChange={setTarget}
-            placeholder="70"
+            placeholder={unit === 'kg' ? '70' : '154'}
             keyboardType="decimal-pad"
           />
           <FieldLabel>Weekly pace (kg)</FieldLabel>
@@ -415,7 +485,7 @@ export function GoalEditor({
         }))}
       />
 
-      {(calc || personalized) && (calorieCalc || personalized) ? (
+      {(suggestedProtein != null || suggestedCalories != null) && !detailsError ? (
         <Animated.View entering={FadeInDown.duration(360)} style={styles.goalBlock}>
           <Text style={styles.goalLabel}>YOUR DAILY TARGET</Text>
           <View style={styles.goalRow}>
@@ -506,14 +576,8 @@ export function GoalEditor({
           <View style={styles.rule} />
           <Text style={styles.breakdownLabel}>HOW WE GOT HERE</Text>
           <View style={styles.reasoning}>
-            {(calc?.reasoning ?? []).map((line, i) => (
-              <View key={`p-${i}`} style={styles.reasonRow}>
-                <Text style={styles.reasonDash}>-</Text>
-                <Text style={styles.reasonText}>{line}</Text>
-              </View>
-            ))}
-            {(calorieCalc?.reasoning ?? []).map((line, i) => (
-              <View key={`c-${i}`} style={styles.reasonRow}>
+            {reasoningLines.map((line, i) => (
+              <View key={`r-${i}`} style={styles.reasonRow}>
                 <Text style={styles.reasonDash}>-</Text>
                 <Text style={styles.reasonText}>{line}</Text>
               </View>

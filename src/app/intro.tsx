@@ -1,5 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import { LinearGradient } from 'expo-linear-gradient';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Modal,
@@ -8,11 +10,13 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BirthdayWheels, HeightWheels } from '@/components/onboarding/BirthdayWheels';
+import { ConsistencyBars } from '@/components/onboarding/ConsistencyBars';
 import { PrimaryButton, TextButton, UnitToggle } from '@/components/onboarding/Controls';
 import { EmailAuthModal } from '@/components/onboarding/EmailAuthModal';
 import { IntroPhone } from '@/components/onboarding/IntroPhone';
@@ -54,6 +58,7 @@ import { setMealRemindersEnabled } from '@/lib/meal-reminders';
 import { useSession } from '@/lib/session';
 import { supabase } from '@/lib/supabase';
 import { trackEvent } from '@/lib/analytics';
+import { colors } from '@/theme';
 
 type ModalKind =
   | ''
@@ -392,9 +397,10 @@ export default function Intro() {
       case 0:
         body = (
           <>
-            <View style={styles.brandRow}>
-              <Text style={styles.brand}>ProteinQuest</Text>
-              <Text style={styles.brandLang}>EN</Text>
+            <View style={styles.welcomeBrand} accessibilityLabel="ProteinQuest">
+              <Text style={styles.brand}>
+                Protein<Text style={styles.brandQuest}>Quest</Text>
+              </Text>
             </View>
             <IntroPhone />
             <Text style={styles.welcomeTitle}>
@@ -557,26 +563,7 @@ export default function Intro() {
               'A simpler way to stay on track',
               'Log meals in seconds, follow your plan, and see your progress add up.',
             )}
-            <View style={[styles.softCard, styles.consistency]}>
-              <View style={styles.barPair}>
-                <View style={styles.barCol}>
-                  <Text style={styles.barLabel}>Without{'\n'}ProteinQuest</Text>
-                  <View style={[styles.bar, styles.barShort]}>
-                    <Ionicons name="people-outline" size={18} color="#fff" />
-                  </View>
-                </View>
-                <View style={styles.barCol}>
-                  <Text style={styles.barLabel}>With{'\n'}ProteinQuest</Text>
-                  <View style={[styles.bar, styles.barTall]}>
-                    <Ionicons name="heart" size={18} color="#fff" />
-                  </View>
-                </View>
-              </View>
-              <Text style={styles.checkLine}>
-                <Ionicons name="checkmark" size={14} color={ob.ink} /> Small daily actions lead to
-                progress
-              </Text>
-            </View>
+            <ConsistencyBars />
           </>
         );
         footer = <PrimaryButton label="Continue" onPress={next} />;
@@ -775,11 +762,11 @@ export default function Intro() {
       case 28: {
         const chart =
           a.goal === 'Lose weight' ? (
-            <TrendChart animate={false} />
+            <TrendChart animate />
           ) : a.goal === 'Maintain' ? (
             <MaintainChart />
           ) : (
-            <ProgressChart animate={false} />
+            <ProgressChart animate />
           );
         body = (
           <>
@@ -963,9 +950,13 @@ export default function Intro() {
   }
 
   const showNav = step > 0 && step !== 27 && step !== 30;
+  const { width: winW, height: winH } = useWindowDimensions();
+  const padX = winW < 360 ? 16 : 23;
+  const compact = winH < 700;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+      <StatusBar style="light" />
       {showNav ? (
         <View style={styles.nav}>
           <Pressable onPress={back} style={styles.backBtn} accessibilityLabel="Go back">
@@ -973,14 +964,22 @@ export default function Intro() {
           </Pressable>
           {step < 30 ? (
             <View style={styles.topProgress}>
-              <View style={[styles.topFill, { width: `${onboardingProgress(step)}%` }]} />
+              <LinearGradient
+                colors={[colors.accentDeep, colors.accentLight]}
+                start={{ x: 0, y: 0.5 }}
+                end={{ x: 1, y: 0.5 }}
+                style={[styles.topFill, { width: `${onboardingProgress(step)}%` }]}
+              />
             </View>
           ) : null}
         </View>
       ) : null}
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingHorizontal: padX, paddingTop: compact ? 6 : 12 },
+        ]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}>
         {body}
@@ -1065,21 +1064,23 @@ const styles = StyleSheet.create({
     width: 31,
     height: 31,
     borderRadius: 16,
-    backgroundColor: '#f8f7fa',
+    backgroundColor: ob.surface,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: ob.border,
   },
   topProgress: { flex: 1, height: 2, backgroundColor: ob.track, borderRadius: 1, overflow: 'hidden' },
-  topFill: { height: '100%', backgroundColor: '#201e25' },
+  topFill: { height: '100%', backgroundColor: ob.accent },
   scroll: { flex: 1 },
   scrollContent: { paddingHorizontal: 23, paddingTop: 12, paddingBottom: 18, flexGrow: 1 },
   footer: {
     paddingHorizontal: 16,
     paddingTop: 12,
     paddingBottom: 10,
-    backgroundColor: '#fdfdfd',
+    backgroundColor: ob.canvas,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#eee',
+    borderTopColor: ob.border,
     gap: 0,
   },
   heading: { marginBottom: 4 },
@@ -1092,7 +1093,21 @@ const styles = StyleSheet.create({
   },
   sub: { fontSize: 14, color: ob.muted, lineHeight: 18, marginTop: 11, letterSpacing: -0.2 },
   brandRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
-  brand: { fontSize: 15, fontWeight: '600', letterSpacing: -0.4, color: ob.ink },
+  welcomeBrand: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  brand: {
+    fontSize: 34,
+    fontWeight: '700',
+    letterSpacing: -1.3,
+    lineHeight: 40,
+    color: ob.ink,
+    textAlign: 'center',
+  },
+  brandQuest: { color: ob.accent },
   brandLang: { fontSize: 11, color: ob.muted },
   welcomeTitle: {
     textAlign: 'center',
@@ -1108,12 +1123,12 @@ const styles = StyleSheet.create({
   cardLead: { marginBottom: 20, fontSize: 16, color: ob.ink },
   caption: { textAlign: 'center', fontSize: 13, lineHeight: 18, color: ob.muted2, marginTop: 20 },
   weightControl: { alignItems: 'center', marginTop: 40 },
-  weightLabel: { fontSize: 14, color: '#939196', marginBottom: 8 },
+  weightLabel: { fontSize: 14, color: ob.muted, marginBottom: 8 },
   weightValue: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   weightUnit: { fontSize: 31, fontWeight: '600', color: ob.ink },
-  hint: { color: '#bab6bd', fontSize: 10, marginTop: 4 },
+  hint: { color: ob.muted2, fontSize: 10, marginTop: 4 },
   centerMsg: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 40 },
-  centerSub: { fontSize: 16, color: '#99969c', lineHeight: 22, marginTop: 14, textAlign: 'center' },
+  centerSub: { fontSize: 16, color: ob.muted, lineHeight: 22, marginTop: 14, textAlign: 'center' },
   em: { color: ob.accent, fontWeight: '600', fontStyle: 'normal' },
   pace: { marginTop: 28, alignItems: 'center' },
   paceLabel: { fontSize: 14, color: ob.ink },
@@ -1121,20 +1136,6 @@ const styles = StyleSheet.create({
   paceNote: { marginTop: 28, width: '100%' },
   paceReach: { fontSize: 15, color: ob.ink, marginBottom: 8 },
   paceHint: { fontSize: 13, color: ob.muted, lineHeight: 18 },
-  consistency: { marginTop: 20 },
-  barPair: { flexDirection: 'row', gap: 16, justifyContent: 'flex-end', minHeight: 160 },
-  barCol: { flex: 1, alignItems: 'center', justifyContent: 'flex-end' },
-  barLabel: { fontSize: 12, textAlign: 'center', color: ob.muted, marginBottom: 8 },
-  bar: {
-    width: '100%',
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: ob.ink,
-  },
-  barShort: { height: 70, opacity: 0.45 },
-  barTall: { height: 140 },
-  checkLine: { marginTop: 16, fontSize: 13, color: ob.ink },
   trust: { alignItems: 'center', paddingTop: 20, gap: 12 },
   ready: { paddingTop: 40 },
   pastelRing: {
@@ -1142,16 +1143,16 @@ const styles = StyleSheet.create({
     height: 160,
     borderRadius: 80,
     borderWidth: 18,
-    borderColor: '#efe8f2',
+    borderColor: ob.border,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#faf7fc',
+    backgroundColor: ob.raised,
     marginBottom: 8,
   },
   trustSub: { fontSize: 14, color: ob.muted, textAlign: 'center' },
   cardTitle: { fontSize: 15, fontWeight: '600', color: ob.ink, marginTop: 8 },
-  cardSmall: { fontSize: 12, color: '#8d8395', lineHeight: 18, marginTop: 6 },
-  allDone: { fontSize: 14, color: ob.ink, fontWeight: '600' },
+  cardSmall: { fontSize: 12, color: ob.muted, lineHeight: 18, marginTop: 6 },
+  allDone: { fontSize: 14, color: ob.accentSoft, fontWeight: '600' },
   rollSub: { fontSize: 14, color: ob.muted, marginTop: 8 },
   rollover: { flexDirection: 'row', gap: 10, marginTop: 24 },
   calCard: {
@@ -1161,13 +1162,13 @@ const styles = StyleSheet.create({
     padding: 14,
     gap: 6,
   },
-  calCardToday: { borderWidth: 1.5, borderColor: ob.ink },
+  calCardToday: { borderWidth: 1.5, borderColor: ob.accent },
   calDay: { fontSize: 12, color: ob.muted },
   calBig: { fontSize: 22, fontWeight: '700', color: ob.ink },
   calMax: { fontSize: 12, fontWeight: '400', color: ob.muted },
   blueChip: {
     alignSelf: 'flex-start',
-    backgroundColor: '#e8f0fe',
+    backgroundColor: 'rgba(155, 140, 255, 0.18)',
     color: ob.chip,
     fontSize: 11,
     paddingHorizontal: 8,
@@ -1178,42 +1179,44 @@ const styles = StyleSheet.create({
   calCircle: {
     marginTop: 8,
     borderRadius: 40,
-    backgroundColor: '#fff',
+    backgroundColor: ob.raised,
     padding: 12,
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: ob.border,
   },
   calLeft: { fontSize: 11, textAlign: 'center', color: ob.ink, fontWeight: '600' },
   notification: { flex: 1, justifyContent: 'center', paddingVertical: 40 },
   nativeNotif: {
     marginTop: 40,
-    backgroundColor: '#fff',
+    backgroundColor: ob.surface,
     borderRadius: 16,
     padding: 18,
     borderWidth: 1,
     borderColor: ob.border,
   },
   nativeTitle: { fontSize: 15, fontWeight: '600', color: ob.ink, textAlign: 'center' },
-  nativeActions: { flexDirection: 'row', marginTop: 18, borderTopWidth: 1, borderTopColor: '#eee' },
+  nativeActions: { flexDirection: 'row', marginTop: 18, borderTopWidth: 1, borderTopColor: ob.border },
   nativeBtn: { flex: 1, paddingVertical: 14, alignItems: 'center' },
-  nativeBtnText: { fontSize: 15, color: '#3b82f6' },
+  nativeBtnText: { fontSize: 15, color: ob.accentSoft },
   referral: { flexDirection: 'row', gap: 8, marginTop: 28 },
   referralInput: {
     flex: 1,
     borderWidth: 1,
-    borderColor: '#e4dfea',
+    borderColor: ob.border,
     borderRadius: 12,
     padding: 14,
     fontSize: 14,
     color: ob.ink,
-    backgroundColor: '#fff',
+    backgroundColor: ob.raised,
   },
   referralSubmit: {
-    backgroundColor: ob.ink,
+    backgroundColor: ob.accent,
     borderRadius: 12,
     paddingHorizontal: 16,
     justifyContent: 'center',
   },
-  referralSubmitText: { color: '#fff', fontWeight: '600' },
+  referralSubmitText: { color: ob.primaryText, fontWeight: '600' },
   inputMessage: { marginTop: 10, fontSize: 12, color: ob.muted },
   generating: { alignItems: 'center', paddingTop: 40, gap: 12 },
   genPct: { fontSize: 56, fontWeight: '700', color: ob.ink, letterSpacing: -2 },
@@ -1225,7 +1228,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     marginTop: 8,
   },
-  genFill: { height: '100%', backgroundColor: ob.ink },
+  genFill: { height: '100%', backgroundColor: ob.accent },
   genStatus: { fontSize: 14, color: ob.muted, marginTop: 8 },
   genList: { alignSelf: 'stretch', marginTop: 24, gap: 10 },
   genListLead: { fontSize: 13, color: ob.muted, marginBottom: 4 },
@@ -1235,11 +1238,13 @@ const styles = StyleSheet.create({
   macroGrid: { flexDirection: 'row', gap: 12, marginTop: 14 },
   macro: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: ob.raised,
     borderRadius: 14,
     padding: 16,
     alignItems: 'center',
     gap: 4,
+    borderWidth: 1,
+    borderColor: ob.border,
   },
   macroVal: { fontSize: 24, fontWeight: '700', color: ob.ink },
   macroLabel: { fontSize: 12, color: ob.muted },
@@ -1248,7 +1253,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#e8e6eb',
+    borderBottomColor: ob.border,
   },
   dt: { fontSize: 13, color: ob.muted },
   dd: { fontSize: 13, color: ob.ink, fontWeight: '600' },
@@ -1263,8 +1268,8 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingHorizontal: 16,
   },
-  appleBtn: { backgroundColor: '#000' },
-  outlineBtn: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#e4dfea' },
+  appleBtn: { backgroundColor: '#000', borderWidth: 1, borderColor: ob.border },
+  outlineBtn: { backgroundColor: ob.raised, borderWidth: 1, borderColor: ob.border },
   authBtnTextLight: { color: '#fff', fontSize: 15, fontWeight: '600' },
   authBtnText: { color: ob.ink, fontSize: 15, fontWeight: '600' },
   googleG: { fontSize: 18, fontWeight: '700', color: '#4285F4' },
@@ -1272,7 +1277,7 @@ const styles = StyleSheet.create({
   demoBypassText: { fontSize: 12, color: ob.muted },
   checkRow: { flexDirection: 'row', gap: 10, alignItems: 'flex-start', marginTop: 4 },
   checkText: { flex: 1, fontSize: 12, color: ob.muted, lineHeight: 17 },
-  link: { color: ob.ink, textDecorationLine: 'underline' },
+  link: { color: ob.accentSoft, textDecorationLine: 'underline' },
   error: { fontSize: 11, color: ob.danger, lineHeight: 16 },
   trialTitle: {
     textAlign: 'center',
@@ -1286,20 +1291,22 @@ const styles = StyleSheet.create({
   saveBox: { marginTop: 12, gap: 8 },
   saveStatus: { textAlign: 'center', fontSize: 13, color: ob.muted },
   demoNote: { textAlign: 'center', fontSize: 12, color: ob.muted, marginTop: 8 },
-  textBtn: { fontSize: 13, color: ob.ink },
-  bold: { fontWeight: '600' },
+  textBtn: { fontSize: 13, color: ob.muted },
+  bold: { fontWeight: '600', color: ob.ink },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: '#0006',
+    backgroundColor: 'rgba(0,0,0,0.72)',
     justifyContent: 'center',
     padding: 24,
   },
   modalCard: {
-    backgroundColor: '#fff',
+    backgroundColor: ob.surface,
     borderRadius: 23,
-    padding: 25,
+    padding: 24,
     gap: 12,
+    borderWidth: 1,
+    borderColor: ob.border,
   },
-  modalTitle: { fontSize: 21, fontWeight: '600', color: '#211b27' },
-  modalBody: { fontSize: 13, color: '#928996', lineHeight: 20 },
+  modalTitle: { fontSize: 21, fontWeight: '600', letterSpacing: -0.5, color: ob.ink },
+  modalBody: { fontSize: 13, color: ob.muted, lineHeight: 20 },
 });

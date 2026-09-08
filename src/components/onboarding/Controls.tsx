@@ -42,7 +42,7 @@ export function PrimaryButton({
       style={({ pressed }) => [
         styles.primary,
         disabled && styles.primaryDisabled,
-        pressed && !disabled && { opacity: 0.92 },
+        pressed && !disabled && { backgroundColor: ob.primaryPressed },
       ]}>
       <Text style={styles.primaryText}>{label}</Text>
     </Pressable>
@@ -61,7 +61,7 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignSelf: 'center',
-    backgroundColor: '#efeff0',
+    backgroundColor: ob.track,
     borderRadius: 20,
     padding: 2,
     width: 195,
@@ -74,7 +74,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  active: { backgroundColor: '#fff', shadowColor: '#ccc', shadowOpacity: 0.5, shadowRadius: 3 },
+  active: { backgroundColor: ob.surface },
   text: { fontSize: 12, color: ob.muted },
   textActive: { color: ob.ink, fontWeight: '600' },
   primary: {
@@ -87,7 +87,7 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   primaryDisabled: { backgroundColor: ob.primaryDisabled },
-  primaryText: { color: '#fff', fontSize: 14, fontWeight: '500' },
+  primaryText: { color: ob.primaryText, fontSize: 14, fontWeight: '600' },
   textBtn: { minHeight: 46, paddingVertical: 13, alignItems: 'center' },
-  textBtnLabel: { fontSize: 13, color: ob.ink },
+  textBtnLabel: { fontSize: 13, color: ob.muted },
 });

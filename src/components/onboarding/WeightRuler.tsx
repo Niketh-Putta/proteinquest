@@ -164,7 +164,7 @@ const styles = StyleSheet.create({
     top: 0,
     bottom: 0,
     width: 2,
-    backgroundColor: '#27232c',
+    backgroundColor: ob.accent,
     zIndex: 2,
   },
   track: {
@@ -175,7 +175,7 @@ const styles = StyleSheet.create({
   tick: {
     width: 1,
     marginLeft: TICK_WIDTH - 1,
-    backgroundColor: '#8c8b91',
+    backgroundColor: ob.muted2,
   },
   input: {
     width: 105,

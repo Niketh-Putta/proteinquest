@@ -32,7 +32,7 @@ export function OptionList({
               <Ionicons
                 name={selected ? 'radio-button-on' : 'ellipse-outline'}
                 size={18}
-                color={selected ? ob.ink : '#c5c2c8'}
+                color={selected ? ob.accent : ob.muted2}
               />
             </View>
             <View style={styles.copy}>
@@ -59,7 +59,7 @@ const styles = StyleSheet.create({
     minHeight: 61,
     borderWidth: 1,
     borderColor: ob.border,
-    backgroundColor: ob.white,
+    backgroundColor: ob.card,
     borderRadius: 12,
     paddingVertical: 14,
     paddingHorizontal: 17,
@@ -67,6 +67,7 @@ const styles = StyleSheet.create({
   selected: {
     borderWidth: 1.5,
     borderColor: ob.borderStrong,
+    backgroundColor: ob.raised,
     paddingVertical: 13.5,
     paddingHorizontal: 16.5,
   },
@@ -74,7 +75,7 @@ const styles = StyleSheet.create({
     width: 26,
     height: 27,
     borderRadius: 7,
-    backgroundColor: '#fbfafc',
+    backgroundColor: ob.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -85,16 +86,16 @@ const styles = StyleSheet.create({
     color: ob.inkSoft,
     fontWeight: '500',
   },
-  sub: { fontSize: 10, color: '#8c8a8d', marginTop: 3 },
+  sub: { fontSize: 10, color: ob.muted2, marginTop: 3 },
   radio: {
     width: 21,
     height: 21,
     borderRadius: 11,
     borderWidth: 1,
-    borderColor: '#e5e2e7',
+    borderColor: ob.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  radioOn: { backgroundColor: ob.ink, borderColor: ob.ink },
-  radioDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#fff' },
+  radioOn: { backgroundColor: ob.accent, borderColor: ob.accent },
+  radioDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: ob.primaryText },
 });

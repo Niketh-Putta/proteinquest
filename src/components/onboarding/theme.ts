@@ -1,21 +1,34 @@
-/** Light-theme tokens matching the onboarding prototype. */
+import { colors } from '@/theme';
+
+/**
+ * Onboarding tokens mapped to ProteinQuest dark "ember dusk".
+ * Same screen flow as the v21 prototype; colors match the live app.
+ */
 export const ob = {
-  canvas: '#f7f6fa',
-  ink: '#252229',
-  inkSoft: '#121113',
-  muted: '#929096',
-  muted2: '#838087',
-  card: '#f7f6fb',
-  white: '#ffffff',
-  border: '#efedf0',
-  borderStrong: '#1d1922',
-  primary: '#1d1922',
-  primaryDisabled: '#b9b7bd',
-  accent: '#c68d6a',
-  accentSoft: '#c88e69',
-  danger: '#c58350',
-  track: '#e9e8eb',
-  wheelHighlight: '#f2f1f4',
-  comparison: '#c97187',
-  chip: '#3b82f6',
+  canvas: colors.bg,
+  ink: colors.text,
+  inkSoft: colors.text,
+  muted: colors.textSecondary,
+  muted2: colors.textTertiary,
+  card: colors.surface,
+  raised: colors.bgRaised,
+  surface: colors.surface2,
+  white: colors.surface2,
+  border: colors.hairline,
+  borderStrong: colors.accent,
+  primary: colors.accent,
+  primaryPressed: colors.accentPressed,
+  primaryDisabled: colors.hairlineBright,
+  primaryText: colors.onAccent,
+  accent: colors.accent,
+  accentSoft: colors.accentLight,
+  accentSecondary: colors.accentSecondary,
+  danger: colors.danger,
+  track: colors.ringTrack,
+  wheelHighlight: colors.surfaceElevated,
+  comparison: colors.accentSecondary,
+  chip: colors.accentSecondary,
+  success: colors.success,
+  handsetBorder: colors.hairlineBright,
+  footerFade: colors.bg,
 } as const;

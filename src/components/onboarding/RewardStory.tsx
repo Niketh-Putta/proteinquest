@@ -1,11 +1,86 @@
 import { Ionicons } from '@expo/vector-icons';
-import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { AccessibilityInfo, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Defs, LinearGradient, Path, Stop, Text as SvgText } from 'react-native-svg';
+import Animated, {
+  Easing,
+  FadeInDown,
+  useAnimatedProps,
+  useSharedValue,
+  withDelay,
+  withTiming,
+} from 'react-native-reanimated';
 
 import { ob } from './theme';
 
+const AnimatedPath = Animated.createAnimatedComponent(Path);
+const LEN_UP = 310;
+const LEN_DOWN = 295;
+
+function useReduceMotion() {
+  const [reduced, setReduced] = useState(false);
+  useEffect(() => {
+    let mounted = true;
+    AccessibilityInfo.isReduceMotionEnabled().then((v) => {
+      if (mounted) setReduced(v);
+    });
+    const sub = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduced);
+    return () => {
+      mounted = false;
+      sub.remove();
+    };
+  }, []);
+  return reduced;
+}
+
+function DrawnStroke({
+  d,
+  length,
+  stroke,
+  delay,
+  duration,
+  reduced,
+}: {
+  d: string;
+  length: number;
+  stroke: string;
+  delay: number;
+  duration: number;
+  reduced: boolean;
+}) {
+  const progress = useSharedValue(reduced ? 1 : 0);
+  useEffect(() => {
+    if (reduced) {
+      progress.value = 1;
+      return;
+    }
+    progress.value = 0;
+    progress.value = withDelay(
+      delay,
+      withTiming(1, { duration, easing: Easing.bezier(0.35, 0, 0.2, 1) }),
+    );
+  }, [delay, duration, reduced, progress]);
+  const props = useAnimatedProps(() => ({
+    strokeDashoffset: length * (1 - progress.value),
+  }));
+  return (
+    <AnimatedPath
+      animatedProps={props}
+      d={d}
+      fill="none"
+      stroke={stroke}
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeDasharray={`${length} ${length}`}
+    />
+  );
+}
+
 export function RewardStory({ page }: { page: 1 | 2 }) {
+  const reduced = useReduceMotion();
+  const enter = (delay: number) =>
+    reduced ? undefined : FadeInDown.delay(delay).duration(420).springify().damping(18);
+
   return (
     <View style={styles.root}>
       <Text style={styles.eyebrow}>
@@ -43,7 +118,7 @@ export function RewardStory({ page }: { page: 1 | 2 }) {
 
       {page === 1 ? (
         <View style={styles.scene}>
-          <View style={styles.card}>
+          <Animated.View entering={enter(80)} style={styles.card}>
             <Ionicons name="camera-outline" size={22} color={ob.ink} />
             <View style={{ flex: 1 }}>
               <Text style={styles.cardTitle}>Meal logged</Text>
@@ -52,34 +127,34 @@ export function RewardStory({ page }: { page: 1 | 2 }) {
             <Text style={styles.protein}>
               +32<Text style={styles.proteinUnit}>g protein</Text>
             </Text>
-          </View>
+          </Animated.View>
           <View style={styles.connector} />
-          <View style={styles.centre}>
+          <Animated.View entering={enter(280)} style={styles.centre}>
             <View style={styles.complete}>
               <View style={styles.check}>
-                <Ionicons name="checkmark" size={28} color="#fff" />
+                <Ionicons name="checkmark" size={28} color={ob.primaryText} />
               </View>
               <Text style={styles.cardTitle}>Goal hit.</Text>
               <Text style={styles.cardSub}>You showed up.</Text>
             </View>
             <Text style={styles.pop}>WIN UNLOCKED</Text>
-          </View>
-          <View style={styles.card}>
+          </Animated.View>
+          <Animated.View entering={enter(480)} style={styles.card}>
             <Ionicons name="flame" size={22} color={ob.accent} />
             <View style={{ flex: 1 }}>
               <Text style={styles.cardTitle}>Your streak grows.</Text>
               <Text style={styles.cardSub}>So does your dragon.</Text>
             </View>
             <Ionicons name="arrow-up" size={22} color={ob.ink} />
-          </View>
+          </Animated.View>
           <View style={styles.days}>
             {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => (
-              <View key={`${d}-${i}`} style={styles.day}>
+              <Animated.View key={`${d}-${i}`} entering={enter(700 + i * 70)} style={styles.day}>
                 <View style={styles.dayCheck}>
-                  <Ionicons name="checkmark" size={12} color="#fff" />
+                  <Ionicons name="checkmark" size={12} color={ob.primaryText} />
                 </View>
                 <Text style={styles.dayLabel}>{d}</Text>
-              </View>
+              </Animated.View>
             ))}
           </View>
         </View>
@@ -93,34 +168,38 @@ export function RewardStory({ page }: { page: 1 | 2 }) {
             <Svg viewBox="0 0 320 240" width="100%" height={220}>
               <Defs>
                 <LinearGradient id="reward-area" x1="0" y1="0" x2="0" y2="1">
-                  <Stop stopColor="#db8753" stopOpacity="0.24" />
-                  <Stop offset="1" stopColor="#db8753" stopOpacity="0" />
+                  <Stop stopColor={ob.accent} stopOpacity="0.28" />
+                  <Stop offset="1" stopColor={ob.accent} stopOpacity="0" />
                 </LinearGradient>
               </Defs>
-              <Path d="M18 62H302M18 126H302M18 190H302" stroke="#e6dfe5" strokeDasharray="3 5" />
+              <Path d="M18 62H302M18 126H302M18 190H302" stroke={ob.border} strokeDasharray="3 5" />
               <Path
                 d="M18 142 C80 145 102 115 150 89 S238 37 302 30 V209H18Z"
                 fill="url(#reward-area)"
               />
-              <Path
+              <DrawnStroke
                 d="M18 142 C75 136 100 153 146 173 S244 207 302 207"
-                fill="none"
-                stroke="#aaa0ac"
-                strokeWidth="2"
+                length={LEN_DOWN}
+                stroke={ob.muted2}
+                delay={250}
+                duration={1900}
+                reduced={reduced}
               />
-              <Path
+              <DrawnStroke
                 d="M18 142 C80 145 102 115 150 89 S238 37 302 30"
-                fill="none"
-                stroke="#bf7246"
-                strokeWidth="2"
+                length={LEN_UP}
+                stroke={ob.accent}
+                delay={250}
+                duration={1900}
+                reduced={reduced}
               />
-              <Circle cx="18" cy="142" r="5" fill="white" stroke="#242026" strokeWidth="2" />
-              <Circle cx="302" cy="30" r="5" fill="white" stroke="#bf7246" strokeWidth="2.5" />
-              <Circle cx="302" cy="207" r="4" fill="white" stroke="#aaa0ac" strokeWidth="2" />
-              <SvgText x="120" y="17" fill="#bf7246" fontSize="11" fontWeight="600">
+              <Circle cx="18" cy="142" r="5" fill={ob.canvas} stroke={ob.ink} strokeWidth="2" />
+              <Circle cx="302" cy="30" r="5" fill={ob.canvas} stroke={ob.accent} strokeWidth="2.5" />
+              <Circle cx="302" cy="207" r="4" fill={ob.canvas} stroke={ob.muted2} strokeWidth="2" />
+              <SvgText x="120" y="17" fill={ob.accentSoft} fontSize="11" fontWeight="600">
                 Rewarding tracking
               </SvgText>
-              <SvgText x="100" y="227" fill="#9a929f" fontSize="11">
+              <SvgText x="100" y="227" fill={ob.muted} fontSize="11">
                 When tracking feels empty
               </SvgText>
             </Svg>
@@ -160,7 +239,7 @@ const styles = StyleSheet.create({
   eyebrow: {
     fontSize: 10,
     letterSpacing: 1.6,
-    color: '#9b9083',
+    color: ob.muted2,
     fontWeight: '600',
     marginBottom: 10,
   },
@@ -182,7 +261,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    backgroundColor: ob.white,
+    backgroundColor: ob.card,
     borderRadius: 14,
     padding: 14,
     borderWidth: 1,
@@ -192,20 +271,22 @@ const styles = StyleSheet.create({
   cardSub: { fontSize: 12, color: ob.muted, marginTop: 2 },
   protein: { fontSize: 18, fontWeight: '700', color: ob.accent },
   proteinUnit: { fontSize: 10, fontWeight: '500', color: ob.muted },
-  connector: { height: 16, width: 2, backgroundColor: '#e5e2e7', alignSelf: 'center' },
+  connector: { height: 16, width: 2, backgroundColor: ob.border, alignSelf: 'center' },
   centre: { alignItems: 'center', gap: 8 },
   complete: {
     alignItems: 'center',
-    backgroundColor: '#f7f6fb',
+    backgroundColor: ob.raised,
     borderRadius: 18,
     padding: 18,
     width: '100%',
+    borderWidth: 1,
+    borderColor: ob.border,
   },
   check: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: ob.ink,
+    backgroundColor: ob.accent,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 8,
@@ -214,7 +295,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     letterSpacing: 1.2,
     fontWeight: '700',
-    color: ob.accent,
+    color: ob.accentSoft,
   },
   days: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 },
   day: { alignItems: 'center', gap: 4 },
@@ -222,7 +303,7 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: ob.ink,
+    backgroundColor: ob.accent,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -239,9 +320,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 8,
   },
-  chartHeadText: { fontSize: 10, letterSpacing: 1.2, color: '#9b9083', fontWeight: '600' },
+  chartHeadText: { fontSize: 10, letterSpacing: 1.2, color: ob.muted2, fontWeight: '600' },
   axis: { flexDirection: 'row', justifyContent: 'space-between' },
-  axisText: { fontSize: 11, color: '#302c33' },
+  axisText: { fontSize: 11, color: ob.muted },
   caption: { fontSize: 11, color: ob.muted2, marginTop: 8, lineHeight: 15 },
   payoff: {
     marginTop: 14,
@@ -258,6 +339,6 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   dots: { flexDirection: 'row', justifyContent: 'center', gap: 6, marginTop: 14 },
-  dot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#dddadf' },
-  dotOn: { backgroundColor: ob.ink },
+  dot: { width: 7, height: 7, borderRadius: 4, backgroundColor: ob.border },
+  dotOn: { backgroundColor: ob.accent },
 });

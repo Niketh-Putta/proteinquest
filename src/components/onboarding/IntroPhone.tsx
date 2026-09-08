@@ -25,9 +25,10 @@ const DEMO_VIDEO = require('@/assets/video/onboarding-demo.mp4');
 type Phase = 'enter' | 'play' | 'exit' | 'wait';
 
 export function IntroPhone() {
-  const { width } = useWindowDimensions();
-  const handsetW = Math.min(200, Math.max(140, width * 0.42));
+  const { width, height } = useWindowDimensions();
+  const handsetW = Math.min(200, Math.max(128, width * (width < 360 ? 0.38 : 0.42)));
   const handsetH = handsetW * (1920 / 888);
+  const stageMin = Math.min(Math.max(220, height * 0.34), handsetH + 48);
 
   const [phase, setPhase] = useState<Phase>('enter');
   const [blocked, setBlocked] = useState(false);
@@ -164,7 +165,9 @@ export function IntroPhone() {
   }));
 
   return (
-    <View style={styles.stage} accessibilityLabel="ProteinQuest app demonstration">
+    <View
+      style={[styles.stage, { minHeight: stageMin }]}
+      accessibilityLabel="ProteinQuest app demonstration">
       <Animated.View
         style={[
           styles.handset,
@@ -179,6 +182,7 @@ export function IntroPhone() {
               style={styles.video}
               contentFit="contain"
               nativeControls={false}
+              playsInline
             />
           ) : null}
         </View>
@@ -207,7 +211,6 @@ export function IntroPhone() {
 const styles = StyleSheet.create({
   stage: {
     flexGrow: 1,
-    minHeight: 280,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
@@ -219,7 +222,7 @@ const styles = StyleSheet.create({
     borderRadius: 26,
     backgroundColor: '#121214',
     borderWidth: 3,
-    borderColor: '#d8d8db',
+    borderColor: ob.handsetBorder,
   },
   reduced: { opacity: 1, transform: [] },
   island: {
@@ -240,13 +243,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#111',
   },
   video: { width: '100%', height: '100%' },
-  control: { color: '#77737d', fontSize: 11, textAlign: 'center', marginTop: 8 },
+  control: { color: ob.muted, fontSize: 11, textAlign: 'center', marginTop: 8 },
   controlBtn: {
     position: 'absolute',
     bottom: 4,
-    backgroundColor: ob.white,
+    backgroundColor: ob.surface,
     borderRadius: 20,
     paddingHorizontal: 10,
     paddingVertical: 5,
+    borderWidth: 1,
+    borderColor: ob.border,
   },
 });

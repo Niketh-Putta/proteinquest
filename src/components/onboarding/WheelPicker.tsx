@@ -85,6 +85,6 @@ const styles = StyleSheet.create({
   content: { paddingHorizontal: 4 },
   spacer: { height: 88 },
   row: { height: ROW, alignItems: 'center', justifyContent: 'center' },
-  text: { fontSize: 18, color: '#b5b3b8' },
+  text: { fontSize: 18, color: ob.muted2 },
   active: { color: ob.ink, fontWeight: '600' },
 });

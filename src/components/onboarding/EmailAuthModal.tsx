@@ -92,7 +92,7 @@ export function EmailAuthModal({
             onChangeText={setEmail}
             style={styles.input}
             placeholder="you@email.com"
-            placeholderTextColor="#b0abb6"
+            placeholderTextColor={ob.muted2}
           />
           {mode !== 'reset' ? (
             <>
@@ -104,7 +104,7 @@ export function EmailAuthModal({
                 onChangeText={setPassword}
                 style={styles.input}
                 placeholder="••••••••"
-                placeholderTextColor="#b0abb6"
+                placeholderTextColor={ob.muted2}
               />
             </>
           ) : null}
@@ -155,7 +155,7 @@ export function EmailAuthModal({
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: '#0006',
+    backgroundColor: 'rgba(0,0,0,0.72)',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 24,
@@ -163,22 +163,25 @@ const styles = StyleSheet.create({
   card: {
     width: '100%',
     maxWidth: 365,
-    backgroundColor: '#fff',
+    backgroundColor: ob.surface,
     borderRadius: 23,
     padding: 25,
     gap: 8,
+    borderWidth: 1,
+    borderColor: ob.border,
   },
-  title: { fontSize: 21, fontWeight: '600', letterSpacing: -0.5, color: '#211b27' },
-  sub: { fontSize: 13, color: '#928996', lineHeight: 20, marginBottom: 8 },
+  title: { fontSize: 21, fontWeight: '600', letterSpacing: -0.5, color: ob.ink },
+  sub: { fontSize: 13, color: ob.muted, lineHeight: 20, marginBottom: 8 },
   label: { fontSize: 12, color: ob.ink, marginTop: 6 },
   input: {
     borderWidth: 1,
-    borderColor: '#e4dfea',
+    borderColor: ob.border,
     borderRadius: 10,
     padding: 13,
     fontSize: 14,
     color: ob.ink,
     marginBottom: 4,
+    backgroundColor: ob.raised,
   },
   message: { fontSize: 12, color: ob.muted, marginTop: 6 },
   error: { fontSize: 11, color: ob.danger, marginTop: 6, lineHeight: 16 },
