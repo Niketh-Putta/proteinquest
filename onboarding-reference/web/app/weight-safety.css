@@ -1,0 +1,27 @@
+.weight-concern-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.weight-concern-note {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 0 10px;
+  padding: 12px 14px;
+  border-radius: 13px;
+  background: #f7f4ef;
+  color: #6d5746;
+  font-size: 12px;
+  font-weight: 550;
+}
+
+.weight-concern-note svg {
+  flex: 0 0 auto;
+  color: #a8754f;
+}
+
+.weight-concern-actions .text-button {
+  color: #716975;
+}
