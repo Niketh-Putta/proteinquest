@@ -1,1001 +1,1270 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Image } from 'expo-image';
-import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import { VideoView, useVideoPlayer } from 'expo-video';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Alert,
-  Keyboard,
-  KeyboardAvoidingView,
-  Platform,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
-  ViewStyle,
 } from 'react-native';
-import Animated, {
-  Easing,
-  FadeIn,
-  FadeInDown,
-  FadeOut,
-  interpolate,
-  runOnJS,
-  useAnimatedStyle,
-  useSharedValue,
-  withDelay,
-  withRepeat,
-  withSequence,
-  withSpring,
-  withTiming,
-} from 'react-native-reanimated';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { Button } from '@/components/Button';
-import { DragonPortrait } from '@/components/DragonPortrait';
+import { BirthdayWheels, HeightWheels } from '@/components/onboarding/BirthdayWheels';
+import { PrimaryButton, TextButton, UnitToggle } from '@/components/onboarding/Controls';
+import { EmailAuthModal } from '@/components/onboarding/EmailAuthModal';
+import { IntroPhone } from '@/components/onboarding/IntroPhone';
+import { OptionList } from '@/components/onboarding/OptionList';
+import { PaceSlider } from '@/components/onboarding/PaceSlider';
+import { RewardStory } from '@/components/onboarding/RewardStory';
 import {
-  DISPLAY_NAME_TAKEN,
-  isDisplayNameAvailable,
-  isDisplayNameTakenError,
-} from '@/lib/display-name';
-import { trackEvent } from '@/lib/analytics';
-import { DRAGONS, buildDragonNames, normalizeDragonName, warmDragonPreviewArt } from '@/lib/character';
-import { useLayout, usePinnedFooterGap, useStickyFooterClearance } from '@/lib/layout';
-import { useSpecialDeviceLayout } from '@/lib/special-device';
+  MaintainChart,
+  PotentialChart,
+  ProgressChart,
+  TrendChart,
+} from '@/components/onboarding/TrendChart';
+import { WeightInput, WeightRuler } from '@/components/onboarding/WeightRuler';
+import { ob } from '@/components/onboarding/theme';
+import { isRegisteredUser, signInWithSocial } from '@/lib/onboarding-auth';
+import {
+  buildProfileUpdatesFromAnswers,
+  clearOnboardingDraft,
+  guardDraftOwner,
+  loadOnboardingDraft,
+  markAnswersSaved,
+  saveOnboardingDraft,
+  wereAnswersSaved,
+} from '@/lib/onboarding-draft';
+import {
+  INITIAL_ONBOARDING_ANSWERS,
+  KG_TO_LB,
+  ONBOARDING_QUESTIONS,
+  dailyNutritionTargets,
+  isAdult,
+  nextStep,
+  onboardingProgress,
+  suggestedTarget,
+  targetWeightConcern,
+  weightBounds,
+  type OnboardingAnswers,
+} from '@/lib/onboarding-flow';
+import { setMealRemindersEnabled } from '@/lib/meal-reminders';
 import { useSession } from '@/lib/session';
-import { setPreferredName } from '@/lib/xp';
-import type { DragonId } from '@/lib/types';
-import { colors, displayLH, fonts, layout, noTextCaret, pressableWeb, spacing, textInputWeb } from '@/theme';
+import { supabase } from '@/lib/supabase';
+import { trackEvent } from '@/lib/analytics';
 
-/** Compressed intro hero (~145KB webp) — full fire-5.png is 2.8MB and stalls first paint. */
-const HERO_ART = require('@/assets/character/dragons/fire-5-intro.webp');
-const EMBERS_VIDEO = require('@/assets/video/embers.mp4');
-const IS_ANDROID = Platform.OS === 'android';
+type ModalKind =
+  | ''
+  | 'age'
+  | 'weight-concern'
+  | 'email'
+  | 'terms'
+  | 'privacy'
+  | 'saving';
 
-type Phase = 'hero' | 'name' | 'dragons' | 'benefits' | 'manifesto';
-
-const PHASES: Phase[] = ['hero', 'name', 'dragons', 'benefits', 'manifesto'];
-
-/** Cinematic opening title sequence: each word holds, then yields to the next. */
-const TITLE_WORDS = ['FUEL.', 'FEED.', 'EVOLVE.'];
-const WORD_HOLD_MS = 1250;
-
-const BENEFITS = [
-  'Build real muscle',
-  'Recover faster',
-  'Stay full longer',
-  'Hold strength for decades',
-];
-
-const MANIFESTO = [
-  { lead: 'Protein', rest: ' is your XP.' },
-  { lead: 'Streaks', rest: ' are your skills.' },
-  { lead: 'Your body', rest: ' is your character.' },
-];
-
-/** Slow Ken Burns drift — iOS/web only. Android stays static for instant decode. */
-function KenBurnsHero() {
-  const t = useSharedValue(0);
-  useEffect(() => {
-    if (IS_ANDROID) return;
-    t.value = withRepeat(
-      withSequence(
-        withTiming(1, { duration: 18000, easing: Easing.inOut(Easing.quad) }),
-        withTiming(0, { duration: 18000, easing: Easing.inOut(Easing.quad) }),
-      ),
-      -1,
-    );
-  }, [t]);
-
-  const style = useAnimatedStyle(() =>
-    IS_ANDROID
-      ? { transform: [{ scale: 1.1 }] }
-      : {
-          transform: [
-            { scale: interpolate(t.value, [0, 1], [1.08, 1.22]) },
-            { translateX: interpolate(t.value, [0, 1], [0, -18]) },
-            { translateY: interpolate(t.value, [0, 1], [0, -10]) },
-          ],
-        },
-  );
-
-  return (
-    <Animated.View style={[StyleSheet.absoluteFill, style]}>
-      <Image
-        source={HERO_ART}
-        style={StyleSheet.absoluteFill}
-        contentFit="cover"
-        priority="high"
-        cachePolicy="memory-disk"
-        recyclingKey="intro-hero"
-      />
-    </Animated.View>
-  );
-}
-
-/** Looping ember video — deferred / skipped on Android (3MB decode freezes first frame). */
-function EmberOverlay() {
-  const [mountVideo, setMountVideo] = useState(false);
-
-  useEffect(() => {
-    if (IS_ANDROID) return;
-    const t = setTimeout(() => setMountVideo(true), 900);
-    return () => clearTimeout(t);
-  }, []);
-
-  if (!mountVideo) return null;
-  return <EmberOverlayPlayer />;
-}
-
-function EmberOverlayPlayer() {
-  const player = useVideoPlayer(EMBERS_VIDEO, (p) => {
-    p.loop = true;
-    p.muted = true;
-  });
-
-  // Hold the layer hidden until the video is actually playing. Before playback,
-  // the underlying <video> element renders at its intrinsic size in the top-left
-  // corner, which otherwise shows as a stray dark box over the hero.
+export default function Intro() {
+  const { session, profile, saveProfile } = useSession();
   const [ready, setReady] = useState(false);
+  const [step, setStep] = useState(0);
+  const [a, setA] = useState<OnboardingAnswers>({ ...INITIAL_ONBOARDING_ANSWERS });
+  const [history, setHistory] = useState<number[]>([]);
+  const [rewardPage, setRewardPage] = useState(0);
+  const [login, setLogin] = useState(false);
+  const [modal, setModal] = useState<ModalKind>('');
+  const [error, setError] = useState('');
+  const [progress, setProgress] = useState(0);
+  const [authBusy, setAuthBusy] = useState(false);
+  const [referral, setReferral] = useState('');
+  const [planSaved, setPlanSaved] = useState(false);
+  const [saveStatus, setSaveStatus] = useState('Saving your plan…');
+  const [saveFailed, setSaveFailed] = useState(false);
+  const [saveAttempt, setSaveAttempt] = useState(0);
 
-  // Kick playback after mount; a play() inside the setup callback can be
-  // dropped on web before the view attaches (muted, so autoplay is allowed).
-  // Retry briefly because the first play can race the view attaching.
+  const put = useCallback((key: string, value: string | number | boolean) => {
+    setA((old) => ({ ...old, [key]: value }));
+  }, []);
+
+  const number = (key: string) => Number(a[key]);
+  const units = String(a.weightUnit || 'kg');
+  const displayed = (key: string) =>
+    +(number(key) * (units === 'lbs' ? KG_TO_LB : 1)).toFixed(1);
+  const delta = +(Math.abs(number('target') - number('weight'))).toFixed(1);
+
+  const nutrition = useMemo(() => {
+    try {
+      return dailyNutritionTargets({
+        sex: String(a.sex),
+        birthday: String(a.birthday),
+        heightCm: number('height'),
+        weightKg: number('weight'),
+        goal: String(a.goal),
+        workouts: String(a.workouts),
+        paceKgPerWeek: number('pace'),
+        targetKg: number('target'),
+      });
+    } catch {
+      return null;
+    }
+  }, [a]);
+
+  const concern = targetWeightConcern(number('weight'), number('target'), number('height'));
+  const q = ONBOARDING_QUESTIONS[step];
+  const nutritionSub =
+    'This will be taken into account when calculating your daily nutrition goals.';
+
   useEffect(() => {
-    let tries = 0;
-    const timer = setInterval(() => {
-      tries += 1;
-      try {
-        if (player.playing) {
-          setReady(true);
-          clearInterval(timer);
-          return;
-        }
-        if (tries > 12) {
-          clearInterval(timer);
-          return;
-        }
-        player.play();
-      } catch {
-        clearInterval(timer);
+    let active = true;
+    (async () => {
+      const draft = await loadOnboardingDraft();
+      if (!active) return;
+      if (draft) {
+        setA({ ...INITIAL_ONBOARDING_ANSWERS, ...draft.answers });
+        const rawStep = draft.step;
+        const normalized =
+          rawStep === 27
+            ? 26
+            : [20, 21].includes(rawStep)
+              ? 22
+              : rawStep === 23
+                ? 24
+                : [31, 32, 33, 34].includes(rawStep)
+                  ? 30
+                  : rawStep;
+        setStep(normalized);
+        setHistory((draft.history || []).filter((n) => ![20, 21, 23, 31, 32, 33, 34].includes(n)));
+        setLogin(!!draft.login);
       }
-    }, 250);
-    return () => clearInterval(timer);
-  }, [player]);
-
-  return (
-    <View style={[StyleSheet.absoluteFill, styles.emberLayer, { opacity: ready ? 0.5 : 0 }]}>
-      <VideoView
-        player={player}
-        style={styles.emberVideo}
-        contentFit="cover"
-        nativeControls={false}
-      />
-    </View>
-  );
-}
-
-/**
- * One word of the opening title. Each word glides out before the next glides
- * in via a single shared-value crossfade, so the swap reads as a smooth
- * hand-off rather than a hard cut.
- *
- * Only transform + opacity are animated (both GPU-composited). We deliberately
- * do NOT animate `letterSpacing`: it is a text-layout property, so animating it
- * forces a full glyph relayout every frame, which is what made the sequence
- * look jittery. The animation is driven entirely by shared values — no
- * key-based remounts or `exiting` layout animations, which hang on Android
- * release builds with the React Compiler enabled.
- */
-function TitleWord({
-  word,
-  compact,
-  sizeStyle,
-}: {
-  word: string;
-  compact: boolean;
-  sizeStyle: { fontSize: number; lineHeight: number };
-}) {
-  const p = useSharedValue(0);
-  // The text actually rendered. It only swaps once the outgoing word has
-  // finished gliding away, so the two words never visibly overlap.
-  const [shown, setShown] = useState(word);
-
-  // Glide the freshly-shown word in.
-  useEffect(() => {
-    p.value = 0;
-    p.value = withTiming(1, { duration: 540, easing: Easing.out(Easing.cubic) });
-  }, [shown, p]);
-
-  // When the target word changes, glide the current one out, then swap.
-  useEffect(() => {
-    if (word === shown) return;
-    p.value = withTiming(1, { duration: 1 }); // ensure we start from a settled state
-    p.value = withTiming(0, { duration: 260, easing: Easing.in(Easing.cubic) }, (finished) => {
-      if (finished) runOnJS(setShown)(word);
-    });
-  }, [word, shown, p]);
-
-  const style = useAnimatedStyle(() => ({
-    opacity: p.value,
-    transform: [
-      { translateY: interpolate(p.value, [0, 1], [20, 0]) },
-      { scale: interpolate(p.value, [0, 1], [0.97, 1]) },
-    ],
-  }));
-
-  return (
-    <View style={styles.titleWordWrap}>
-      <Animated.Text
-        style={[styles.heroWord, compact && styles.heroWordCompact, sizeStyle, style]}
-        numberOfLines={1}
-        adjustsFontSizeToFit>
-        {shown}
-      </Animated.Text>
-    </View>
-  );
-}
-
-/**
- * Three-step progress dots beneath the opening title. Makes the sequence read
- * as "advancing" rather than "stuck on the first word" — the exact failure the
- * old Android build showed.
- */
-function TitleDots({ index, total }: { index: number; total: number }) {
-  return (
-    <View style={styles.titleDots} pointerEvents="none">
-      {Array.from({ length: total }).map((_, i) => (
-        <View
-          key={i}
-          style={[styles.titleDot, i <= index ? styles.titleDotOn : styles.titleDotOff]}
-        />
-      ))}
-    </View>
-  );
-}
-
-/** Brand wordmark that breathes its letter-spacing open. */
-function BrandReveal() {
-  const p = useSharedValue(0);
-  useEffect(() => {
-    p.value = withDelay(250, withTiming(1, { duration: 1400, easing: Easing.out(Easing.quad) }));
-  }, [p]);
-  const style = useAnimatedStyle(() => ({
-    opacity: interpolate(p.value, [0, 1], [0, 0.9]),
-    letterSpacing: interpolate(p.value, [0, 1], [2, 7]),
-  }));
-  return <Animated.Text style={[styles.brand, style]}>PROTEINQUEST</Animated.Text>;
-}
-
-/** Soft pulsing accent glow anchored low behind the CTA. */
-function PulseGlow() {
-  const p = useSharedValue(0);
-  useEffect(() => {
-    p.value = withRepeat(
-      withSequence(
-        withTiming(1, { duration: 2600, easing: Easing.inOut(Easing.quad) }),
-        withTiming(0, { duration: 2600, easing: Easing.inOut(Easing.quad) }),
-      ),
-      -1,
-    );
-  }, [p]);
-  const style = useAnimatedStyle(() => ({
-    opacity: interpolate(p.value, [0, 1], [0.16, 0.34]),
-    transform: [{ scale: interpolate(p.value, [0, 1], [0.94, 1.05]) }],
-  }));
-  return <Animated.View style={[styles.glow, style]} />;
-}
-
-/** Animated progress bar shared across the post-hero phases. */
-function PhaseProgress({ index, total }: { index: number; total: number }) {
-  const w = useSharedValue(0);
-  useEffect(() => {
-    w.value = withSpring(index / (total - 1), { damping: 18, stiffness: 120 });
-  }, [index, total, w]);
-  const style = useAnimatedStyle(() => ({ width: `${w.value * 100}%` }));
-  return (
-    <View style={styles.progressTrack}>
-      <Animated.View style={[styles.progressFill, style]} />
-    </View>
-  );
-}
-
-export default function IntroScreen() {
-  const { saveProfile, loading: sessionLoading, session } = useSession();
-  const { horizontalPad, formMaxWidth, height, width, isDesktop } = useLayout();
-  const special = useSpecialDeviceLayout();
-  const insets = useSafeAreaInsets();
-  const isCompact = height < 700 || width < 390;
-  const isTiny = height < 640 || width < 360;
-  const footerGap = usePinnedFooterGap(isCompact);
-  /** Pinned CTA (~52) + footer pad so name field never sits under Continue. */
-  const footerClearance = useStickyFooterClearance(isTiny || isCompact);
-  const phaseScrollRef = useRef<ScrollView>(null);
-
-  const [phase, setPhase] = useState<Phase>('hero');
-  const [wordIndex, setWordIndex] = useState(0);
-  const [titleDone, setTitleDone] = useState(false);
-  const [name, setName] = useState('');
-  const [dragonIndex, setDragonIndex] = useState(0);
-  const [dragonNames, setDragonNames] = useState<Partial<Record<DragonId, string>>>({});
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const phaseIndex = PHASES.indexOf(phase);
-  const namingDragon = DRAGONS[dragonIndex];
-  const dragonPortraitSizeBase = isTiny ? 88 : isCompact ? 112 : 160;
-  /** Keyboard height while typing a dragon name — shrink portrait so field + CTA stay on screen. */
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
-  // Fit portrait into remaining viewport (and under an open keyboard) so we never
-  // need scrollToEnd, which used to yeet the dragon off-screen intermittently.
-  const namingCopyBudget = isTiny ? 140 : isCompact ? 175 : 210;
-  const namingChrome =
-    48 + // top bar
-    56 + // CTA button row
-    footerGap +
-    namingCopyBudget +
-    Math.max(insets.top + insets.bottom, 0) * 0.2;
-  const keyboardReserve =
-    phase === 'dragons' && keyboardHeight > 0
-      ? Math.max(0, keyboardHeight - Math.max(insets.bottom, 0) - 8)
-      : 0;
-  const dragonFitMax = Math.max(
-    keyboardReserve > 0 ? 56 : 72,
-    Math.floor(height - namingChrome - 40 - keyboardReserve),
-  );
-  const dragonPortraitSize = Math.min(
-    Math.round(dragonPortraitSizeBase * special.specialScale),
-    dragonFitMax,
-  );
-
-  // Baby dragon PNGs are ~2MB each — warm all three as soon as intro mounts so
-  // the naming step never paints an empty frame.
-  useEffect(() => {
-    warmDragonPreviewArt();
+      setReady(true);
+    })();
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {
-    if (phase === 'name' || phase === 'dragons') warmDragonPreviewArt();
-  }, [phase]);
+    if (!ready) return;
+    void saveOnboardingDraft({ step, answers: a, history, login });
+  }, [a, step, history, ready, login]);
 
   useEffect(() => {
-    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const showSub = Keyboard.addListener(showEvt, (e) => {
-      setKeyboardHeight(e.endCoordinates?.height ?? 0);
-      // Keep content anchored at top; portrait shrinks to leave room for the field.
-      if (phase === 'dragons') {
-        requestAnimationFrame(() => {
-          phaseScrollRef.current?.scrollTo({ y: 0, animated: true });
-        });
-      }
-    });
-    const hideSub = Keyboard.addListener(hideEvt, () => {
-      setKeyboardHeight(0);
-      if (phase === 'dragons') {
-        requestAnimationFrame(() => {
-          phaseScrollRef.current?.scrollTo({ y: 0, animated: true });
-        });
-      }
-    });
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-    };
-  }, [phase]);
+    void guardDraftOwner(session?.user?.id);
+  }, [session?.user?.id]);
 
-  function scrollNameFieldIntoView() {
-    // User-name step only: nudge field above the pinned Continue CTA.
-    // Dragon steps: KeyboardAvoidingView + live portrait resize keep the field
-    // clear without scrollToEnd (that was the off-screen bug).
-    if (phase === 'dragons') {
-      requestAnimationFrame(() => {
-        phaseScrollRef.current?.scrollTo({ y: 0, animated: true });
-      });
+  useEffect(() => {
+    setError('');
+    if (step === 27) setProgress(0);
+  }, [step]);
+
+  useEffect(() => {
+    if (step !== 27) return;
+    const id = setInterval(() => setProgress((p) => Math.min(100, p + 4)), 140);
+    return () => clearInterval(id);
+  }, [step]);
+
+  useEffect(() => {
+    if (step === 27 && progress >= 100) {
+      setHistory((h) => [...h, 27]);
+      setStep(28);
+    }
+  }, [progress, step]);
+
+  const go = useCallback((n: number) => {
+    if (step === 28 && n === 29 && rewardPage === 0) {
+      setRewardPage(1);
       return;
     }
-    requestAnimationFrame(() => {
-      phaseScrollRef.current?.scrollToEnd({ animated: true });
-    });
-  }
+    setRewardPage(0);
+    setHistory((h) => [...h, step]);
+    const next =
+      n === 20 || n === 21 ? 22 : n === 23 ? 24 : [31, 32, 33, 34].includes(n) ? 30 : n;
+    setStep(next);
+    setModal('');
+  }, [step, rewardPage]);
 
-  useEffect(() => {
-    if (phase === 'name') {
-      const t = setTimeout(scrollNameFieldIntoView, 80);
-      return () => clearTimeout(t);
-    }
-    if (phase === 'dragons') {
-      setKeyboardHeight(0);
-      const t = setTimeout(() => {
-        phaseScrollRef.current?.scrollTo({ y: 0, animated: false });
-      }, 16);
-      return () => clearTimeout(t);
-    }
-  }, [phase, dragonIndex]);
-
-  // Opening title sequence: FUEL. FEED. EVOLVE. → settle on the brand statement.
-  useEffect(() => {
-    if (phase !== 'hero' || titleDone) return;
-    const timer = setTimeout(() => {
-      if (wordIndex < TITLE_WORDS.length - 1) setWordIndex((i) => i + 1);
-      else setTitleDone(true);
-    }, WORD_HOLD_MS);
-    return () => clearTimeout(timer);
-  }, [phase, wordIndex, titleDone]);
-
-  // Scale the title type with viewport width so it never clips on narrow phones.
-  const heroType = useMemo(() => {
-    const base = Math.round(
-      Math.max(44, Math.min(width * 0.165, isDesktop ? 108 : 88)),
-    );
-    return { fontSize: base, lineHeight: displayLH(base) };
-  }, [width, isDesktop]);
-
-  function next() {
-    setError(null);
-    setPhase(PHASES[Math.min(phaseIndex + 1, PHASES.length - 1)]);
-  }
-
-  function back() {
-    setError(null);
-    if (phase === 'dragons' && dragonIndex > 0) {
-      setDragonIndex((i) => i - 1);
+  const back = useCallback(() => {
+    if (step === 28 && rewardPage) {
+      setRewardPage((v) => v - 1);
       return;
     }
-    if (phaseIndex > 0) setPhase(PHASES[phaseIndex - 1]);
-  }
+    setRewardPage(0);
+    const prev = history.filter((n) => n !== 20).at(-1) ?? Math.max(0, step - 1);
+    setStep(prev);
+    setHistory((h) => h.slice(0, -1));
+    setModal('');
+  }, [step, rewardPage, history]);
 
-  function submitDragonName() {
-    setError(null);
-    const chosen =
-      normalizeDragonName(dragonNames[namingDragon.id] ?? '') || namingDragon.name;
-    setDragonNames((prev) => ({ ...prev, [namingDragon.id]: chosen }));
-    if (dragonIndex < DRAGONS.length - 1) {
-      setDragonIndex((i) => i + 1);
-    } else {
-      next();
+  const next = useCallback(() => {
+    if (step === 3 && !isAdult(String(a.birthday))) {
+      setModal('age');
+      return;
     }
-  }
+    if (step === 10) put('target', suggestedTarget(Number(a.weight), String(a.goal)));
+    if (
+      step === 11 &&
+      targetWeightConcern(number('weight'), number('target'), number('height')) &&
+      String(a.reviewedTarget) !== String(a.target)
+    ) {
+      setModal('weight-concern');
+      return;
+    }
+    go(nextStep(step, String(a.goal)));
+  }, [step, a, put, go]);
 
-  async function submitName() {
-    const chosen = name.trim();
-    if (chosen) {
-      try {
-        const available = await isDisplayNameAvailable(chosen);
-        if (!available) {
-          setError(DISPLAY_NAME_TAKEN);
-          Alert.alert('Username already exists', DISPLAY_NAME_TAKEN);
-          return;
-        }
-      } catch (e) {
-        setError(e instanceof Error ? e.message : 'Could not check that name.');
+  async function persistPlan() {
+    setSaveFailed(false);
+    setSaveStatus('Saving your plan…');
+    try {
+      // Prefer live auth user over possibly-stale React session after OAuth.
+      const { data: authData } = await supabase.auth.getUser();
+      const user = authData.user ?? session?.user;
+      if (!user || !isRegisteredUser(user)) {
+        throw new Error('Sign in again to save your plan.');
+      }
+      if (await wereAnswersSaved(user.id, a)) {
+        setSaveStatus('Plan saved to your account.');
+        setPlanSaved(true);
         return;
       }
-      await setPreferredName(chosen);
+      const updates = buildProfileUpdatesFromAnswers(a, profile);
+      await saveProfile(updates);
+      await markAnswersSaved(user.id, a);
+      await clearOnboardingDraft();
+      setSaveStatus('Plan saved to your account.');
+      setPlanSaved(true);
+      trackEvent('onboarding_complete', { goal: String(a.goal) });
+    } catch (e) {
+      setSaveFailed(true);
+      setSaveStatus(e instanceof Error ? e.message : 'Could not save. Your answers are still on this device.');
     }
-    setError(null);
-    next();
   }
 
-  async function finish() {
-    if (sessionLoading || !session) {
-      setError('Still connecting. Please wait a moment and try again.');
+  useEffect(() => {
+    if (step !== 30 || !a.auth || a.auth === 'Demo') return;
+    void persistPlan();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, saveAttempt, a.auth]);
+
+  function finishAuth(provider: string) {
+    put('auth', provider);
+    if (login && profile?.intro_completed && profile?.onboarded && profile?.active_dragon_id) {
+      void clearOnboardingDraft();
+      router.replace('/(tabs)/today');
       return;
     }
-    setSaving(true);
-    setError(null);
-    try {
-      const chosen = name.trim();
-      if (chosen) {
-        const available = await isDisplayNameAvailable(chosen);
-        if (!available) {
-          setError(DISPLAY_NAME_TAKEN);
-          Alert.alert('Username already exists', DISPLAY_NAME_TAKEN);
-          setSaving(false);
-          setPhase('name');
-          return;
-        }
-      }
-      const names = buildDragonNames(dragonNames);
-      await saveProfile({
-        intro_completed: true,
-        ...(chosen ? { display_name: chosen } : {}),
-        dragon_names: names,
-      });
-      trackEvent('dragon_named', { named: Object.keys(names).length });
+    if (login && profile?.intro_completed && profile?.onboarded) {
+      void clearOnboardingDraft();
       router.replace('/onboarding');
-    } catch (e: unknown) {
-      if (__DEV__ && e) console.error('[intro] saveProfile failed:', e);
-      if (isDisplayNameTakenError(e)) {
-        setError(DISPLAY_NAME_TAKEN);
-        Alert.alert('Username already exists', DISPLAY_NAME_TAKEN);
-        setPhase('name');
-      } else {
-        setError(e instanceof Error ? e.message : 'Could not save progress');
-      }
-      setSaving(false);
+      return;
+    }
+    go(30);
+  }
+
+  async function startAuth(provider: 'Apple' | 'Google' | 'Email') {
+    if (authBusy) return;
+    if (!login && !a.terms) {
+      setError('Please agree to the Terms and Conditions and Privacy Policy to continue.');
+      return;
+    }
+    setError('');
+    if (provider === 'Email') {
+      setModal('email');
+      return;
+    }
+    setAuthBusy(true);
+    try {
+      await signInWithSocial(provider === 'Apple' ? 'apple' : 'google');
+      finishAuth(provider);
+    } catch (authError) {
+      setError(authError instanceof Error ? authError.message : 'Sign-in could not start.');
+    } finally {
+      setAuthBusy(false);
     }
   }
 
-  // --- Phase: cinematic hero ---
-  if (phase === 'hero') {
-    return (
-      <View style={styles.root}>
-        <View style={[StyleSheet.absoluteFill, styles.noPointer]}>
-          <KenBurnsHero />
-          <EmberOverlay />
-          <LinearGradient
-            colors={['rgba(12,11,16,0.86)', 'rgba(12,11,16,0.28)', 'rgba(12,11,16,0.97)']}
-            locations={[0, 0.45, 1]}
-            style={StyleSheet.absoluteFill}
-          />
-          <PulseGlow />
-        </View>
-        <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-          <Pressable
-            style={[
-              styles.inner,
-              { paddingHorizontal: horizontalPad, maxWidth: formMaxWidth },
-            ]}
-            onPress={() => {
-              // Tap anywhere to skip straight to the settled title.
-              if (!titleDone) {
-                setWordIndex(TITLE_WORDS.length - 1);
-                setTitleDone(true);
-              }
-            }}>
-            <BrandReveal />
-
-            <View style={styles.heroCenter}>
-              {!titleDone ? (
-                <>
-                  <TitleWord
-                    word={TITLE_WORDS[wordIndex]}
-                    compact={isCompact}
-                    sizeStyle={heroType}
-                  />
-                  <TitleDots index={wordIndex} total={TITLE_WORDS.length} />
-                </>
-              ) : (
-                <View style={styles.heroSettled}>
-                  <Text
-                    style={[styles.heroWord, isCompact && styles.heroWordCompact, heroType]}
-                    numberOfLines={1}
-                    adjustsFontSizeToFit>
-                    EVOLVE.
-                  </Text>
-                  <Animated.Text
-                    entering={FadeInDown.delay(250).duration(600)}
-                    style={[styles.heroSub, isCompact && styles.heroSubCompact]}>
-                    Hit your protein. Feed your dragon.{'\n'}Level up for real.
-                  </Animated.Text>
-                </View>
-              )}
-            </View>
-
-            <Animated.View
-              entering={FadeInDown.delay(IS_ANDROID ? 120 : 400).duration(500)}
-              style={[styles.heroFooter, { paddingBottom: footerGap }]}>
-              <Button title="Get started" onPress={next} />
-              <Text style={styles.heroTagline}>ARE YOU READY TO LEVEL UP?</Text>
-            </Animated.View>
-          </Pressable>
-        </SafeAreaView>
-      </View>
-    );
+  async function onEmailSuccess() {
+    setModal('');
+    finishAuth('Email');
   }
 
-  // --- Phases: name / benefits / manifesto ---
-  return (
-    <View style={styles.root}>
-      <LinearGradient colors={[colors.bgRaised, colors.bg]} style={StyleSheet.absoluteFill} />
-      <View style={[StyleSheet.absoluteFill, styles.noPointer]}>
-        <PulseGlow />
-      </View>
-      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-        <KeyboardAvoidingView
-          style={styles.flex}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? Math.max(insets.top, 8) : 0}>
-          <View
-            style={[
-              styles.inner,
-              { paddingHorizontal: horizontalPad, maxWidth: formMaxWidth },
-            ]}>
-            <View style={styles.topBar}>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Back"
-                onPress={() => {
-                  Keyboard.dismiss();
-                  back();
-                }}
-                hitSlop={8}
-                style={[styles.backBtn, pressableWeb]}>
-                <Ionicons name="chevron-back" size={22} color={colors.textSecondary} />
-              </Pressable>
-              <PhaseProgress index={phaseIndex} total={PHASES.length} />
-              <View style={styles.backBtn} />
+  async function handleNotifications(allow: boolean) {
+    put('notifications', allow);
+    if (allow) {
+      void setMealRemindersEnabled(true, profile).catch(() => {});
+    } else {
+      void setMealRemindersEnabled(false, profile).catch(() => {});
+    }
+    go(25);
+  }
+
+  async function handleTryNow() {
+    if (!planSaved && a.auth && a.auth !== 'Demo') {
+      setError('Saving your plan first…');
+      setSaveAttempt((v) => v + 1);
+      return;
+    }
+    trackEvent('onboarding_complete');
+    const dragonId = profile?.active_dragon_id;
+    if (!dragonId) {
+      router.replace('/onboarding');
+      return;
+    }
+    router.replace('/(tabs)/today');
+  }
+
+  if (!ready) {
+    return <View style={[styles.safe, { justifyContent: 'center', alignItems: 'center' }]} />;
+  }
+
+  let body: React.ReactNode = null;
+  let footer: React.ReactNode = null;
+  const heading = (title: string, sub?: string) => (
+    <View style={styles.heading}>
+      <Text style={styles.h1}>{title}</Text>
+      {sub ? <Text style={styles.sub}>{sub}</Text> : null}
+    </View>
+  );
+
+  if (step === 28 && rewardPage > 0) {
+    body = <RewardStory page={rewardPage === 1 ? 1 : 2} />;
+    footer = (
+      <PrimaryButton
+        label={rewardPage === 1 ? 'Make it rewarding' : 'Let’s build my streak'}
+        onPress={() => {
+          if (rewardPage === 1) setRewardPage(2);
+          else go(29);
+        }}
+      />
+    );
+  } else if (q) {
+    body = (
+      <>
+        {heading(q.title, q.sub)}
+        <OptionList
+          options={q.options}
+          value={String(a[q.key] ?? '')}
+          onChange={(v) => put(q.key, v)}
+          long={q.options.length > 5}
+        />
+      </>
+    );
+    footer = (
+      <PrimaryButton label="Continue" onPress={next} disabled={!a[q.key]} />
+    );
+  } else {
+    switch (step) {
+      case 0:
+        body = (
+          <>
+            <View style={styles.brandRow}>
+              <Text style={styles.brand}>ProteinQuest</Text>
+              <Text style={styles.brandLang}>EN</Text>
             </View>
-
-            <ScrollView
-              ref={phaseScrollRef}
-              style={styles.phaseScroll}
-              contentContainerStyle={[
-                styles.phaseScrollContent,
-                (phase === 'dragons' || phase === 'name') && styles.phaseScrollContentNamed,
-                { paddingBottom: footerClearance },
-              ]}
-              keyboardShouldPersistTaps="handled"
-              keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
-              onScrollBeginDrag={Keyboard.dismiss}
-              showsVerticalScrollIndicator={false}
-              bounces={phase !== 'dragons'}>
-              {phase === 'name' ? (
-                <Animated.View
-                  key="name"
-                  entering={FadeInDown.duration(380)}
-                  exiting={FadeOut.duration(160)}
-                  style={styles.phaseBody}>
-                  <Pressable onPress={Keyboard.dismiss} accessibilityRole="none">
-                    <Text style={[styles.question, isCompact && styles.questionCompact]}>
-                      What should{'\n'}we call you?
-                    </Text>
-                  </Pressable>
-                  <TextInput
-                    style={[styles.nameInput, isCompact && styles.nameInputCompact, textInputWeb]}
-                    value={name}
-                    onChangeText={setName}
-                    placeholder="Your name"
-                    placeholderTextColor={colors.textTertiary}
-                    autoCapitalize="words"
-                    autoCorrect={false}
-                    maxLength={24}
-                    returnKeyType="done"
-                    blurOnSubmit
-                    onFocus={scrollNameFieldIntoView}
-                    onSubmitEditing={submitName}
-                  />
-                </Animated.View>
-              ) : null}
-
-              {phase === 'dragons' ? (
-                <Animated.View
-                  key={`dragons-${namingDragon.id}`}
-                  entering={FadeInDown.duration(380)}
-                  exiting={FadeOut.duration(160)}
-                  style={styles.phaseBody}>
-                  <Text style={styles.kicker}>
-                    DRAGON {dragonIndex + 1} OF {DRAGONS.length}
-                  </Text>
-                  <View
-                    style={[
-                      styles.dragonReveal,
-                      isCompact && styles.dragonRevealCompact,
-                      isTiny && styles.dragonRevealTiny,
-                    ]}>
-                    <DragonPortrait
-                      art={namingDragon.previewArt}
-                      accent={namingDragon.accent}
-                      level={1}
-                      dragonId={namingDragon.id}
-                      size={dragonPortraitSize}
-                      priority="high"
-                    />
+            <IntroPhone />
+            <Text style={styles.welcomeTitle}>
+              Calorie tracking{'\n'}made easy
+            </Text>
+          </>
+        );
+        footer = (
+          <>
+            <PrimaryButton label="Get Started" onPress={next} />
+            <TextButton
+              label={
+                <Text style={styles.textBtn}>
+                  Already have an account? <Text style={styles.bold}>Sign In</Text>
+                </Text>
+              }
+              onPress={() => {
+                setLogin(true);
+                go(29);
+              }}
+            />
+          </>
+        );
+        break;
+      case 3: {
+        body = (
+          <>
+            {heading('When were you born?', nutritionSub)}
+            <BirthdayWheels birthday={String(a.birthday)} onChange={(v) => put('birthday', v)} />
+          </>
+        );
+        footer = <PrimaryButton label="Continue" onPress={next} />;
+        break;
+      }
+      case 6:
+        body = (
+          <>
+            {heading('Designed to help you stay on track')}
+            <View style={[styles.softCard, styles.centeredCard]}>
+              <Text style={styles.cardLead}>Weight trend</Text>
+              <TrendChart animate />
+              <Text style={styles.caption}>
+                Track your habits and stay{'\n'}consistent over time.
+              </Text>
+            </View>
+          </>
+        );
+        footer = <PrimaryButton label="Continue" onPress={next} />;
+        break;
+      case 7:
+        body = (
+          <>
+            {heading('What is your height?', nutritionSub)}
+            <UnitToggle
+              options={['ft, in', 'cm']}
+              value={String(a.heightUnit)}
+              onChange={(v) => put('heightUnit', v)}
+            />
+            <HeightWheels
+              heightCm={number('height')}
+              unit={String(a.heightUnit)}
+              onChange={(v) => put('height', v)}
+            />
+          </>
+        );
+        footer = <PrimaryButton label="Continue" onPress={next} />;
+        break;
+      case 8:
+      case 11: {
+        const key = step === 8 ? 'weight' : 'target';
+        const { min, max } = weightBounds(number('weight'), String(a.goal), step === 8);
+        body = (
+          <>
+            {heading(
+              step === 8 ? 'What is your weight?' : 'What is your desired weight?',
+              step === 8 ? nutritionSub : undefined,
+            )}
+            {step === 8 ? (
+              <UnitToggle
+                options={['lbs', 'kg']}
+                value={units}
+                onChange={(v) => put('weightUnit', v)}
+              />
+            ) : null}
+            <View style={styles.weightControl}>
+              <Text style={styles.weightLabel}>{step === 8 ? 'Current weight' : String(a.goal)}</Text>
+              <View style={styles.weightValue}>
+                <WeightInput
+                  label={step === 8 ? 'Current weight' : 'Desired weight'}
+                  value={number(key)}
+                  unit={units}
+                  min={min}
+                  max={max}
+                  onChange={(v) => put(key, v)}
+                />
+                <Text style={styles.weightUnit}>{units}</Text>
+              </View>
+              <WeightRuler
+                value={number(key)}
+                unit={units}
+                min={min}
+                max={max}
+                onChange={(v) => put(key, v)}
+              />
+              <Text style={styles.hint}>Scroll the scale or tap the number</Text>
+            </View>
+          </>
+        );
+        footer = <PrimaryButton label="Continue" onPress={next} />;
+        break;
+      }
+      case 12:
+        body = (
+          <View style={styles.centerMsg}>
+            <Text style={styles.h1}>
+              {a.goal === 'Lose weight' ? 'Losing' : 'Gaining'}{' '}
+              <Text style={styles.em}>{delta} kg</Text> starts with a plan!
+            </Text>
+            <Text style={styles.centerSub}>
+              To help you make steady progress, we’ll create a personalized plan based on your
+              habits, goals, and timeline.
+            </Text>
+          </View>
+        );
+        footer = <PrimaryButton label="Continue" onPress={next} />;
+        break;
+      case 13:
+        body = (
+          <>
+            {heading('How fast do you want to reach your goal?')}
+            <View style={styles.pace}>
+              <Text style={styles.paceLabel}>
+                Weight {a.goal === 'Lose weight' ? 'loss' : 'gain'} speed per week
+              </Text>
+              <Text style={styles.paceValue}>{number('pace').toFixed(1)} kg</Text>
+              <PaceSlider value={number('pace')} onChange={(v) => put('pace', v)} />
+              <View style={[styles.softCard, styles.paceNote]}>
+                <Text style={styles.paceReach}>
+                  You should reach your goal in{' '}
+                  <Text style={styles.em}>{Math.ceil(delta / Math.max(0.1, number('pace')) * 7)} days</Text>
+                </Text>
+                <Text style={styles.paceHint}>
+                  {number('pace') < 0.3
+                    ? 'Going slow means a gentler and more sustainable goal.'
+                    : number('pace') > 0.6
+                      ? 'This pace moves quickly; staying consistent will be key.'
+                      : 'This is the most balanced pace, motivating and ideal for most users.'}
+                </Text>
+                <Text style={styles.hint}>Illustrative estimate</Text>
+              </View>
+            </View>
+          </>
+        );
+        footer = <PrimaryButton label="Continue" onPress={next} />;
+        break;
+      case 14:
+        body = (
+          <>
+            {heading(
+              'A simpler way to stay on track',
+              'Log meals in seconds, follow your plan, and see your progress add up.',
+            )}
+            <View style={[styles.softCard, styles.consistency]}>
+              <View style={styles.barPair}>
+                <View style={styles.barCol}>
+                  <Text style={styles.barLabel}>Without{'\n'}ProteinQuest</Text>
+                  <View style={[styles.bar, styles.barShort]}>
+                    <Ionicons name="people-outline" size={18} color="#fff" />
                   </View>
-                  <Pressable onPress={Keyboard.dismiss} accessibilityRole="none">
-                    <Text style={[styles.question, isCompact && styles.questionCompact]}>
-                      {isTiny ? (
-                        <>Name your {namingDragon.title.toLowerCase()}</>
-                      ) : (
-                        <>
-                          Name your{'\n'}
-                          {namingDragon.title.toLowerCase()}
-                        </>
-                      )}
-                    </Text>
-                    <Text style={styles.dragonHint} numberOfLines={isTiny ? 1 : 2}>
-                      Default: {namingDragon.name} · {namingDragon.motto}
-                    </Text>
-                  </Pressable>
-                  <TextInput
-                    style={[
-                      styles.nameInput,
-                      isCompact && styles.nameInputCompact,
-                      styles.dragonNameInput,
-                      textInputWeb,
-                    ]}
-                    value={dragonNames[namingDragon.id] ?? ''}
-                    onChangeText={(text) =>
-                      setDragonNames((prev) => ({ ...prev, [namingDragon.id]: text }))
-                    }
-                    placeholder={namingDragon.name}
-                    placeholderTextColor={colors.textTertiary}
-                    autoCapitalize="words"
-                    autoCorrect={false}
-                    maxLength={24}
-                    returnKeyType="done"
-                    blurOnSubmit
-                    onFocus={scrollNameFieldIntoView}
-                    onSubmitEditing={submitDragonName}
-                  />
-                </Animated.View>
-              ) : null}
-
-              {phase === 'benefits' ? (
-                <Animated.View
-                  key="benefits"
-                  entering={FadeInDown.duration(380)}
-                  exiting={FadeOut.duration(160)}
-                  style={styles.phaseBody}>
-                  <Text style={[styles.question, isCompact && styles.questionCompact]}>
-                    {name.trim() ? `${name.trim()}, protein` : 'Protein'} changes everything.
-                  </Text>
-                  <View style={styles.benefitList}>
-                    {BENEFITS.map((b, i) => (
-                      <Animated.View
-                        key={b}
-                        entering={FadeInDown.delay(450 + i * 380).duration(420)}
-                        style={styles.benefitRow}>
-                        <Ionicons name="checkmark-circle" size={22} color={colors.accent} />
-                        <Text style={styles.benefitText}>{b}</Text>
-                      </Animated.View>
-                    ))}
+                </View>
+                <View style={styles.barCol}>
+                  <Text style={styles.barLabel}>With{'\n'}ProteinQuest</Text>
+                  <View style={[styles.bar, styles.barTall]}>
+                    <Ionicons name="heart" size={18} color="#fff" />
                   </View>
-                </Animated.View>
-              ) : null}
-
-              {phase === 'manifesto' ? (
-                <Animated.View
-                  key="manifesto"
-                  entering={FadeInDown.duration(380)}
-                  exiting={FadeOut.duration(160)}
-                  style={styles.phaseBody}>
-                  <Animated.Text entering={FadeIn.delay(200).duration(700)} style={styles.kicker}>
-                    THE GAME
-                  </Animated.Text>
-                  <Animated.Text
-                    entering={FadeInDown.delay(350).duration(600)}
-                    style={[
-                      styles.question,
-                      isCompact && styles.questionCompact,
-                      { marginTop: spacing.sm },
-                    ]}>
-                    Life is a game.
-                  </Animated.Text>
-                  <View style={styles.manifestoList}>
-                    {MANIFESTO.map((line, i) => (
-                      <Animated.Text
-                        key={line.lead}
-                        entering={FadeInDown.delay(800 + i * 500).duration(500)}
-                        style={styles.manifestoLine}>
-                        <Text style={styles.manifestoLead}>{line.lead}</Text>
-                        {line.rest}
-                      </Animated.Text>
-                    ))}
-                  </View>
-                </Animated.View>
-              ) : null}
-            </ScrollView>
-
-            <View
-              style={[
-                styles.footer,
-                { paddingBottom: footerGap + (phase === 'dragons' ? spacing.sm : spacing.lg) },
-              ]}>
-              {error ? <Text style={styles.error}>{error}</Text> : null}
-              {phase === 'name' ? (
-                <Button title="Continue" onPress={submitName} />
-              ) : phase === 'dragons' ? (
-                <Button title={dragonIndex < DRAGONS.length - 1 ? 'Next dragon' : 'Continue'} onPress={submitDragonName} />
-              ) : phase === 'benefits' ? (
-                <Animated.View entering={FadeIn.delay(450 + BENEFITS.length * 380)}>
-                  <Button title="Continue" onPress={next} />
-                </Animated.View>
-              ) : (
-                <Animated.View entering={FadeIn.delay(800 + MANIFESTO.length * 500)}>
-                  <Button
-                    title="I'm ready"
-                    onPress={finish}
-                    loading={saving || sessionLoading}
-                    disabled={sessionLoading || !session}
-                  />
-                </Animated.View>
-              )}
+                </View>
+              </View>
+              <Text style={styles.checkLine}>
+                <Ionicons name="checkmark" size={14} color={ob.ink} /> Small daily actions lead to
+                progress
+              </Text>
+            </View>
+          </>
+        );
+        footer = <PrimaryButton label="Continue" onPress={next} />;
+        break;
+      case 18:
+        body = (
+          <>
+            {heading('You have great potential to crush your goal')}
+            <View style={[styles.softCard, styles.centeredCard]}>
+              <Text style={styles.cardLead}>Your weight transition</Text>
+              <PotentialChart animate />
+              <Text style={styles.caption}>
+                Weight change takes time. Consistency in{'\n'}the early weeks matters most
+              </Text>
+            </View>
+          </>
+        );
+        footer = <PrimaryButton label="Continue" onPress={next} />;
+        break;
+      case 19:
+        body = (
+          <View style={styles.trust}>
+            <View style={styles.pastelRing}>
+              <Ionicons name="hand-left-outline" size={64} color={ob.accent} />
+            </View>
+            <Text style={styles.h1}>
+              Thank you for{'\n'}trusting us!
+            </Text>
+            <Text style={styles.trustSub}>Now let’s personalize ProteinQuest for you...</Text>
+            <View style={styles.softCard}>
+              <Ionicons name="lock-closed-outline" size={24} color={ob.ink} />
+              <Text style={styles.cardTitle}>Personalized to your goals</Text>
+              <Text style={styles.cardSmall}>
+                We’ll use your answers to tailor your plan, targets, and recommendations.
+              </Text>
             </View>
           </View>
-        </KeyboardAvoidingView>
-      </SafeAreaView>
-    </View>
+        );
+        footer = <PrimaryButton label="Continue" onPress={next} />;
+        break;
+      case 22:
+        body = (
+          <>
+            {heading('Rollover extra calories to the next day?')}
+            <Text style={styles.rollSub}>
+              Rollover up to <Text style={styles.em}>200 cals</Text>
+            </Text>
+            <View style={styles.rollover}>
+              {['Yesterday', 'Today'].map((d, i) => (
+                <View key={d} style={[styles.calCard, i === 1 && styles.calCardToday]}>
+                  <Text style={styles.calDay}>
+                    <Ionicons name="flame" size={14} color={ob.accent} /> {d}
+                  </Text>
+                  <Text style={styles.calBig}>
+                    2350<Text style={styles.calMax}>/2500</Text>
+                  </Text>
+                  {i === 1 ? <Text style={styles.blueChip}>↻ +150</Text> : null}
+                  <View style={styles.calCircle}>
+                    <Text style={styles.calLeft}>
+                      Cals left{'\n'}
+                      {i ? '150 + 150' : '150'}
+                    </Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          </>
+        );
+        footer = (
+          <>
+            <PrimaryButton
+              label="Yes"
+              onPress={() => {
+                put('rollover', true);
+                go(24);
+              }}
+            />
+            <TextButton
+              label="No"
+              onPress={() => {
+                put('rollover', false);
+                go(24);
+              }}
+            />
+          </>
+        );
+        break;
+      case 24:
+        body = (
+          <View style={styles.notification}>
+            <Text style={styles.h1}>Stay on track with ProteinQuest notifications</Text>
+            <View style={styles.nativeNotif}>
+              <Text style={styles.nativeTitle}>
+                ProteinQuest would like to send you Notifications
+              </Text>
+              <View style={styles.nativeActions}>
+                <Pressable style={styles.nativeBtn} onPress={() => handleNotifications(false)}>
+                  <Text style={styles.nativeBtnText}>Don’t Allow</Text>
+                </Pressable>
+                <Pressable style={styles.nativeBtn} onPress={() => handleNotifications(true)}>
+                  <Text style={[styles.nativeBtnText, styles.bold]}>Allow</Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        );
+        break;
+      case 25:
+        body = (
+          <>
+            {heading('Enter promo code (optional)', 'You can skip this step')}
+            <View style={styles.referral}>
+              <TextInput
+                accessibilityLabel="Promo code"
+                placeholder="Promo Code"
+                placeholderTextColor="#b0abb6"
+                value={referral}
+                onChangeText={(t) => {
+                  setReferral(t);
+                  put('referral', '');
+                  setError('');
+                }}
+                autoCapitalize="characters"
+                style={styles.referralInput}
+              />
+              <Pressable
+                disabled={!referral.trim()}
+                onPress={() => {
+                  if (referral.trim().toUpperCase() === 'PROTEINQUEST') {
+                    put('referral', referral.trim().toUpperCase());
+                    setError('Code applied successfully.');
+                  } else {
+                    setError('This code isn’t valid. Try PROTEINQUEST.');
+                  }
+                }}
+                style={[styles.referralSubmit, !referral.trim() && { opacity: 0.4 }]}>
+                <Text style={styles.referralSubmitText}>Submit</Text>
+              </Pressable>
+            </View>
+            {error ? <Text style={styles.inputMessage}>{error}</Text> : null}
+          </>
+        );
+        footer = (
+          <PrimaryButton label={a.referral ? 'Continue' : 'Skip'} onPress={next} />
+        );
+        break;
+      case 26:
+        body = (
+          <View style={[styles.trust, styles.ready]}>
+            <View style={styles.pastelRing}>
+              <Ionicons name="heart" size={72} color={ob.accent} />
+            </View>
+            <Text style={styles.allDone}>
+              <Ionicons name="checkmark-circle" size={16} color={ob.ink} /> All done!
+            </Text>
+            <Text style={styles.h1}>
+              Time to generate{'\n'}your custom plan!
+            </Text>
+          </View>
+        );
+        footer = <PrimaryButton label="Continue" onPress={next} />;
+        break;
+      case 27:
+        body = (
+          <View style={styles.generating}>
+            <Text style={styles.genPct}>{progress}%</Text>
+            <Text style={styles.h1}>
+              We’re setting{'\n'}everything up for you
+            </Text>
+            <View style={styles.genTrack}>
+              <View style={[styles.genFill, { width: `${progress}%` }]} />
+            </View>
+            <Text style={styles.genStatus}>
+              {progress < 30
+                ? 'Customizing health plan...'
+                : progress < 60
+                  ? 'Applying BMR formula...'
+                  : progress < 85
+                    ? 'Estimating your metabolic age...'
+                    : 'Finalizing results...'}
+            </Text>
+            <View style={styles.genList}>
+              <Text style={styles.genListLead}>Daily recommendation for</Text>
+              {['Calories', 'Carbs', 'Protein', 'Fats', 'Health Score'].map((v, i) => (
+                <Text key={v} style={styles.genItem}>
+                  · {v}{' '}
+                  {progress > 18 + i * 17 ? (
+                    <Ionicons name="checkmark-circle" size={16} color={ob.accent} />
+                  ) : null}
+                </Text>
+              ))}
+            </View>
+          </View>
+        );
+        break;
+      case 28: {
+        const chart =
+          a.goal === 'Lose weight' ? (
+            <TrendChart animate={false} />
+          ) : a.goal === 'Maintain' ? (
+            <MaintainChart />
+          ) : (
+            <ProgressChart animate={false} />
+          );
+        body = (
+          <>
+            <View style={styles.resultHeading}>
+              <Ionicons name="checkmark-circle" size={28} color={ob.accent} />
+              <Text style={styles.h1}>
+                {a.goal === 'Maintain'
+                  ? 'Your plan to maintain your weight'
+                  : `Goal: ${a.goal === 'Lose weight' ? 'lose' : 'gain'} ${delta} kg`}
+              </Text>
+            </View>
+            <View style={[styles.softCard, styles.resultCard]}>
+              <Text style={styles.cardTitle}>Estimated progress</Text>
+              {chart}
+            </View>
+            <View style={[styles.softCard, styles.resultCard]}>
+              <Text style={styles.cardTitle}>Your daily recommendation</Text>
+              <Text style={styles.cardSmall}>
+                Starting estimates based on your body, activity and goal. Adjust with your progress.
+              </Text>
+              <View style={styles.macroGrid}>
+                <View style={styles.macro}>
+                  <Ionicons name="flame" size={22} color={ob.accent} />
+                  <Text style={styles.macroVal}>
+                    {nutrition ? nutrition.calories : '—'}
+                  </Text>
+                  <Text style={styles.macroLabel}>Calories</Text>
+                </View>
+                <View style={styles.macro}>
+                  <Ionicons name="nutrition" size={22} color={ob.ink} />
+                  <Text style={styles.macroVal}>
+                    {nutrition ? `${nutrition.protein}g` : '—'}
+                  </Text>
+                  <Text style={styles.macroLabel}>Protein</Text>
+                </View>
+              </View>
+            </View>
+            <View style={[styles.softCard, styles.resultCard]}>
+              <Text style={styles.cardTitle}>Your info</Text>
+              {[
+                ['Starting weight', `${displayed('weight')} ${units}`],
+                ['Goal weight', `${displayed('target')} ${units}`],
+                ['Height', `${Math.round(number('height'))} cm`],
+                ['Activity', `${String(a.workouts || '3–5')} workouts / week`],
+                ['Diet', String(a.diet || 'Balanced')],
+              ].map(([k, v]) => (
+                <View key={k} style={styles.dlRow}>
+                  <Text style={styles.dt}>{k}</Text>
+                  <Text style={styles.dd}>{v}</Text>
+                </View>
+              ))}
+            </View>
+            {!nutrition ? (
+              <Text style={styles.alert} role="alert">
+                Review your age, height, current and target weights, and pace (0–1 kg/week) before
+                continuing.
+              </Text>
+            ) : null}
+          </>
+        );
+        footer = (
+          <PrimaryButton
+            label="Let’s get started!"
+            onPress={() => go(29)}
+            disabled={!nutrition}
+          />
+        );
+        break;
+      }
+      case 29:
+        body = (
+          <>
+            {heading(login ? 'Welcome back' : 'Save your progress')}
+            <View style={styles.auth}>
+              <Pressable
+                style={[styles.authBtn, styles.appleBtn]}
+                disabled={authBusy}
+                onPress={() => startAuth('Apple')}>
+                <Ionicons name="logo-apple" size={22} color="#fff" />
+                <Text style={styles.authBtnTextLight}>Sign in with Apple</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.authBtn, styles.outlineBtn]}
+                disabled={authBusy}
+                onPress={() => startAuth('Google')}>
+                <Text style={styles.googleG}>G</Text>
+                <Text style={styles.authBtnText}>Sign in with Google</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.authBtn, styles.outlineBtn]}
+                disabled={authBusy}
+                onPress={() => startAuth('Email')}>
+                <Ionicons name="mail-outline" size={20} color={ob.ink} />
+                <Text style={styles.authBtnText}>Continue with email</Text>
+              </Pressable>
+              {__DEV__ ? (
+                <Pressable
+                  style={styles.demoBypass}
+                  onPress={() => {
+                    put('auth', 'Demo');
+                    go(30);
+                  }}>
+                  <Text style={styles.demoBypassText}>Continue through demo (__DEV__)</Text>
+                </Pressable>
+              ) : null}
+              {!login ? (
+                <>
+                  <Pressable
+                    style={styles.checkRow}
+                    onPress={() => put('terms', !a.terms)}>
+                    <Ionicons
+                      name={a.terms ? 'checkbox' : 'square-outline'}
+                      size={18}
+                      color={ob.ink}
+                    />
+                    <Text style={styles.checkText}>
+                      I agree to ProteinQuest’s{' '}
+                      <Text style={styles.link} onPress={() => setModal('terms')}>
+                        Terms
+                      </Text>{' '}
+                      and{' '}
+                      <Text style={styles.link} onPress={() => setModal('privacy')}>
+                        Privacy Policy
+                      </Text>
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    style={styles.checkRow}
+                    onPress={() => put('marketing', !a.marketing)}>
+                    <Ionicons
+                      name={a.marketing ? 'checkbox' : 'square-outline'}
+                      size={18}
+                      color={ob.ink}
+                    />
+                    <Text style={styles.checkText}>
+                      Send me tips, new features, and personalized offers
+                    </Text>
+                  </Pressable>
+                </>
+              ) : null}
+              {error ? <Text style={styles.error}>{error}</Text> : null}
+            </View>
+          </>
+        );
+        break;
+      case 30:
+        body = (
+          <>
+            <Text style={styles.trialTitle}>
+              Your plan is ready.{'\n'}Start using ProteinQuest
+            </Text>
+            <IntroPhone />
+            {a.auth && a.auth !== 'Demo' ? (
+              <View style={styles.saveBox}>
+                <Text style={styles.saveStatus}>{saveStatus}</Text>
+                {saveFailed ? (
+                  <PrimaryButton label="Retry saving" onPress={() => setSaveAttempt((v) => v + 1)} />
+                ) : null}
+              </View>
+            ) : (
+              <Text style={styles.demoNote}>Demo only. Your answers are saved on this device.</Text>
+            )}
+          </>
+        );
+        footer = (
+          <PrimaryButton
+            label="Try Now"
+            onPress={handleTryNow}
+            disabled={!!(a.auth && a.auth !== 'Demo' && !planSaved)}
+          />
+        );
+        break;
+      default:
+        body = (
+          <View style={styles.centerMsg}>
+            <Text style={styles.h1}>Continue</Text>
+            <PrimaryButton label="Continue" onPress={next} />
+          </View>
+        );
+    }
+  }
+
+  const showNav = step > 0 && step !== 27 && step !== 30;
+
+  return (
+    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+      {showNav ? (
+        <View style={styles.nav}>
+          <Pressable onPress={back} style={styles.backBtn} accessibilityLabel="Go back">
+            <Ionicons name="arrow-back" size={20} color={ob.ink} />
+          </Pressable>
+          {step < 30 ? (
+            <View style={styles.topProgress}>
+              <View style={[styles.topFill, { width: `${onboardingProgress(step)}%` }]} />
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}>
+        {body}
+      </ScrollView>
+      {footer ? <View style={styles.footer}>{footer}</View> : null}
+
+      <EmailAuthModal
+        visible={modal === 'email'}
+        login={login}
+        onClose={() => setModal('')}
+        onSuccess={onEmailSuccess}
+      />
+
+      <Modal
+        visible={modal === 'age' || modal === 'weight-concern' || modal === 'terms' || modal === 'privacy'}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setModal('')}>
+        <Pressable style={styles.modalBackdrop} onPress={() => setModal('')}>
+          <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
+            <Text style={styles.modalTitle}>
+              {modal === 'age'
+                ? 'We’re sorry!'
+                : modal === 'weight-concern'
+                  ? 'Let’s review that goal'
+                  : modal === 'privacy'
+                    ? 'Privacy Policy'
+                    : 'Terms and Conditions'}
+            </Text>
+            <Text style={styles.modalBody}>
+              {modal === 'age'
+                ? 'You must be at least 18 years old to use ProteinQuest.'
+                : modal === 'weight-concern'
+                  ? `That target is a ${Math.round(concern?.changePercent || 0)}% change from your current weight and looks unusually far from a typical range for your height. ProteinQuest can help you track progress, but it cannot confirm that this target is safe. Consider a more moderate target or speak with a qualified healthcare professional.`
+                  : modal === 'privacy'
+                    ? 'Draft answers are stored on this device. When you complete sign-up, your submitted answers and nutrition targets are saved to your account. See the in-app Privacy screen for full details.'
+                    : 'By continuing you agree to ProteinQuest’s terms of use. See the in-app Terms screen for full details.'}
+            </Text>
+            {modal === 'age' ? (
+              <PrimaryButton label="OK" onPress={() => setModal('')} />
+            ) : null}
+            {modal === 'weight-concern' ? (
+              <>
+                <PrimaryButton label="Adjust my target" onPress={() => setModal('')} />
+                <TextButton
+                  label="Keep this target"
+                  onPress={() => {
+                    put('reviewedTarget', String(a.target));
+                    setModal('');
+                    go(12);
+                  }}
+                />
+              </>
+            ) : null}
+            {(modal === 'terms' || modal === 'privacy') && (
+              <PrimaryButton
+                label="Close"
+                onPress={() => {
+                  if (modal === 'terms') router.push('/terms');
+                  else if (modal === 'privacy') router.push('/privacy');
+                  setModal('');
+                }}
+              />
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg },
-  safe: { flex: 1 },
-  flex: { flex: 1 },
-  inner: { flex: 1, width: '100%', alignSelf: 'center' },
-  noPointer: { pointerEvents: 'none' },
-
-  // Hero scene layers
-  emberLayer: {
-    backgroundColor: 'transparent',
-    // Smooth fade-in once the video begins playing (web).
-    ...(Platform.OS === 'web' ? { transition: 'opacity 600ms ease' } : {}),
-  } as unknown as ViewStyle,
-  emberVideo: { width: '100%', height: '100%', backgroundColor: 'transparent' },
-  glow: {
-    position: 'absolute',
-    bottom: -160,
-    alignSelf: 'center',
-    width: 480,
-    height: 360,
-    borderRadius: 240,
-    backgroundColor: colors.accent,
-    // Soft-edged glow without native blur support.
-    transform: [{ scaleX: 1.4 }],
-    filter: Platform.OS === 'web' ? 'blur(110px)' : undefined,
-    opacity: 0.2,
-  },
-
-  // Hero type
-  brand: {
-    ...noTextCaret,
-    fontFamily: fonts.mono,
-    fontSize: 11,
-    color: colors.text,
-    textAlign: 'center',
-    marginTop: spacing.lg,
-  },
-  heroCenter: { flex: 1, alignItems: 'center', justifyContent: 'center', minWidth: 0 },
-  titleWordWrap: { width: '100%', alignItems: 'center' },
-  titleDots: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 8,
-    marginTop: spacing.xl,
-  },
-  titleDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-  },
-  titleDotOn: { backgroundColor: colors.accent },
-  titleDotOff: { backgroundColor: colors.ringTrack },
-  heroSettled: { alignItems: 'center', gap: spacing.md, width: '100%' },
-  heroWord: {
-    ...noTextCaret,
-    fontFamily: fonts.displayHeavy,
-    fontSize: 84,
-    letterSpacing: 4,
-    color: colors.text,
-    textAlign: 'center',
-    maxWidth: '100%',
-    ...(Platform.OS === 'web'
-      ? { textShadow: '0 4px 24px rgba(0,0,0,0.6)' }
-      : {
-          textShadowColor: 'rgba(0,0,0,0.6)',
-          textShadowRadius: 24,
-          textShadowOffset: { width: 0, height: 4 },
-        }),
-  },
-  heroWordCompact: { fontSize: 56 },
-  heroSub: {
-    ...noTextCaret,
-    fontFamily: fonts.displayMedium,
-    fontSize: 16,
-    lineHeight: 25,
-    color: colors.textSecondary,
-    textAlign: 'center',
-  },
-  heroSubCompact: { fontSize: 14, lineHeight: 22 },
-  heroFooter: { gap: spacing.md },
-  heroTagline: {
-    ...noTextCaret,
-    fontFamily: fonts.mono,
-    fontSize: 10,
-    letterSpacing: 2.5,
-    color: colors.textSecondary,
-    textAlign: 'center',
-  },
-
-  // Step chrome
-  topBar: {
+  safe: { flex: 1, backgroundColor: ob.canvas },
+  nav: {
+    height: 46,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
-    paddingTop: spacing.md,
+    gap: 16,
+    paddingHorizontal: 16,
   },
   backBtn: {
-    width: layout.iconBtn,
-    height: layout.iconBtn,
+    width: 31,
+    height: 31,
+    borderRadius: 16,
+    backgroundColor: '#f8f7fa',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  progressTrack: {
+  topProgress: { flex: 1, height: 2, backgroundColor: ob.track, borderRadius: 1, overflow: 'hidden' },
+  topFill: { height: '100%', backgroundColor: '#201e25' },
+  scroll: { flex: 1 },
+  scrollContent: { paddingHorizontal: 23, paddingTop: 12, paddingBottom: 18, flexGrow: 1 },
+  footer: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 10,
+    backgroundColor: '#fdfdfd',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#eee',
+    gap: 0,
+  },
+  heading: { marginBottom: 4 },
+  h1: {
+    fontSize: 29,
+    fontWeight: '700',
+    lineHeight: 34,
+    letterSpacing: -0.85,
+    color: ob.inkSoft,
+  },
+  sub: { fontSize: 14, color: ob.muted, lineHeight: 18, marginTop: 11, letterSpacing: -0.2 },
+  brandRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
+  brand: { fontSize: 15, fontWeight: '600', letterSpacing: -0.4, color: ob.ink },
+  brandLang: { fontSize: 11, color: ob.muted },
+  welcomeTitle: {
+    textAlign: 'center',
+    fontSize: 32,
+    fontWeight: '700',
+    letterSpacing: -0.85,
+    color: ob.inkSoft,
+    lineHeight: 38,
+    paddingBottom: 2,
+  },
+  softCard: { backgroundColor: ob.card, borderRadius: 18, padding: 20 },
+  centeredCard: { marginVertical: 24, minHeight: 280, paddingVertical: 26 },
+  cardLead: { marginBottom: 20, fontSize: 16, color: ob.ink },
+  caption: { textAlign: 'center', fontSize: 13, lineHeight: 18, color: ob.muted2, marginTop: 20 },
+  weightControl: { alignItems: 'center', marginTop: 40 },
+  weightLabel: { fontSize: 14, color: '#939196', marginBottom: 8 },
+  weightValue: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  weightUnit: { fontSize: 31, fontWeight: '600', color: ob.ink },
+  hint: { color: '#bab6bd', fontSize: 10, marginTop: 4 },
+  centerMsg: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 40 },
+  centerSub: { fontSize: 16, color: '#99969c', lineHeight: 22, marginTop: 14, textAlign: 'center' },
+  em: { color: ob.accent, fontWeight: '600', fontStyle: 'normal' },
+  pace: { marginTop: 28, alignItems: 'center' },
+  paceLabel: { fontSize: 14, color: ob.ink },
+  paceValue: { fontSize: 32, fontWeight: '600', marginVertical: 12, color: ob.ink },
+  paceNote: { marginTop: 28, width: '100%' },
+  paceReach: { fontSize: 15, color: ob.ink, marginBottom: 8 },
+  paceHint: { fontSize: 13, color: ob.muted, lineHeight: 18 },
+  consistency: { marginTop: 20 },
+  barPair: { flexDirection: 'row', gap: 16, justifyContent: 'flex-end', minHeight: 160 },
+  barCol: { flex: 1, alignItems: 'center', justifyContent: 'flex-end' },
+  barLabel: { fontSize: 12, textAlign: 'center', color: ob.muted, marginBottom: 8 },
+  bar: {
+    width: '100%',
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: ob.ink,
+  },
+  barShort: { height: 70, opacity: 0.45 },
+  barTall: { height: 140 },
+  checkLine: { marginTop: 16, fontSize: 13, color: ob.ink },
+  trust: { alignItems: 'center', paddingTop: 20, gap: 12 },
+  ready: { paddingTop: 40 },
+  pastelRing: {
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    borderWidth: 18,
+    borderColor: '#efe8f2',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#faf7fc',
+    marginBottom: 8,
+  },
+  trustSub: { fontSize: 14, color: ob.muted, textAlign: 'center' },
+  cardTitle: { fontSize: 15, fontWeight: '600', color: ob.ink, marginTop: 8 },
+  cardSmall: { fontSize: 12, color: '#8d8395', lineHeight: 18, marginTop: 6 },
+  allDone: { fontSize: 14, color: ob.ink, fontWeight: '600' },
+  rollSub: { fontSize: 14, color: ob.muted, marginTop: 8 },
+  rollover: { flexDirection: 'row', gap: 10, marginTop: 24 },
+  calCard: {
     flex: 1,
-    height: 2,
-    borderRadius: 1,
-    backgroundColor: colors.ringTrack,
+    backgroundColor: ob.card,
+    borderRadius: 16,
+    padding: 14,
+    gap: 6,
+  },
+  calCardToday: { borderWidth: 1.5, borderColor: ob.ink },
+  calDay: { fontSize: 12, color: ob.muted },
+  calBig: { fontSize: 22, fontWeight: '700', color: ob.ink },
+  calMax: { fontSize: 12, fontWeight: '400', color: ob.muted },
+  blueChip: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#e8f0fe',
+    color: ob.chip,
+    fontSize: 11,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
     overflow: 'hidden',
   },
-  progressFill: {
-    height: '100%',
-    backgroundColor: colors.accent,
+  calCircle: {
+    marginTop: 8,
+    borderRadius: 40,
+    backgroundColor: '#fff',
+    padding: 12,
+    alignItems: 'center',
   },
-
-  // Phase bodies — scroll so the pinned footer never covers the name field.
-  phaseScroll: { flex: 1, minHeight: 0 },
-  phaseScrollContent: {
-    flexGrow: 1,
+  calLeft: { fontSize: 11, textAlign: 'center', color: ob.ink, fontWeight: '600' },
+  notification: { flex: 1, justifyContent: 'center', paddingVertical: 40 },
+  nativeNotif: {
+    marginTop: 40,
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: ob.border,
+  },
+  nativeTitle: { fontSize: 15, fontWeight: '600', color: ob.ink, textAlign: 'center' },
+  nativeActions: { flexDirection: 'row', marginTop: 18, borderTopWidth: 1, borderTopColor: '#eee' },
+  nativeBtn: { flex: 1, paddingVertical: 14, alignItems: 'center' },
+  nativeBtnText: { fontSize: 15, color: '#3b82f6' },
+  referral: { flexDirection: 'row', gap: 8, marginTop: 28 },
+  referralInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#e4dfea',
+    borderRadius: 12,
+    padding: 14,
+    fontSize: 14,
+    color: ob.ink,
+    backgroundColor: '#fff',
+  },
+  referralSubmit: {
+    backgroundColor: ob.ink,
+    borderRadius: 12,
+    paddingHorizontal: 16,
     justifyContent: 'center',
   },
-  // Naming steps: top-align so short screens don't bury the TextInput under the CTA.
-  phaseScrollContentNamed: {
-    justifyContent: 'flex-start',
-    paddingTop: spacing.md,
+  referralSubmitText: { color: '#fff', fontWeight: '600' },
+  inputMessage: { marginTop: 10, fontSize: 12, color: ob.muted },
+  generating: { alignItems: 'center', paddingTop: 40, gap: 12 },
+  genPct: { fontSize: 56, fontWeight: '700', color: ob.ink, letterSpacing: -2 },
+  genTrack: {
+    width: '100%',
+    height: 4,
+    backgroundColor: ob.track,
+    borderRadius: 2,
+    overflow: 'hidden',
+    marginTop: 8,
   },
-  phaseBody: { width: '100%' },
-  kicker: {
-    fontFamily: fonts.mono,
-    fontSize: 10,
-    letterSpacing: 3.5,
-    color: colors.accentSecondary,
+  genFill: { height: '100%', backgroundColor: ob.ink },
+  genStatus: { fontSize: 14, color: ob.muted, marginTop: 8 },
+  genList: { alignSelf: 'stretch', marginTop: 24, gap: 10 },
+  genListLead: { fontSize: 13, color: ob.muted, marginBottom: 4 },
+  genItem: { fontSize: 15, color: ob.ink },
+  resultHeading: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 },
+  resultCard: { marginBottom: 12 },
+  macroGrid: { flexDirection: 'row', gap: 12, marginTop: 14 },
+  macro: {
+    flex: 1,
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    padding: 16,
+    alignItems: 'center',
+    gap: 4,
   },
-  question: {
-    fontFamily: fonts.displayHeavy,
-    fontSize: 36,
-    lineHeight: 44,
-    letterSpacing: -1,
-    color: colors.text,
+  macroVal: { fontSize: 24, fontWeight: '700', color: ob.ink },
+  macroLabel: { fontSize: 12, color: ob.muted },
+  dlRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#e8e6eb',
   },
-  questionCompact: { fontSize: 28, lineHeight: 35, letterSpacing: -0.5 },
-  nameInput: {
-    fontFamily: fonts.display,
-    fontSize: 32,
-    color: colors.accent,
-    paddingVertical: spacing.sm,
-    marginTop: spacing.xl,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.hairlineBright,
+  dt: { fontSize: 13, color: ob.muted },
+  dd: { fontSize: 13, color: ob.ink, fontWeight: '600' },
+  alert: { color: ob.danger, fontSize: 12, marginTop: 8, lineHeight: 16 },
+  auth: { gap: 12, marginTop: 20 },
+  authBtn: {
+    minHeight: 52,
+    borderRadius: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingHorizontal: 16,
   },
-  nameInputCompact: { fontSize: 26 },
-  dragonNameInput: { marginTop: spacing.md, marginBottom: spacing.md },
-  dragonReveal: { alignItems: 'center', marginTop: spacing.lg, marginBottom: spacing.md },
-  dragonRevealCompact: { marginTop: spacing.sm, marginBottom: spacing.sm },
-  dragonRevealTiny: { marginTop: spacing.xs, marginBottom: spacing.xs },
-  dragonHint: {
-    fontFamily: fonts.body,
-    fontSize: 13,
-    lineHeight: 19,
-    color: colors.textSecondary,
-    marginTop: spacing.sm,
-  },
-  benefitList: { gap: spacing.lg, marginTop: spacing.xl },
-  benefitRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  benefitText: {
-    fontFamily: fonts.displayMedium,
-    fontSize: 19,
-    color: colors.text,
-  },
-  manifestoList: { gap: spacing.lg, marginTop: spacing.xl },
-  manifestoLine: {
-    ...noTextCaret,
-    fontFamily: fonts.display,
-    fontSize: 21,
-    lineHeight: 28,
-    color: colors.textSecondary,
-  },
-  manifestoLead: { color: colors.accent },
-
-  footer: { gap: spacing.sm, paddingTop: spacing.md },
-  error: {
-    fontFamily: fonts.body,
-    fontSize: 13,
-    color: colors.danger,
+  appleBtn: { backgroundColor: '#000' },
+  outlineBtn: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#e4dfea' },
+  authBtnTextLight: { color: '#fff', fontSize: 15, fontWeight: '600' },
+  authBtnText: { color: ob.ink, fontSize: 15, fontWeight: '600' },
+  googleG: { fontSize: 18, fontWeight: '700', color: '#4285F4' },
+  demoBypass: { paddingVertical: 10, alignItems: 'center' },
+  demoBypassText: { fontSize: 12, color: ob.muted },
+  checkRow: { flexDirection: 'row', gap: 10, alignItems: 'flex-start', marginTop: 4 },
+  checkText: { flex: 1, fontSize: 12, color: ob.muted, lineHeight: 17 },
+  link: { color: ob.ink, textDecorationLine: 'underline' },
+  error: { fontSize: 11, color: ob.danger, lineHeight: 16 },
+  trialTitle: {
     textAlign: 'center',
+    fontSize: 28,
+    fontWeight: '700',
+    color: ob.inkSoft,
+    marginTop: 24,
+    marginBottom: 8,
+    lineHeight: 34,
   },
+  saveBox: { marginTop: 12, gap: 8 },
+  saveStatus: { textAlign: 'center', fontSize: 13, color: ob.muted },
+  demoNote: { textAlign: 'center', fontSize: 12, color: ob.muted, marginTop: 8 },
+  textBtn: { fontSize: 13, color: ob.ink },
+  bold: { fontWeight: '600' },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: '#0006',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  modalCard: {
+    backgroundColor: '#fff',
+    borderRadius: 23,
+    padding: 25,
+    gap: 12,
+  },
+  modalTitle: { fontSize: 21, fontWeight: '600', color: '#211b27' },
+  modalBody: { fontSize: 13, color: '#928996', lineHeight: 20 },
 });

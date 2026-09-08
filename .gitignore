@@ -64,3 +64,6 @@ store/ios-creds-tmp/
 store/android-release.keystore
 store/android-keystore.pass.json
 pq-play-upload.keystore
+
+# HQ onboarding demo is large; standard clip is committed as onboarding-demo.mp4
+assets/video/onboarding-demo-hq.mp4

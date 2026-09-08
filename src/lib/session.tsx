@@ -506,10 +506,23 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     const userId = nextSession.user.id;
 
     let payload: Partial<Profile> & { id: string } = { ...updates, id: userId };
-    if (updates.dragon_progress) {
+    if (updates.retention || updates.dragon_progress) {
       try {
         const latest = opts?.baseProfile ?? (await fetchProfile(userId));
-        if (latest) {
+        if (updates.retention) {
+          payload.retention = { ...(latest?.retention ?? {}), ...updates.retention };
+          // Stale reward/care blobs must not clobber newer onboarding edits.
+          if (
+            JSON.stringify(updates.retention.onboarding) ===
+            JSON.stringify(current?.retention?.onboarding)
+          ) {
+            payload.retention.onboarding = latest?.retention?.onboarding;
+          }
+          if (updates.retention.calorie_goal_kcal === current?.retention?.calorie_goal_kcal) {
+            payload.retention.calorie_goal_kcal = latest?.retention?.calorie_goal_kcal;
+          }
+        }
+        if (latest && updates.dragon_progress) {
           const mergedProgress = mergeDragonProgressMaps(
             latest.dragon_progress,
             updates.dragon_progress,
@@ -543,6 +556,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       return;
     } catch (e) {
       if (!isStaleProfileSaveError(e)) throw e;
+      // Never move a registered user's save onto a newly created guest account.
+      if (!nextSession.user.is_anonymous) throw e;
 
       await supabase.auth.signOut({ scope: 'local' });
       resetAnonymousSignupAttempt();

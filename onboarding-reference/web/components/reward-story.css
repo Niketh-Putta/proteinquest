@@ -1,0 +1,390 @@
+.reward-story {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  padding: 10px 0 0;
+  gap: 0;
+}
+.reward-eyebrow {
+  font-size: 10px;
+  letter-spacing: 1.6px;
+  color: #9c735b;
+  margin-bottom: 14px;
+  font-weight: 600;
+}
+.phone .reward-story h1 {
+  font-size: 32px;
+  line-height: 1.08;
+  letter-spacing: -1.3px;
+  margin: 0;
+}
+.reward-story h1 em {
+  font-style: normal;
+  color: #b87951;
+}
+.reward-story > p {
+  font-size: 14px;
+  color: #827985;
+  line-height: 1.5;
+  margin: 14px 0 20px;
+}
+.competitor-copy {
+  margin: 14px 0 9px;
+  color: #827985;
+}
+.competitor-copy p {
+  margin: 0 0 5px;
+  font-size: 13px;
+  line-height: 1.42;
+}
+.competitor-copy b {
+  color: #29232c;
+}
+.competitor-copy .proteinquest-copy {
+  margin-top: 13px;
+  color: #76503a;
+}
+.reward-scene {
+  margin: auto 0;
+  background: linear-gradient(150deg, #faf6f2, #f5f3f7);
+  border: 1px solid #f0eaed;
+  border-radius: 28px;
+  padding: 22px 17px;
+  overflow: hidden;
+}
+.reward-meal {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: white;
+  border-radius: 17px;
+  padding: 15px 12px;
+  box-shadow: 0 7px 18px #32243108;
+  animation: reward-rise 0.6s both;
+}
+.reward-meal b {
+  font-size: 14px;
+}
+.reward-meal small {
+  display: block;
+  font-size: 10px;
+  color: #938895;
+  margin-top: 5px;
+}
+.reward-meal strong {
+  margin-left: auto;
+  font-size: 24px;
+  letter-spacing: -1px;
+}
+.reward-meal strong span {
+  display: block;
+  font-size: 9px;
+  font-weight: 400;
+  letter-spacing: 0;
+  color: #938895;
+}
+.reward-connector {
+  height: 20px;
+  width: 1px;
+  background: #d6c2b3;
+  margin: auto;
+}
+.reward-centre {
+  position: relative;
+  display: grid;
+  place-items: center;
+  padding: 17px 0 27px;
+}
+.reward-complete {
+  width: 154px;
+  min-height: 137px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 5px;
+  background: #fff;
+  border-radius: 24px;
+  box-shadow: 0 14px 36px #392d3512;
+  animation: reward-rise 0.6s 0.45s both;
+}
+.reward-complete > span {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border-radius: 16px;
+  background: #262128;
+  color: #fff;
+  box-shadow: 0 8px 18px #26212826;
+  margin-bottom: 3px;
+}
+.reward-complete b {
+  font-size: 25px;
+  letter-spacing: -0.8px;
+}
+.reward-complete small {
+  font-size: 11px;
+  color: #938895;
+}
+.reward-complete + .reward-pop {
+  bottom: 7px;
+  background: #b97850;
+  box-shadow: 0 7px 16px #b9785030;
+  animation-delay: 1.15s;
+}
+.reward-ring {
+  width: 174px;
+  height: 174px;
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+.reward-ring svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: #e8e0dc;
+  stroke-width: 5;
+}
+.reward-ring .reward-ring-fill {
+  stroke: #c2865e;
+  stroke-linecap: round;
+  stroke-dasharray: 1;
+  transform: rotate(-90deg);
+  transform-origin: center;
+  animation: reward-draw 1.3s 0.5s both;
+}
+.reward-ring > div {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  gap: 5px;
+}
+.reward-ring > div svg {
+  position: static;
+  width: 28px;
+  height: 28px;
+  stroke: #b77951;
+  stroke-width: 1.7;
+}
+.reward-ring b {
+  font-size: 25px;
+  letter-spacing: -0.8px;
+}
+.reward-ring small {
+  font-size: 11px;
+  color: #938895;
+}
+.reward-pop {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  position: absolute;
+  bottom: 1px;
+  background: #262128;
+  color: white;
+  padding: 8px 11px;
+  border-radius: 20px;
+  font-size: 9px;
+  letter-spacing: 0.7px;
+  animation: reward-rise 0.5s 1.7s both;
+}
+.reward-streak {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin-top: 23px;
+  color: #b77951;
+  animation: reward-rise 0.5s 2s both;
+}
+.reward-streak div {
+  flex: 1;
+}
+.reward-streak b {
+  display: block;
+  color: #29232c;
+  font-size: 14px;
+}
+.reward-streak small {
+  color: #938895;
+  font-size: 11px;
+}
+.reward-days {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 16px;
+}
+.reward-days > div {
+  animation: reward-rise 0.35s both;
+  text-align: center;
+}
+.reward-days span {
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  width: 30px;
+  height: 30px;
+  background: #28232b;
+  color: white;
+}
+.reward-days small {
+  font-size: 9px;
+  color: #918693;
+  display: block;
+  margin-top: 5px;
+}
+.comparison-chart {
+  margin: 14px 0 0;
+  padding: 19px 14px;
+  background: #f7f5f8;
+  border-radius: 25px;
+}
+.chart-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: #ad7956;
+}
+.chart-heading span {
+  font-size: 9px;
+  letter-spacing: 1px;
+}
+.comparison-chart > svg {
+  display: block;
+  width: 100%;
+  margin: 12px 0 0;
+  overflow: visible;
+}
+.chart-line {
+  fill: none;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: 1;
+  animation: reward-draw 1.9s 0.25s both;
+}
+.chart-reward {
+  stroke: #bf7246;
+}
+.chart-dull {
+  stroke: #b7acb9;
+}
+.chart-area {
+  animation: reward-rise 0.8s 1.5s both;
+}
+.chart-dot {
+  animation: reward-rise 0.3s 2.1s both;
+}
+.chart-label {
+  font-size: 11px;
+  fill: #918693;
+}
+.chart-label-best {
+  fill: #a46641;
+  font-weight: 600;
+}
+.chart-axis {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: #867b89;
+  margin-top: 10px;
+}
+.chart-caption {
+  font-size: 10px;
+  color: #958c99;
+  line-height: 1.5;
+  margin: 14px 0 0;
+}
+.comparison-payoff {
+  display: flex;
+  gap: 12px;
+  margin-top: 20px;
+  padding: 16px 0;
+}
+.comparison-payoff > div {
+  padding-left: 2px;
+}
+.comparison-payoff > span {
+  background: #f2e8df;
+  border-radius: 12px;
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  color: #ab7048;
+}
+.comparison-payoff b {
+  font-size: 16px;
+}
+.comparison-payoff p {
+  font-size: 12px;
+  color: #8b808d;
+  line-height: 1.5;
+  margin: 6px 0 0;
+}
+.reward-story > .comparison-fair {
+  font-size: 12px;
+  margin: 0 0 16px;
+}
+.reward-story > .story-bottom {
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.5;
+  margin: auto 0 12px;
+  padding-top: 20px;
+}
+.story-dots {
+  display: flex;
+  justify-content: center;
+  gap: 5px;
+}
+.story-dots i {
+  width: 5px;
+  height: 5px;
+  background: #e2dde5;
+  border-radius: 8px;
+}
+.story-dots i.active {
+  width: 17px;
+  background: #262029;
+}
+@keyframes reward-rise {
+  from {
+    opacity: 0;
+    transform: translateY(9px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes reward-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .reward-story * {
+    animation: none !important;
+  }
+}
+@media (max-height: 740px) {
+  .reward-scene {
+    padding-top: 14px;
+    padding-bottom: 14px;
+  }
+  .reward-ring {
+    height: 135px;
+    width: 135px;
+  }
+  .reward-story > .story-bottom {
+    padding-top: 12px;
+  }
+}

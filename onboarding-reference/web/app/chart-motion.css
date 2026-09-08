@@ -1,0 +1,36 @@
+/* Replay on screen entry. Other charts retain their existing presentation. */
+.consistency-motion .bar { animation:grow-comparison 1.5s cubic-bezier(.22,.7,.2,1) .15s both; overflow:hidden; }
+.consistency-motion .bar.short { --bar-height:53px; }
+.consistency-motion .bar.tall { --bar-height:163px; animation-delay:.3s; }
+.consistency-motion .bar svg { flex-shrink:0; animation:show-trend-end .3s ease 1.4s both; }
+.consistency-motion>p { animation:show-trend-end .35s ease 1.65s both; }
+@keyframes grow-comparison { from {height:0;padding-bottom:0;} to {height:var(--bar-height);padding-bottom:15px;} }
+@media (prefers-reduced-motion: reduce) {
+  .consistency-motion .bar,.consistency-motion .bar svg,.consistency-motion>p { animation:none; }
+}
+.scroll-ruler { height:76px; margin:28px 0 10px; position:relative; }
+.scroll-ruler-marker { position:absolute; left:50%; top:0; bottom:0; width:2px; transform:translateX(-.5px); background:#252229; z-index:2; pointer-events:none; }
+.scroll-ruler-viewport { width:100%; height:100%; overflow-x:auto; overflow-y:hidden; scrollbar-width:none; overscroll-behavior-x:contain; touch-action:pan-x; -webkit-overflow-scrolling:touch; }
+.scroll-ruler-viewport::-webkit-scrollbar { display:none; }
+.scroll-ruler-track { height:100%; position:relative; }
+.scroll-ruler-ticks { position:absolute; height:100%; bottom:0; background-image:linear-gradient(to right,#8c8b91 1px,transparent 1px),linear-gradient(to right,#77757b 1px,transparent 1px); background-size:8px 32px,80px 53px; background-repeat:repeat-x; }
+.chart-drawing .trend-line-label { animation:show-trend-end .3s ease 1.7s both; }
+.chart-drawing .chart-stroke {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: draw-trend 1.65s cubic-bezier(.35,0,.2,1) .15s both;
+}
+.chart-drawing .chart-comparison { animation-delay: .25s; }
+.chart-drawing .chart-area {
+  clip-path: inset(0 100% 0 0);
+  animation: reveal-trend-area 1.65s cubic-bezier(.35,0,.2,1) .15s both;
+}
+.chart-drawing .chart-endpoint { animation: show-trend-end .25s ease 1.6s both; }
+@keyframes draw-trend { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+@keyframes reveal-trend-area { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+@keyframes show-trend-end { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .chart-drawing .chart-stroke { animation: none; stroke-dashoffset: 0; }
+  .chart-drawing .chart-area { animation: none; clip-path: none; }
+  .chart-drawing .chart-endpoint { animation: none; opacity: 1; }
+}

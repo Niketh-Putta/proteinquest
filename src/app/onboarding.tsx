@@ -29,6 +29,7 @@ import { trackEvent } from '@/lib/analytics';
 import { markNeedsFirstScan } from '@/lib/first-scan';
 import { setMealRemindersEnabled } from '@/lib/meal-reminders';
 import { todayISODate } from '@/lib/protein';
+import { getRetention } from '@/lib/retention';
 import { PageCanvas } from '@/components/PageCanvas';
 import { useContentColumn, useLayout, usePinnedFooterGap } from '@/lib/layout';
 import { useSession } from '@/lib/session';
@@ -138,6 +139,10 @@ export default function Onboarding() {
   const isCompact = height < 700 || width < 390;
   const footerGap = usePinnedFooterGap(isCompact);
   const scrollRef = useRef<ScrollView>(null);
+  const goalsAlreadySet = (() => {
+    const cal = getRetention(profile).calorie_goal_kcal;
+    return !!profile?.protein_goal_g && typeof cal === 'number' && Number.isFinite(cal);
+  })();
   const [step, setStep] = useState<Step>('dragon');
   const [dragonId, setDragonId] = useState<DragonId | null>(null);
   const [saving, setSaving] = useState(false);
@@ -175,36 +180,37 @@ export default function Onboarding() {
     setTimeout(bump, Platform.OS === 'ios' ? 280 : 120);
   }, []);
 
-  async function handleSubmit(updates: Partial<Profile>) {
-    if (!dragonId) {
-      setError('Choose a dragon to continue.');
-      return;
-    }
+  async function finishWithDragon(
+    dragon: DragonId,
+    updates: Partial<Profile> = {},
+  ) {
     setSaving(true);
     setError(null);
     try {
       const progress = emptyDragonProgress();
       const todayISO = todayISODate();
       // Sync lock before await so first Today open never shows the daily picker.
-      markDailyDragonLocked(dragonId, todayISO);
+      markDailyDragonLocked(dragon, todayISO);
       await saveProfile({
         ...updates,
-        active_dragon_id: dragonId,
+        active_dragon_id: dragon,
         // Lock the chosen dragon as today's dragon so first-time users land
         // straight on their Today hub instead of being asked to pick again.
-        daily_dragon_id: dragonId,
+        daily_dragon_id: dragon,
         daily_dragon_date: todayISO,
-        dragon_progress: { [dragonId]: progress },
-        xp: 0,
-        streak: 0,
-        best_streak: 0,
-        goals_hit: 0,
-        last_goal_date: null,
+        dragon_progress: { [dragon]: progress },
+        xp: updates.xp ?? 0,
+        streak: updates.streak ?? 0,
+        best_streak: updates.best_streak ?? 0,
+        goals_hit: updates.goals_hit ?? 0,
+        last_goal_date: updates.last_goal_date ?? null,
+        intro_completed: true,
         onboarded: true,
+        paywall_dismissed: true,
       });
       await markNeedsFirstScan();
-      trackEvent('onboarding_complete', { dragon_id: dragonId });
-      // Meal reminders default ON (opt-out in Settings).
+      trackEvent('onboarding_complete', { dragon_id: dragon });
+      // Meal reminders default ON (opt-out in Settings) unless already chosen in intro.
       void setMealRemindersEnabled(true).catch(() => {});
       setStep('forging');
     } catch (e: any) {
@@ -214,11 +220,19 @@ export default function Onboarding() {
     }
   }
 
+  async function handleSubmit(updates: Partial<Profile>) {
+    if (!dragonId) {
+      setError('Choose a dragon to continue.');
+      return;
+    }
+    await finishWithDragon(dragonId, updates);
+  }
+
   if (step === 'forging') {
     return (
       <PageCanvas>
         <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-          <ForgingScreen onDone={() => router.replace('/scan')} />
+          <ForgingScreen onDone={() => router.replace('/(tabs)/today')} />
         </SafeAreaView>
       </PageCanvas>
     );
@@ -227,6 +241,10 @@ export default function Onboarding() {
   function handleDragonPick(id: DragonId) {
     setDragonId(id);
     setError(null);
+    if (goalsAlreadySet) {
+      void finishWithDragon(id);
+      return;
+    }
     setStep('goal');
   }
 

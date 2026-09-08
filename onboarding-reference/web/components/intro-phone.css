@@ -1,0 +1,42 @@
+.intro-stage {
+  flex: 1;
+  min-height: 340px;
+  margin-inline: -23px;
+  width: calc(100% + 46px);
+  position: relative;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  isolation: isolate;
+  padding: 8px 12px 26px;
+}
+.intro-handset {
+  position: absolute;
+  align-self: center;
+  width: calc(50% - 14px);
+  height: auto;
+  aspect-ratio: 888 / 1920;
+  padding: 5px;
+  border-radius: 26px;
+  background: #121214;
+  box-shadow: 0 0 0 1px #737377, 0 0 0 3px #d8d8db, 0 18px 30px -12px #15151c45;
+  will-change: transform, opacity;
+}
+.intro-display { position:absolute; inset:5px; border-radius:21px; overflow:hidden; background:#111; }
+.intro-display video { display:block; width:100%; height:100%; object-fit:contain; }
+.intro-enter { animation:intro-x-in 1.2s cubic-bezier(.16,1,.3,1) both, intro-arc-in 1.2s cubic-bezier(.05,.65,.2,1) both; }
+.intro-play { translate:0 0; transform:translateY(0) rotate(0); opacity:1; }
+.intro-exit { animation:intro-x-out 1.2s cubic-bezier(.7,0,.84,0) both, intro-arc-out 1.2s cubic-bezier(.8,0,.95,.35) both; }
+.intro-wait { opacity:0; translate:-220% 0; }
+.intro-control { position:absolute; bottom:3px; left:0; right:0; margin:0 auto; width:fit-content; border:0; color:#77737d; padding:5px 10px; font-size:11px; }
+@keyframes intro-x-in { from {translate:220% 0} to {translate:0 0} }
+@keyframes intro-arc-in { from {transform:translateY(95px) rotate(14deg)} to {transform:translateY(0) rotate(0)} }
+@keyframes intro-x-out { from {translate:0 0} to {translate:-220% 0} }
+@keyframes intro-arc-out { from {transform:translateY(0) rotate(0)} to {transform:translateY(95px) rotate(-14deg)} }
+.intro-island { position:absolute; z-index:1; top:11px; left:50%; transform:translateX(-50%); width:27%; height:12px; border-radius:20px; background:#080809; pointer-events:none; }
+.intro-stage::after { content:''; position:absolute; bottom:24px; left:0; right:0; height:34px; background:linear-gradient(transparent,#fff); pointer-events:none; }
+.intro-control { z-index:2; background:#fff; border-radius:20px; }
+.intro-reduced { animation:none!important; transform:none!important; translate:0 0!important; opacity:1!important; }
+@media(prefers-reduced-motion:reduce) {
+  .intro-handset { animation:none!important; transform:none!important; translate:0 0!important; opacity:1!important; }
+}

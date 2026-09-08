@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Linking,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -90,12 +91,14 @@ export default function SettingsScreen({ embedded = false }: { embedded?: boolea
   const [nameFocused, setNameFocused] = useState(false);
   const [nameSaved, setNameSaved] = useState(false);
   const [billingOpen, setBillingOpen] = useState(false);
+  const [supportOpen, setSupportOpen] = useState(false);
   const [remindersOn, setRemindersOn] = useState(true);
   const [remindersBusy, setRemindersBusy] = useState(false);
   const [dragonNameDrafts, setDragonNameDrafts] = useState<Partial<Record<DragonId, string>>>({});
   const [dragonNamesSaved, setDragonNamesSaved] = useState(false);
   const [nameToast, setNameToast] = useState<string | null>(null);
   const [upgradeHint, setUpgradeHint] = useState('Unlimited scans · billed annually');
+  const [goalsOpen, setGoalsOpen] = useState(false);
   const nameInputRef = useRef<TextInput>(null);
   const nameHydrated = useRef(false);
   const dragonNamesHydrated = useRef(false);
@@ -577,12 +580,37 @@ export default function SettingsScreen({ embedded = false }: { embedded?: boolea
           <DragonEvolutionGallery profile={profile} />
 
           {error ? <Text style={styles.error}>{error}</Text> : null}
-          <GoalEditor
-            profile={profile}
-            submitLabel={savedFlash ? 'Saved \u2713' : 'Update goal'}
-            saving={saving}
-            onSubmit={handleSubmit}
-          />
+          <Pressable
+            onPress={() => setGoalsOpen((v) => !v)}
+            style={({ pressed }) => [
+              styles.goalsToggle,
+              pressableWeb,
+              pressed && { opacity: 0.85 },
+            ]}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: goalsOpen }}>
+            <Text style={styles.goalsToggleText}>
+              Goals & personal details {goalsOpen ? '−' : '+'}
+            </Text>
+          </Pressable>
+          {goalsOpen ? (
+            <GoalEditor
+              profile={profile}
+              extended
+              submitLabel={savedFlash ? 'Saved \u2713' : 'Update goal'}
+              saving={saving}
+              onSubmit={handleSubmit}
+            />
+          ) : null}
+
+          <Pressable
+            onPress={() => setSupportOpen(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Support"
+            style={({ pressed }) => [styles.supportBtn, pressableWeb, pressed && { opacity: 0.85 }]}>
+            <Ionicons name="help-circle-outline" size={16} color={colors.textSecondary} />
+            <Text style={styles.supportBtnText}>Support</Text>
+          </Pressable>
         </ScrollView>
       </KeyboardAvoidingView>
       <BillingSheet
@@ -594,6 +622,35 @@ export default function SettingsScreen({ embedded = false }: { embedded?: boolea
           setBillingOpen(false);
         }}
       />
+      <Modal
+        visible={supportOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSupportOpen(false)}>
+        <Pressable style={styles.supportBackdrop} onPress={() => setSupportOpen(false)}>
+          <View style={styles.supportCard} accessibilityViewIsModal>
+            <Text style={styles.supportTitle}>Support</Text>
+            <Text style={styles.supportBody}>Contact:</Text>
+            <Pressable
+              onPress={() => Linking.openURL('https://wa.me/447442194299')}
+              style={({ pressed }) => [styles.supportLinkRow, pressed && { opacity: 0.85 }]}>
+              <Ionicons name="logo-whatsapp" size={18} color={colors.accentSecondary} />
+              <Text style={styles.supportLink}>+44 7442 194299 on WhatsApp</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => Linking.openURL('mailto:niketh13putta@gmail.com')}
+              style={({ pressed }) => [styles.supportLinkRow, pressed && { opacity: 0.85 }]}>
+              <Ionicons name="mail-outline" size={18} color={colors.accent} />
+              <Text style={styles.supportLink}>niketh13putta@gmail.com by mail</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setSupportOpen(false)}
+              style={({ pressed }) => [styles.supportClose, pressed && { opacity: 0.85 }]}>
+              <Text style={styles.supportCloseText}>Close</Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 
@@ -997,5 +1054,81 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textSecondary,
     marginTop: 2,
+  },
+  supportBtn: {
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: spacing.lg,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  goalsToggle: {
+    marginTop: spacing.lg,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
+  },
+  goalsToggleText: {
+    fontFamily: fonts.body,
+    fontSize: 15,
+    color: colors.text,
+  },
+  supportBtnText: {
+    fontFamily: fonts.mono,
+    fontSize: 12,
+    letterSpacing: 0.6,
+    color: colors.textSecondary,
+  },
+  supportBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.72)',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.lg,
+  },
+  supportCard: {
+    backgroundColor: colors.bgRaised,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    padding: spacing.lg,
+    gap: spacing.sm,
+  },
+  supportTitle: {
+    fontFamily: fonts.displayHeavy,
+    fontSize: 20,
+    color: colors.text,
+  },
+  supportBody: {
+    fontFamily: fonts.body,
+    fontSize: 14,
+    color: colors.textSecondary,
+    marginBottom: spacing.xs,
+  },
+  supportLinkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: 10,
+  },
+  supportLink: {
+    fontFamily: fonts.displayMedium,
+    fontSize: 14,
+    color: colors.text,
+    flex: 1,
+  },
+  supportClose: {
+    marginTop: spacing.sm,
+    alignSelf: 'flex-end',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  supportCloseText: {
+    fontFamily: fonts.monoBold,
+    fontSize: 12,
+    letterSpacing: 0.8,
+    color: colors.accent,
   },
 });

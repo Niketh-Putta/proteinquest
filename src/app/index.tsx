@@ -52,7 +52,7 @@ export default function Index() {
     return <Redirect href="/intro" />;
   }
 
-  if (!profile.onboarded) {
+  if (!profile.onboarded || !profile.active_dragon_id) {
     return <Redirect href="/onboarding" />;
   }
 

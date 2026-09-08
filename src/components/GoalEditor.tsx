@@ -28,6 +28,7 @@ import {
   calculateProteinGoal,
   kgFromInput,
 } from '@/lib/protein';
+import { nutritionEstimate } from '@/lib/nutrition-estimate';
 import { getRetention } from '@/lib/retention';
 import type { ActivityLevel, GoalType, Profile, Sex } from '@/lib/types';
 import {
@@ -48,6 +49,8 @@ const PROTEIN_MAX = 250;
 
 interface Props {
   profile: Profile | null;
+  /** Compact Profile editor: height, target, pace, diet, etc. */
+  extended?: boolean;
   submitLabel: string;
   saving: boolean;
   onSubmit: (updates: Partial<Profile>) => void;
@@ -55,8 +58,21 @@ interface Props {
   onFieldFocus?: (field: 'age' | 'weight' | 'protein' | 'calories') => void;
 }
 
-export function GoalEditor({ profile, submitLabel, saving, onSubmit, onFieldFocus }: Props) {
+export function GoalEditor({
+  profile,
+  extended = false,
+  submitLabel,
+  saving,
+  onSubmit,
+  onFieldFocus,
+}: Props) {
   const { isNarrow } = useLayout();
+  const details = getRetention(profile).onboarding ?? {};
+  const [height, setHeight] = useState(String(details.height ?? ''));
+  const [target, setTarget] = useState(String(details.target ?? profile?.weight_kg ?? ''));
+  const [pace, setPace] = useState(String(details.pace ?? 0.5));
+  const [diet, setDiet] = useState(String(details.diet ?? 'Balanced'));
+  const [birthday, setBirthday] = useState(String(details.birthday ?? ''));
   const initialUnit = profile?.weight_unit ?? 'kg';
   const [age, setAge] = useState(profile?.age ? String(profile.age) : '');
   const [unit, setUnit] = useState<'kg' | 'lbs'>(initialUnit);
@@ -86,6 +102,46 @@ export function GoalEditor({ profile, submitLabel, saving, onSubmit, onFieldFocu
   const ageNum = parseInt(age, 10);
   const weightNum = parseFloat(weight);
   const weightKg = Number.isFinite(weightNum) ? kgFromInput(weightNum, unit) : NaN;
+
+  const changeUnit = (next: 'kg' | 'lbs') => {
+    if (next === unit) return;
+    if (Number.isFinite(weightKg)) {
+      setWeight(
+        String(Math.round((next === 'kg' ? weightKg : weightKg / KG_PER_LB) * 10) / 10),
+      );
+    }
+    setUnit(next);
+  };
+
+  useEffect(() => {
+    setProteinDirty(false);
+    setCalorieDirty(false);
+  }, [age, weight, sex, activity, goalType, height, target, pace]);
+
+  let personalized: ReturnType<typeof nutritionEstimate> | null = null;
+  let detailsError: string | null = null;
+  if (extended) {
+    try {
+      personalized = nutritionEstimate({
+        age: ageNum,
+        heightCm: Number(height),
+        weightKg,
+        targetKg: goalType === 'maintain' ? weightKg : Number(target),
+        sex: sex ?? '',
+        activity: activity ?? '',
+        goal: goalType ?? '',
+        pace: Number(pace),
+      });
+      if (
+        (goalType === 'lose_fat' && Number(target) > weightKg) ||
+        (goalType === 'build_muscle' && Number(target) < weightKg)
+      ) {
+        detailsError = 'Choose a target weight that matches your goal.';
+      }
+    } catch (e) {
+      detailsError = e instanceof Error ? e.message : 'Check your details.';
+    }
+  }
 
   // Mirror the profiles table check constraints so invalid values never reach the DB.
   const ageValid = Number.isFinite(ageNum) && ageNum >= AGE_MIN && ageNum <= AGE_MAX;
@@ -124,12 +180,13 @@ export function GoalEditor({ profile, submitLabel, saving, onSubmit, onFieldFocu
     });
   }, [weightValid, weightKg, sex, activity, goalType]);
 
-  const suggestedCalories = calorieCalc?.kcal ?? null;
+  const suggestedCalories = personalized?.calories ?? calorieCalc?.kcal ?? null;
+  const suggestedProtein = personalized?.protein ?? calc?.grams ?? null;
 
   useEffect(() => {
-    if (!calc || proteinDirty) return;
-    setProteinText(String(calc.grams));
-  }, [calc, proteinDirty]);
+    if (suggestedProtein == null || proteinDirty) return;
+    setProteinText(String(suggestedProtein));
+  }, [suggestedProtein, proteinDirty]);
 
   useEffect(() => {
     if (suggestedCalories == null || calorieDirty) return;
@@ -145,13 +202,42 @@ export function GoalEditor({ profile, submitLabel, saving, onSubmit, onFieldFocu
     calorieNum >= CALORIE_AIM_MIN &&
     calorieNum <= CALORIE_AIM_MAX;
   const canSubmit =
-    !!calc && ageValid && weightValid && proteinValid && calorieValid;
+    !!calc && ageValid && weightValid && proteinValid && calorieValid && !detailsError;
 
   function handleSubmit() {
     if (!canSubmit || !calc) return;
     const retention = {
       ...getRetention(profile),
       calorie_goal_kcal: calorieNum,
+      ...(extended
+        ? {
+            onboarding: {
+              ...details,
+              age: ageNum,
+              birthday: birthday || details.birthday || '',
+              height: height === '' ? '' : Number(height),
+              weight: Math.round(weightKg * 10) / 10,
+              target: goalType === 'maintain' ? weightKg : Number(target),
+              pace: Number(pace),
+              diet,
+              sex: sex === 'male' ? 'Male' : sex === 'female' ? 'Female' : 'Other',
+              goal:
+                goalType === 'lose_fat'
+                  ? 'Lose weight'
+                  : goalType === 'build_muscle'
+                    ? 'Gain weight'
+                    : 'Maintain',
+              workouts:
+                activity === 'active' || activity === 'athlete'
+                  ? '6+'
+                  : activity === 'moderate'
+                    ? '3–5'
+                    : '0–2',
+              weightUnit: unit,
+              heightUnit: 'cm',
+            },
+          }
+        : {}),
     };
     onSubmit({
       age: ageNum,
@@ -174,7 +260,11 @@ export function GoalEditor({ profile, submitLabel, saving, onSubmit, onFieldFocu
         : 'g per kg bodyweight';
 
   const showProteinReset =
-    !!calc && proteinDirty && proteinValid && proteinNum !== calc.grams;
+    !!calc &&
+    proteinDirty &&
+    proteinValid &&
+    suggestedProtein != null &&
+    proteinNum !== suggestedProtein;
   const showCalorieReset =
     calorieDirty &&
     calorieValid &&
@@ -194,6 +284,21 @@ export function GoalEditor({ profile, submitLabel, saving, onSubmit, onFieldFocu
       />
       {ageError ? <Text style={styles.fieldError}>{ageError}</Text> : null}
 
+      {extended ? (
+        <>
+          <FieldLabel>Birthday (YYYY-MM-DD)</FieldLabel>
+          <TextInput
+            value={birthday}
+            onChangeText={setBirthday}
+            placeholder="2000-01-01"
+            placeholderTextColor={colors.textTertiary}
+            autoCapitalize="none"
+            autoCorrect={false}
+            style={[styles.reasonText, { paddingVertical: 12 }, textInputWeb]}
+          />
+        </>
+      ) : null}
+
       <FieldLabel>Weight</FieldLabel>
       {isNarrow ? (
         <View style={styles.weightStack}>
@@ -206,7 +311,7 @@ export function GoalEditor({ profile, submitLabel, saving, onSubmit, onFieldFocu
           />
           <SegmentedRow
             value={unit}
-            onChange={setUnit}
+            onChange={changeUnit}
             options={[
               { value: 'kg', title: 'kg' },
               { value: 'lbs', title: 'lbs' },
@@ -227,7 +332,7 @@ export function GoalEditor({ profile, submitLabel, saving, onSubmit, onFieldFocu
           <View style={styles.unitPicker}>
             <SegmentedRow
               value={unit}
-              onChange={setUnit}
+              onChange={changeUnit}
               options={[
                 { value: 'kg', title: 'kg' },
                 { value: 'lbs', title: 'lbs' },
@@ -237,6 +342,46 @@ export function GoalEditor({ profile, submitLabel, saving, onSubmit, onFieldFocu
         </View>
       )}
       {weightError ? <Text style={styles.fieldError}>{weightError}</Text> : null}
+
+      {extended ? (
+        <>
+          <FieldLabel>Height (cm)</FieldLabel>
+          <NumberField
+            value={height}
+            onChange={setHeight}
+            placeholder="170"
+            keyboardType="decimal-pad"
+          />
+          <FieldLabel>Target weight (kg)</FieldLabel>
+          <NumberField
+            value={target}
+            onChange={setTarget}
+            placeholder="70"
+            keyboardType="decimal-pad"
+          />
+          <FieldLabel>Weekly pace (kg)</FieldLabel>
+          <NumberField
+            value={pace}
+            onChange={setPace}
+            placeholder="0.5"
+            keyboardType="decimal-pad"
+          />
+          <FieldLabel>Diet preference</FieldLabel>
+          <ChoiceRow
+            value={diet}
+            onChange={setDiet}
+            options={['Balanced', 'Vegetarian', 'Vegan', 'Pescatarian', 'Other'].map((value) => ({
+              value,
+              title: value,
+            }))}
+          />
+          {detailsError ? <Text style={styles.fieldError}>{detailsError}</Text> : null}
+          <Text style={styles.reasonText}>
+            Targets are starting estimates. Adjust with your progress. Diet preferences do not
+            change your energy requirement.
+          </Text>
+        </>
+      ) : null}
 
       <FieldLabel>Sex</FieldLabel>
       <SegmentedRow
@@ -270,7 +415,7 @@ export function GoalEditor({ profile, submitLabel, saving, onSubmit, onFieldFocu
         }))}
       />
 
-      {calc && calorieCalc ? (
+      {(calc || personalized) && (calorieCalc || personalized) ? (
         <Animated.View entering={FadeInDown.duration(360)} style={styles.goalBlock}>
           <Text style={styles.goalLabel}>YOUR DAILY TARGET</Text>
           <View style={styles.goalRow}>
@@ -325,7 +470,7 @@ export function GoalEditor({ profile, submitLabel, saving, onSubmit, onFieldFocu
                 <Pressable
                   onPress={() => {
                     setProteinDirty(false);
-                    setProteinText(String(calc.grams));
+                    if (suggestedProtein != null) setProteinText(String(suggestedProtein));
                   }}
                   style={({ pressed }) => [
                     styles.suggestChip,
@@ -334,7 +479,7 @@ export function GoalEditor({ profile, submitLabel, saving, onSubmit, onFieldFocu
                     pressed && { opacity: 0.75 },
                   ]}>
                   <View pointerEvents="none" style={styles.suggestSheen} />
-                  <Text style={styles.suggestChipText}>Use suggested {calc.grams}g</Text>
+                  <Text style={styles.suggestChipText}>Use suggested {suggestedProtein}g</Text>
                 </Pressable>
               ) : null}
               {showCalorieReset ? (
@@ -361,13 +506,13 @@ export function GoalEditor({ profile, submitLabel, saving, onSubmit, onFieldFocu
           <View style={styles.rule} />
           <Text style={styles.breakdownLabel}>HOW WE GOT HERE</Text>
           <View style={styles.reasoning}>
-            {calc.reasoning.map((line, i) => (
+            {(calc?.reasoning ?? []).map((line, i) => (
               <View key={`p-${i}`} style={styles.reasonRow}>
                 <Text style={styles.reasonDash}>-</Text>
                 <Text style={styles.reasonText}>{line}</Text>
               </View>
             ))}
-            {calorieCalc.reasoning.map((line, i) => (
+            {(calorieCalc?.reasoning ?? []).map((line, i) => (
               <View key={`c-${i}`} style={styles.reasonRow}>
                 <Text style={styles.reasonDash}>-</Text>
                 <Text style={styles.reasonText}>{line}</Text>
