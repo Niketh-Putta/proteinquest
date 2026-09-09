@@ -87,6 +87,10 @@ export default function Intro() {
   const [saveStatus, setSaveStatus] = useState('Saving your plan…');
   const [saveFailed, setSaveFailed] = useState(false);
   const [saveAttempt, setSaveAttempt] = useState(0);
+  // Must stay above any early return (React hooks order / error #310).
+  const { width: winW, height: winH } = useWindowDimensions();
+  const padX = winW < 360 ? 16 : 23;
+  const compact = winH < 700;
 
   const put = useCallback((key: string, value: string | number | boolean) => {
     setA((old) => ({ ...old, [key]: value }));
@@ -950,9 +954,6 @@ export default function Intro() {
   }
 
   const showNav = step > 0 && step !== 27 && step !== 30;
-  const { width: winW, height: winH } = useWindowDimensions();
-  const padX = winW < 360 ? 16 : 23;
-  const compact = winH < 700;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
