@@ -25,11 +25,12 @@ Analytics start date: **2026-09-10**. Historic app events were not invented.
 | App event ingest | implemented / connected | Live from 2026-09-10 |
 | Website `landing_viewed` / `store_link_clicked` | implemented | proteinquest.app session website ID |
 | Growth OS UI | implemented | Next.js in `/dashboard`, same login contract as the live site |
-| RevenueCat webhook | implemented, requires owner access | Confirm dest + `REVENUECAT_WEBHOOK_AUTH` |
+| RevenueCat webhook | implemented, auth-protected, requires owner access | Live URL kept. `REVENUECAT_WEBHOOK_AUTH` is set (unauthenticated POST = 401). Dashboard destination / event list / test send not confirmed. No production `subscription_events` yet. Not verified. |
 | App Store Connect analytics | connected, not verified | Official daily Downloads + Discovery/Engagement imported 2026-06-25 to 2026-09-09. Sandbox excluded. |
 | App Store financial statements | requires owner access | Sales/Trends + vendor number still needed. Analytics purchases are not a statement. |
 | App Store Server Notifications V2 | implemented stub, requires owner access | |
-| Google Play reports / RTDN | implemented importer, requires owner access | |
+| Google Play reports | implemented importer, requires owner access | `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` already on Vercel Production (value not readable via env pull). Developer ID / GCS bucket names set as config. Import not run from this session. Financial statements stay not connected. |
+| Google Play RTDN | implemented stub, requires owner access | Existing URL kept. Pub/Sub OIDC audience defaults to that URL. Play Console topic not configured (console was signed out). |
 | OpenAI per-request estimates | implemented | gpt-4o schedule 2026-09-10. Invoice reconcile needs usage key |
 | Apple membership / Play registration invoices | requires owner access | Enter real invoices. Do not assume USD 99 / USD 25 |
 | Paid ads | not connected | No ASA/Meta/TikTok/Google ads account confirmed |
@@ -53,6 +54,9 @@ Dashboard / Vercel:
 - `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`
 - `GOOGLE_PLAY_GCS_BUCKET`
 - `GOOGLE_PLAY_DEVELOPER_ID`
+- `GOOGLE_RTDN_AUDIENCE`
+- `REVENUECAT_WEBHOOK_AUTH`
+- `REVENUECAT_API_KEY`
 
 Supabase Edge Function secrets:
 

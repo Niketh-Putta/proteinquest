@@ -3,8 +3,8 @@ See HANDOFF.md. Owner links:
 - https://proteinquest.vercel.app (Growth OS login)
 - https://proteinquest.vercel.app/connections (run store/FX import after secrets)
 - https://appstoreconnect.apple.com/access/integrations/api
-- https://play.google.com/console
-- https://app.revenuecat.com
+- https://play.google.com/console (Download reports terms + RTDN topic → existing `google-rtdn` URL)
+- https://app.revenuecat.com (Integrations → Webhooks must stay on the existing `revenuecat-webhook` URL)
 - https://platform.openai.com/usage
 - https://supabase.com/dashboard/project/csxdkvpvcasuknhnprxp
 

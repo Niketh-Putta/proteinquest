@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { displayMetric } from "./format";
+import { isNewPaidSubscriptionEvent } from "./play-reports";
 import type { Metric, Status } from "./types";
 
 export type { Metric, Status };
@@ -190,7 +191,13 @@ export async function loadSnapshot(search: {
   const subEvents = await table(client, "subscription_events");
   const paidUsers = new Set(
     subEvents
-      .filter((e) => e.environment === "production" && e.is_trial !== true)
+      .filter((e) =>
+        isNewPaidSubscriptionEvent({
+          eventType: String(e.event_type ?? ""),
+          environment: String(e.environment ?? ""),
+          isTrial: e.is_trial === true,
+        }),
+      )
       .map((e) => e.user_id)
       .filter(Boolean),
   );

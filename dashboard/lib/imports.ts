@@ -1,8 +1,12 @@
 import { createSign } from "node:crypto";
 import { gunzipSync } from "node:zlib";
 import { createClient } from "@supabase/supabase-js";
-
-const APP_SKU = "com.proteinquest.app";
+import {
+  APP_SKU,
+  isPlayOverviewObject,
+  parsePlayOverviewCsv,
+  playBucketCandidates,
+} from "./play-reports";
 
 function admin() {
   const url =
@@ -186,6 +190,7 @@ async function importAppleAnalytics(token: string) {
       p_impressions: row.impressions,
       p_product_page_views: row.pages,
       p_redownloads: row.redo,
+      p_reinstalls: null,
     });
     if (!error) inserted += 1;
   }
@@ -242,6 +247,7 @@ async function importAppleSales(token: string, vendor: string) {
       p_source: "app_store_connect_sales",
       p_first_time_downloads: Math.max(0, Math.round(units)),
       p_acquisitions: null,
+      p_reinstalls: null,
     });
     if (!error) inserted += 1;
   }
@@ -303,6 +309,13 @@ async function googleToken() {
   return json.access_token ?? null;
 }
 
+async function listPlayOverview(token: string, bucket: string) {
+  const prefix = `stats/installs/installs_${APP_SKU}_`;
+  const listUrl = `https://storage.googleapis.com/storage/v1/b/${bucket}/o?prefix=${encodeURIComponent(prefix)}&maxResults=200`;
+  const listRes = await fetch(listUrl, { headers: { Authorization: `Bearer ${token}` } });
+  return { listRes, bucket };
+}
+
 async function importPlay() {
   const token = await googleToken();
   if (!token) {
@@ -310,61 +323,80 @@ async function importPlay() {
       "google_play",
       "requires_owner_access",
       "Missing GOOGLE_PLAY_SERVICE_ACCOUNT_JSON.",
-      "Importer ready. Add Play service account + report bucket.",
+      "Importer ready. GOOGLE_PLAY_SERVICE_ACCOUNT_JSON is a Vercel Production secret and cannot be read via env pull.",
     );
     return { provider: "google_play", status: "requires_owner_access" };
   }
-  let bucket = process.env.GOOGLE_PLAY_GCS_BUCKET?.trim();
-  if (!bucket && process.env.GOOGLE_PLAY_DEVELOPER_ID) {
-    bucket = `pubsite_prod_rev_${process.env.GOOGLE_PLAY_DEVELOPER_ID.trim()}`;
+
+  const candidates = playBucketCandidates(
+    process.env.GOOGLE_PLAY_DEVELOPER_ID,
+    process.env.GOOGLE_PLAY_GCS_BUCKET,
+  );
+  let bucket: string | null = null;
+  let objects: { name: string }[] = [];
+  let lastStatus = 0;
+  for (const candidate of candidates) {
+    const { listRes } = await listPlayOverview(token, candidate);
+    lastStatus = listRes.status;
+    if (!listRes.ok) continue;
+    const list = (await listRes.json()) as { items?: { name: string }[] };
+    const found = (list.items ?? []).filter((o) => o.name && isPlayOverviewObject(o.name));
+    bucket = candidate;
+    objects = found;
+    if (found.length) break;
   }
+
   if (!bucket) {
-    await mark("google_play", "requires_owner_access", "Set GOOGLE_PLAY_GCS_BUCKET.");
+    const note =
+      lastStatus === 403 || lastStatus === 401
+        ? "Service account reached GCS auth but not the report bucket. Accept Download reports terms and grant the reporting account."
+        : "Set GOOGLE_PLAY_GCS_BUCKET after accepting Play Download reports terms.";
+    await mark("google_play", "requires_owner_access", `GCS list ${lastStatus || "empty"}`, note);
     return { provider: "google_play", status: "requires_owner_access" };
   }
-  const prefix = `stats/installs/installs_${APP_SKU}_`;
-  const listUrl = `https://storage.googleapis.com/storage/v1/b/${bucket}/o?prefix=${encodeURIComponent(prefix)}&maxResults=20`;
-  const listRes = await fetch(listUrl, { headers: { Authorization: `Bearer ${token}` } });
-  if (!listRes.ok) {
-    await mark("google_play", "error", `GCS list ${listRes.status}`);
-    return { provider: "google_play", status: "error" };
+
+  if (!objects.length) {
+    await mark(
+      "google_play",
+      "connected",
+      null,
+      `Play bucket ${bucket} reachable. No install overview CSV yet. Financial statements stay not connected. License testers cannot be stripped from aggregate CSVs.`,
+    );
+    return { provider: "google_play", status: "connected", inserted: 0, bucket };
   }
-  const list = (await listRes.json()) as { items?: { name: string }[] };
-  const object = (list.items ?? []).filter((o) => o.name?.includes("_overview.csv")).sort((a, b) => (a.name < b.name ? 1 : -1))[0];
-  if (!object) {
-    await mark("google_play", "connected", null, "Play bucket reachable. No overview CSV yet.");
-    return { provider: "google_play", status: "connected", inserted: 0 };
-  }
-  const media = `https://storage.googleapis.com/storage/v1/b/${bucket}/o/${encodeURIComponent(object.name)}?alt=media`;
-  const csvRes = await fetch(media, { headers: { Authorization: `Bearer ${token}` } });
-  if (!csvRes.ok) {
-    await mark("google_play", "error", `GCS download ${csvRes.status}`);
-    return { provider: "google_play", status: "error" };
-  }
-  const csv = await csvRes.text();
-  const rows = csv.trim().split("\n");
-  const headers = rows[0]?.split(",").map((h) => h.trim()) ?? [];
-  const dateIdx = headers.findIndex((h) => /date/i.test(h));
-  const acqIdx = headers.findIndex((h) => h === "Daily User Installs" || h === "User Installs");
+
   const client = admin();
   let inserted = 0;
-  for (const line of rows.slice(1)) {
-    const cols = line.split(",").map((c) => c.replace(/"/g, ""));
-    const metricDate = cols[dateIdx];
-    if (!metricDate || !/^\d{4}-\d{2}-\d{2}$/.test(metricDate)) continue;
-    const acquisitions = Number.parseInt(cols[acqIdx] ?? "0", 10) || 0;
-    const { error } = await client.rpc("growth_insert_store_daily", {
-      p_platform: "android",
-      p_metric_date: metricDate,
-      p_country: null,
-      p_source: "play_installs_overview",
-      p_first_time_downloads: null,
-      p_acquisitions: acquisitions,
-    });
-    if (!error) inserted += 1;
+  const names: string[] = [];
+  for (const object of objects.sort((a, b) => a.name.localeCompare(b.name))) {
+    const media = `https://storage.googleapis.com/storage/v1/b/${bucket}/o/${encodeURIComponent(object.name)}?alt=media`;
+    const csvRes = await fetch(media, { headers: { Authorization: `Bearer ${token}` } });
+    if (!csvRes.ok) {
+      await mark("google_play", "error", `GCS download ${csvRes.status}`);
+      return { provider: "google_play", status: "error" };
+    }
+    const csv = Buffer.from(await csvRes.arrayBuffer());
+    names.push(object.name);
+    for (const row of parsePlayOverviewCsv(csv)) {
+      const { error } = await client.rpc("growth_insert_store_daily", {
+        p_platform: "android",
+        p_metric_date: row.date,
+        p_country: null,
+        p_source: "play_installs_overview",
+        p_first_time_downloads: null,
+        p_acquisitions: row.acquisitions,
+        p_reinstalls: row.reinstalls,
+      });
+      if (!error) inserted += 1;
+    }
   }
-  await mark("google_play", "connected", null, `Imported ${inserted} Play install rows from ${object.name}.`);
-  return { provider: "google_play", status: "connected", inserted };
+  await mark(
+    "google_play",
+    "connected",
+    null,
+    `Imported ${inserted} Play Daily User Installs / reinstall rows from ${names.length} overview CSV(s). Native Play acquisitions, not Apple first-time downloads. Financial statements not imported.`,
+  );
+  return { provider: "google_play", status: "connected", inserted, bucket };
 }
 
 async function importFx() {
