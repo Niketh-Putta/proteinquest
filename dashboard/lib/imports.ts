@@ -53,24 +53,158 @@ async function appleJwt() {
   return `${signingInput}.${b64url(signature)}`;
 }
 
-async function importApple() {
-  const vendor = process.env.APPLE_VENDOR_NUMBER?.trim();
-  const token = await appleJwt();
-  if (!token || !vendor) {
-    await mark(
-      "app_store_connect",
-      "requires_owner_access",
-      "Missing ASC_KEY_P8, ASC_KEY_ID, ASC_ISSUER_ID or APPLE_VENDOR_NUMBER.",
-      "Importer ready. Add App Store Connect API secrets to the dashboard deployment.",
-    );
-    return { provider: "app_store_connect", status: "requires_owner_access" };
+function sandboxRow(row: Record<string, string>) {
+  return Object.values(row).some((value) => String(value).toLowerCase().includes("sandbox"));
+}
+
+function parseReportTsv(buf: Buffer) {
+  const lines = gunzipSync(buf).toString("utf8").replace(/^\uFEFF/, "").split(/\r?\n/).filter(Boolean);
+  if (!lines.length) return [] as Record<string, string>[];
+  const headers = lines[0].split("\t").map((h) => h.trim());
+  return lines.slice(1).map((line) => {
+    const cols = line.split("\t");
+    const row: Record<string, string> = {};
+    headers.forEach((header, i) => {
+      row[header] = cols[i] ?? "";
+    });
+    return row;
+  });
+}
+
+function reportDate(row: Record<string, string>) {
+  const value = String(row.Date ?? row["Event Date"] ?? "").trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
+}
+
+async function appleGet(token: string, path: string) {
+  const url = path.startsWith("http") ? path : `https://api.appstoreconnect.apple.com${path}`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  const json = (await res.json().catch(() => ({}))) as {
+    data?: { id: string; attributes?: Record<string, string> }[];
+    links?: { next?: string };
+  };
+  if (!res.ok) throw new Error(`ASC ${res.status} ${path}`);
+  return json;
+}
+
+async function applePages(token: string, path: string) {
+  const items: { id: string; attributes?: Record<string, string> }[] = [];
+  let next: string | null = path;
+  while (next) {
+    const json = await appleGet(token, next);
+    items.push(...(json.data ?? []));
+    next = json.links?.next ?? null;
+  }
+  return items;
+}
+
+async function latestRowsByDate(token: string, reportId: string) {
+  const instances = await applePages(
+    token,
+    `/v1/analyticsReports/${reportId}/instances?filter[granularity]=DAILY&limit=200`,
+  );
+  instances.sort((a, b) => String(a.attributes?.processingDate).localeCompare(String(b.attributes?.processingDate)));
+  const latest = new Map<string, { processingDate: string; rows: Record<string, string>[] }>();
+  for (const instance of instances) {
+    const processingDate = instance.attributes?.processingDate ?? "";
+    const segments = await applePages(token, `/v1/analyticsReportInstances/${instance.id}/segments?limit=200`);
+    for (const segment of segments) {
+      const url = segment.attributes?.url;
+      if (!url) continue;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`ASC segment ${res.status}`);
+      for (const row of parseReportTsv(Buffer.from(await res.arrayBuffer()))) {
+        if (sandboxRow(row)) continue;
+        const date = reportDate(row);
+        if (!date) continue;
+        const current = latest.get(date);
+        if (!current || processingDate > current.processingDate) {
+          latest.set(date, { processingDate, rows: [row] });
+        } else if (processingDate === current.processingDate) {
+          current.rows.push(row);
+        }
+      }
+    }
+  }
+  return [...latest.values()].flatMap((entry) => entry.rows);
+}
+
+async function importAppleAnalytics(token: string) {
+  const requestId = process.env.APPLE_ANALYTICS_REQUEST_ID?.trim() || "a447d9b5-3d65-4e0b-bc68-3fdd6ff3330d";
+  const reports = await applePages(token, `/v1/analyticsReportRequests/${requestId}/reports?limit=200`);
+  const byName = new Map(reports.map((report) => [String(report.attributes?.name ?? ""), report.id]));
+  const downloadsId = byName.get("App Downloads Standard");
+  const engagementId = byName.get("App Store Discovery and Engagement Standard");
+  if (!downloadsId && !engagementId) {
+    throw new Error("Apple Analytics Standard reports were not found on the ongoing request.");
   }
 
+  const daily = new Map<
+    string,
+    { date: string; country: string | null; first: number; redo: number; impressions: number; pages: number }
+  >();
+  const bump = (date: string, country: string | null, field: "first" | "redo" | "impressions" | "pages", n: number) => {
+    const key = `${date}|${country ?? ""}`;
+    if (!daily.has(key)) daily.set(key, { date, country, first: 0, redo: 0, impressions: 0, pages: 0 });
+    daily.get(key)![field] += n;
+  };
+
+  if (downloadsId) {
+    for (const row of await latestRowsByDate(token, downloadsId)) {
+      const date = reportDate(row);
+      if (!date) continue;
+      const type = String(row["Download Type"] ?? "").toLowerCase();
+      const n = Number.parseInt(row.Counts || "0", 10) || 0;
+      const country = String(row.Territory || "").trim() || null;
+      if (type.includes("first-time") || type.includes("first time")) bump(date, country, "first", n);
+      else if (type.includes("redownload")) bump(date, country, "redo", n);
+    }
+  }
+  if (engagementId) {
+    for (const row of await latestRowsByDate(token, engagementId)) {
+      const date = reportDate(row);
+      if (!date) continue;
+      const event = String(row.Event ?? "").toLowerCase();
+      const pageType = String(row["Page Type"] ?? "").toLowerCase();
+      const n = Number.parseInt(row.Counts || "0", 10) || 0;
+      const country = String(row.Territory || "").trim() || null;
+      if (event.includes("impression")) bump(date, country, "impressions", n);
+      if (event.includes("page view") && pageType.includes("product")) bump(date, country, "pages", n);
+    }
+  }
+
+  const client = admin();
+  let inserted = 0;
+  for (const row of daily.values()) {
+    const { error } = await client.rpc("growth_insert_store_daily", {
+      p_platform: "ios",
+      p_metric_date: row.date,
+      p_country: row.country,
+      p_source: "asc_analytics_standard",
+      p_first_time_downloads: row.first,
+      p_acquisitions: null,
+      p_impressions: row.impressions,
+      p_product_page_views: row.pages,
+      p_redownloads: row.redo,
+    });
+    if (!error) inserted += 1;
+  }
+  const dates = [...daily.values()].map((row) => row.date).sort();
+  await mark(
+    "app_store_connect",
+    "connected",
+    null,
+    `Apple Analytics Standard connected. Imported ${inserted} official daily rows${dates.length ? ` ${dates[0]} to ${dates.at(-1)}` : ""}. Purchases Standard is not a financial statement. Sales/Trends still need vendor number. Not verified.`,
+  );
+  return { provider: "app_store_connect", status: "connected" as const, inserted };
+}
+
+async function importAppleSales(token: string, vendor: string) {
   const now = new Date();
-  const reportDate = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+  const reportDateMonth = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
   const q = new URLSearchParams({
     "filter[frequency]": "MONTHLY",
-    "filter[reportDate]": reportDate,
+    "filter[reportDate]": reportDateMonth,
     "filter[reportSubType]": "SUMMARY",
     "filter[reportType]": "SALES",
     "filter[vendorNumber]": vendor,
@@ -79,16 +213,8 @@ async function importApple() {
   const res = await fetch(`https://api.appstoreconnect.apple.com/v1/salesReports?${q}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
-  if (res.status === 404) {
-    await mark("app_store_connect", "connected", null, `No Apple sales report yet for ${reportDate}.`);
-    return { provider: "app_store_connect", status: "connected", inserted: 0 };
-  }
-  if (!res.ok) {
-    const text = await res.text();
-    await mark("app_store_connect", "error", `${res.status} ${text.slice(0, 180)}`);
-    return { provider: "app_store_connect", status: "error" };
-  }
-
+  if (res.status === 404) return 0;
+  if (!res.ok) throw new Error(`Apple sales ${res.status}`);
   const tsv = gunzipSync(Buffer.from(await res.arrayBuffer())).toString("utf8");
   const lines = tsv.trim().split("\n");
   const headers = lines[0]?.split("\t") ?? [];
@@ -108,12 +234,10 @@ async function importApple() {
     if (!downloadTypes.has(type)) continue;
     const units = Number.parseFloat(cols[unitsIdx] ?? "0") || 0;
     const rawDate = cols[dateIdx] ?? "";
-    const metricDate = rawDate.includes("/")
-      ? rawDate.split("/").reverse().join("-")
-      : reportDate + "-01";
+    const metricDate = rawDate.includes("/") ? rawDate.split("/").reverse().join("-") : `${reportDateMonth}-01`;
     const { error } = await client.rpc("growth_insert_store_daily", {
       p_platform: "ios",
-      p_metric_date: metricDate.length === 10 ? metricDate : `${reportDate}-01`,
+      p_metric_date: metricDate.length === 10 ? metricDate : `${reportDateMonth}-01`,
       p_country: cols[countryIdx] || null,
       p_source: "app_store_connect_sales",
       p_first_time_downloads: Math.max(0, Math.round(units)),
@@ -121,8 +245,31 @@ async function importApple() {
     });
     if (!error) inserted += 1;
   }
-  await mark("app_store_connect", "connected", null, `Imported ${inserted} Apple sales rows for ${reportDate}.`);
-  return { provider: "app_store_connect", status: "connected", inserted };
+  return inserted;
+}
+
+async function importApple() {
+  const token = await appleJwt();
+  if (!token) {
+    await mark(
+      "app_store_connect",
+      "requires_owner_access",
+      "Missing ASC_KEY_P8, ASC_KEY_ID or ASC_ISSUER_ID.",
+      "Importer ready. Add App Store Connect API secrets to the dashboard deployment.",
+    );
+    return { provider: "app_store_connect", status: "requires_owner_access" };
+  }
+
+  const analytics = await importAppleAnalytics(token);
+  const vendor = process.env.APPLE_VENDOR_NUMBER?.trim();
+  if (vendor) {
+    try {
+      await importAppleSales(token, vendor);
+    } catch {
+      // Analytics can stay connected even when Sales/Trends still needs a usable vendor number.
+    }
+  }
+  return analytics;
 }
 
 async function googleToken() {

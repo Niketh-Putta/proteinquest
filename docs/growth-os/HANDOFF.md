@@ -26,7 +26,8 @@ Analytics start date: **2026-09-10**. Historic app events were not invented.
 | Website `landing_viewed` / `store_link_clicked` | implemented | proteinquest.app session website ID |
 | Growth OS UI | implemented | Next.js in `/dashboard`, same login contract as the live site |
 | RevenueCat webhook | implemented, requires owner access | Confirm dest + `REVENUECAT_WEBHOOK_AUTH` |
-| App Store Connect | implemented importer, requires owner access | Needs `.p8`, issuer, vendor number on the dashboard deployment |
+| App Store Connect analytics | connected, not verified | Official daily Downloads + Discovery/Engagement imported 2026-06-25 to 2026-09-09. Sandbox excluded. |
+| App Store financial statements | requires owner access | Sales/Trends + vendor number still needed. Analytics purchases are not a statement. |
 | App Store Server Notifications V2 | implemented stub, requires owner access | |
 | Google Play reports / RTDN | implemented importer, requires owner access | |
 | OpenAI per-request estimates | implemented | gpt-4o schedule 2026-09-10. Invoice reconcile needs usage key |

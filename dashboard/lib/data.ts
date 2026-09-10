@@ -134,10 +134,12 @@ export async function loadSnapshot(search: {
   const firstMeal = eventMetric("first_meals", "first meal in activation window", `first meal within ${activationWindow}d`);
   const appleOk = ["connected", "verified"].includes(String(conn("app_store_connect")?.status ?? ""));
   const playOk = ["connected", "verified"].includes(String(conn("google_play")?.status ?? ""));
-  const storeRows = await table(client, "store_daily_metrics");
+  const storeRows = (await table(client, "store_daily_metrics")).filter(
+    (r) => String(r.metric_date) >= from && String(r.metric_date) <= to,
+  );
   const appleDownloads = appleOk
     ? metric("ok", storeRows.filter((r) => r.platform === "ios").reduce((a, r) => a + Number(r.first_time_downloads ?? 0), 0), {
-        source: "App Store Connect reports",
+        source: "App Store Connect Analytics Standard",
       })
     : metric("not_connected", null, {
         source: "App Store Connect",
