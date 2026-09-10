@@ -2,7 +2,7 @@
 
 Period: none verified.
 
-Apple: Analytics Standard is connected (not statement-verified). Sales/Trends + finance import is implemented against the Production vendor secret. `store_financials` stays empty until an official finance file lands. Dashboard shows **Not connected** for proceeds until then, not £0.
+Apple: Analytics Standard is connected (not statement-verified). Sales/Trends monthly unit reports imported from the Production vendor secret. Official finance files returned 404, so `store_financials` is empty. Dashboard shows **Not connected** for proceeds, not £0.
 
 Google: no Play financial / install overview imported. Last sync GCS list was 404. Dashboard shows **Not connected**, not 0 installs.
 

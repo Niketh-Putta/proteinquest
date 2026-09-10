@@ -27,9 +27,9 @@ Analytics start date: **2026-09-10**. Historic app events were not invented.
 | Growth OS UI | implemented | Next.js in `/dashboard`, same login contract as the live site |
 | RevenueCat webhook | implemented, auth-protected, requires owner access | Live URL kept. `REVENUECAT_WEBHOOK_AUTH` is set (unauthenticated POST = 401). Dashboard destination / event list / test send not confirmed. No production `subscription_events` yet. Not verified. |
 | App Store Connect analytics | connected, not verified | Official daily Downloads + Discovery/Engagement imported 2026-06-25 to 2026-09-09. Sandbox excluded. |
-| App Store Sales/Trends + finance | implemented | Vendor secret is on Vercel Production. Importer now matches ASC sku `proteinquest`, parses MM/DD/YYYY, and writes official finance files into `store_financials`. Empty files stay Not connected, not a reconciled 0. |
+| App Store Sales/Trends + finance | Sales/Trends connected, finance implemented | Production vendor secret works. Live sync stored official monthly unit rows (source `app_store_connect_sales`). Finance API last HTTP 404, so `store_financials` is still empty. That is Not connected, not a reconciled 0. |
 | App Store Server Notifications V2 | implemented stub, requires owner access | |
-| Google Play reports | implemented importer, requires owner access | Last live sync: GCS list 404 on `pubsite_prod_rev_<developer_id>`. Importer now records per-bucket HTTP status, strips `gs://`, and only marks connected after real overview rows. |
+| Google Play reports | implemented importer, requires owner access | Live sync: GCS list 404 on `pubsite_prod_rev_<developer_id>`. Accept Download reports terms and grant the Play reporting service account already on Vercel. Connected only after real overview rows. |
 | Google Play RTDN | implemented stub, requires owner access | Existing URL kept. Pub/Sub OIDC audience defaults to that URL. Play Console topic not configured (console was signed out). |
 | OpenAI per-request estimates | implemented | gpt-4o schedule 2026-09-10. Invoice reconcile needs usage key |
 | Apple membership / Play registration invoices | requires owner access | Enter real invoices. Do not assume USD 99 / USD 25 |
