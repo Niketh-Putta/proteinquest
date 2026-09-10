@@ -2,6 +2,12 @@ import { createSign } from "node:crypto";
 import { gunzipSync } from "node:zlib";
 import { createClient } from "@supabase/supabase-js";
 import {
+  APPLE_FINANCE_REGIONS,
+  monthKeys,
+  parseAppleFinanceRows,
+  parseAppleSalesUnits,
+} from "./apple-reports";
+import {
   APP_SKU,
   isPlayOverviewObject,
   parsePlayOverviewCsv,
@@ -20,7 +26,7 @@ function admin() {
 
 async function mark(
   provider: string,
-  status: "connected" | "error" | "requires_owner_access",
+  status: "connected" | "error" | "requires_owner_access" | "not_connected",
   error: string | null,
   notes?: string,
 ) {
@@ -195,63 +201,132 @@ async function importAppleAnalytics(token: string) {
     if (!error) inserted += 1;
   }
   const dates = [...daily.values()].map((row) => row.date).sort();
-  await mark(
-    "app_store_connect",
-    "connected",
-    null,
-    `Apple Analytics Standard connected. Imported ${inserted} official daily rows${dates.length ? ` ${dates[0]} to ${dates.at(-1)}` : ""}. Purchases Standard is not a financial statement. Sales/Trends still need vendor number. Not verified.`,
-  );
-  return { provider: "app_store_connect", status: "connected" as const, inserted };
+  return {
+    inserted,
+    range: dates.length ? `${dates[0]} to ${dates.at(-1)}` : null,
+  };
+}
+
+function parseTsvTable(text: string): Record<string, string>[] {
+  const lines = text.replace(/^\uFEFF/, "").trim().split(/\r?\n/).filter(Boolean);
+  if (lines.length < 2) return [];
+  const headers = lines[0]!.split("\t").map((h) => h.trim());
+  return lines.slice(1).map((line) => {
+    const cols = line.split("\t");
+    const row: Record<string, string> = {};
+    headers.forEach((header, i) => {
+      row[header] = cols[i] ?? "";
+    });
+    return row;
+  });
+}
+
+async function appleGzipReport(token: string, url: string) {
+  const res = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/a-gzip",
+    },
+  });
+  const body = Buffer.from(await res.arrayBuffer());
+  if (res.status === 404) return { status: 404, rows: [] as Record<string, string>[] };
+  if (!res.ok) {
+    const preview = body.toString("utf8").slice(0, 180).replace(/\s+/g, " ");
+    throw new Error(`ASC ${res.status} ${preview}`);
+  }
+  return { status: res.status, rows: parseTsvTable(gunzipSync(body).toString("utf8")) };
 }
 
 async function importAppleSales(token: string, vendor: string) {
-  const now = new Date();
-  const reportDateMonth = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
-  const q = new URLSearchParams({
-    "filter[frequency]": "MONTHLY",
-    "filter[reportDate]": reportDateMonth,
-    "filter[reportSubType]": "SUMMARY",
-    "filter[reportType]": "SALES",
-    "filter[vendorNumber]": vendor,
-    "filter[version]": "1_0",
-  });
-  const res = await fetch(`https://api.appstoreconnect.apple.com/v1/salesReports?${q}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (res.status === 404) return 0;
-  if (!res.ok) throw new Error(`Apple sales ${res.status}`);
-  const tsv = gunzipSync(Buffer.from(await res.arrayBuffer())).toString("utf8");
-  const lines = tsv.trim().split("\n");
-  const headers = lines[0]?.split("\t") ?? [];
-  const unitsIdx = headers.indexOf("Units");
-  const typeIdx = headers.indexOf("Product Type Identifier");
-  const skuIdx = headers.indexOf("SKU");
-  const dateIdx = headers.indexOf("Begin Date");
-  const countryIdx = headers.indexOf("Country Code");
-  const downloadTypes = new Set(["1", "1F", "1T", "1-B", "1E", "1EP", "F1"]);
   const client = admin();
   let inserted = 0;
-  for (const line of lines.slice(1)) {
-    const cols = line.split("\t");
-    const type = cols[typeIdx] ?? "";
-    const sku = cols[skuIdx] ?? "";
-    if (sku && sku !== APP_SKU) continue;
-    if (!downloadTypes.has(type)) continue;
-    const units = Number.parseFloat(cols[unitsIdx] ?? "0") || 0;
-    const rawDate = cols[dateIdx] ?? "";
-    const metricDate = rawDate.includes("/") ? rawDate.split("/").reverse().join("-") : `${reportDateMonth}-01`;
-    const { error } = await client.rpc("growth_insert_store_daily", {
-      p_platform: "ios",
-      p_metric_date: metricDate.length === 10 ? metricDate : `${reportDateMonth}-01`,
-      p_country: cols[countryIdx] || null,
-      p_source: "app_store_connect_sales",
-      p_first_time_downloads: Math.max(0, Math.round(units)),
-      p_acquisitions: null,
-      p_reinstalls: null,
+  let monthsTried = 0;
+  let lastStatus = 0;
+  for (const month of monthKeys(6)) {
+    monthsTried += 1;
+    const q = new URLSearchParams({
+      "filter[frequency]": "MONTHLY",
+      "filter[reportDate]": month,
+      "filter[reportSubType]": "SUMMARY",
+      "filter[reportType]": "SALES",
+      "filter[vendorNumber]": vendor,
+      "filter[version]": "1_0",
     });
-    if (!error) inserted += 1;
+    const { status, rows } = await appleGzipReport(token, `https://api.appstoreconnect.apple.com/v1/salesReports?${q}`);
+    lastStatus = status;
+    if (status === 404) continue;
+    for (const unit of parseAppleSalesUnits(rows, month)) {
+      const { error } = await client.rpc("growth_insert_store_daily", {
+        p_platform: "ios",
+        p_metric_date: unit.date,
+        p_country: unit.country,
+        p_source: "app_store_connect_sales",
+        p_first_time_downloads: unit.units,
+        p_acquisitions: null,
+        p_reinstalls: null,
+      });
+      if (!error) inserted += 1;
+    }
   }
-  return inserted;
+  return { inserted, monthsTried, lastStatus };
+}
+
+async function importAppleFinance(token: string, vendor: string) {
+  const client = admin();
+  let inserted = 0;
+  let files = 0;
+  let lastStatus = 0;
+  const skipRegions = new Set<string>();
+  for (const month of monthKeys(4)) {
+    for (const region of APPLE_FINANCE_REGIONS) {
+      if (skipRegions.has(region)) continue;
+      const q = new URLSearchParams({
+        "filter[regionCode]": region,
+        "filter[reportDate]": month,
+        "filter[reportType]": "FINANCIAL",
+        "filter[vendorNumber]": vendor,
+      });
+      let status = 0;
+      let rows: Record<string, string>[] = [];
+      try {
+        const got = await appleGzipReport(
+          token,
+          `https://api.appstoreconnect.apple.com/v1/financeReports?${q}`,
+        );
+        status = got.status;
+        rows = got.rows;
+      } catch (error) {
+        const message = String(error);
+        lastStatus = /ASC (\d+)/.exec(message)?.[1] ? Number(/ASC (\d+)/.exec(message)![1]) : 400;
+        if (/invalid vendor/i.test(message)) throw new Error(message);
+        if (/invalid.*region|regionCode/i.test(message)) skipRegions.add(region);
+        continue;
+      }
+      lastStatus = status;
+      if (status === 404 || !rows.length) continue;
+      files += 1;
+      for (const row of parseAppleFinanceRows(rows, month, "app_store_connect_financial")) {
+        const { error } = await client.rpc("growth_insert_store_financial", {
+          p_platform: "ios",
+          p_period_start: row.periodStart,
+          p_period_end: row.periodEnd,
+          p_country: row.country,
+          p_product_id: row.productId,
+          p_currency: row.currency,
+          p_gross_billings: row.grossBillings,
+          p_refunds: row.refunds,
+          p_taxes: row.taxes,
+          p_platform_fees: row.platformFees,
+          p_proceeds: row.proceeds,
+          p_settlement_currency: row.settlementCurrency,
+          p_settlement_amount: row.settlementAmount,
+          p_source_statement: row.sourceStatement,
+        });
+        if (!error) inserted += 1;
+      }
+    }
+  }
+  return { inserted, files, lastStatus };
 }
 
 async function importApple() {
@@ -268,26 +343,55 @@ async function importApple() {
 
   const analytics = await importAppleAnalytics(token);
   const vendor = process.env.APPLE_VENDOR_NUMBER?.trim();
+  let salesNote = "Sales/Trends skipped. APPLE_VENDOR_NUMBER is not on this deployment.";
+  let financeNote = "Finance reports skipped. APPLE_VENDOR_NUMBER is not on this deployment.";
+  let salesError: string | null = null;
   if (vendor) {
     try {
-      await importAppleSales(token, vendor);
-    } catch {
-      // Analytics can stay connected even when Sales/Trends still needs a usable vendor number.
+      const sales = await importAppleSales(token, vendor);
+      salesNote = `Sales/Trends monthly units imported ${sales.inserted} rows across ${sales.monthsTried} months (last HTTP ${sales.lastStatus}). SKU proteinquest + bundle.`;
+    } catch (error) {
+      salesError = String(error).slice(0, 180);
+      salesNote = `Sales/Trends failed: ${salesError}`;
+    }
+    try {
+      const finance = await importAppleFinance(token, vendor);
+      financeNote = finance.inserted
+        ? `Official finance files stored ${finance.inserted} statement rows from ${finance.files} file(s). Not independently verified.`
+        : `Finance API called. No statement rows stored (last HTTP ${finance.lastStatus}). Empty is not a reconciled 0.`;
+    } catch (error) {
+      financeNote = `Finance import failed: ${String(error).slice(0, 180)}`;
     }
   }
-  return analytics;
+  await mark(
+    "app_store_connect",
+    "connected",
+    salesError,
+    `Apple Analytics Standard connected. Imported ${analytics.inserted} official daily rows${analytics.range ? ` ${analytics.range}` : ""}. ${salesNote} ${financeNote} Purchases Standard is not a financial statement. Not verified.`,
+  );
+  return { provider: "app_store_connect", status: "connected" as const, inserted: analytics.inserted };
 }
 
-async function googleToken() {
+type PlayServiceAccount = {
+  client_email: string;
+  private_key: string;
+  token_uri: string;
+  project_id?: string;
+};
+
+function playServiceAccount(): PlayServiceAccount | null {
   const raw = process.env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON;
   if (!raw) return null;
-  const sa = JSON.parse(raw) as { client_email: string; private_key: string; token_uri: string };
+  return JSON.parse(raw) as PlayServiceAccount;
+}
+
+async function googleToken(sa: PlayServiceAccount, scopes: string[]) {
   const now = Math.floor(Date.now() / 1000);
   const header = Buffer.from(JSON.stringify({ alg: "RS256", typ: "JWT" })).toString("base64url");
   const claim = Buffer.from(
     JSON.stringify({
       iss: sa.client_email,
-      scope: "https://www.googleapis.com/auth/devstorage.read_only",
+      scope: scopes.join(" "),
       aud: sa.token_uri,
       iat: now,
       exp: now + 3600,
@@ -316,9 +420,37 @@ async function listPlayOverview(token: string, bucket: string) {
   return { listRes, bucket };
 }
 
+async function playPublisherOk(sa: PlayServiceAccount) {
+  const token = await googleToken(sa, ["https://www.googleapis.com/auth/androidpublisher"]);
+  if (!token) return { ok: false, status: 0 };
+  const res = await fetch(
+    `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${APP_SKU}`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  return { ok: res.ok, status: res.status };
+}
+
+async function discoverPlayBuckets(sa: PlayServiceAccount, known: string[]) {
+  const extra: string[] = [];
+  if (!sa.project_id) return extra;
+  const token = await googleToken(sa, ["https://www.googleapis.com/auth/cloud-platform"]);
+  if (!token) return extra;
+  const res = await fetch(
+    `https://storage.googleapis.com/storage/v1/b?project=${encodeURIComponent(sa.project_id)}&maxResults=50`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  if (!res.ok) return extra;
+  const json = (await res.json()) as { items?: { name?: string }[] };
+  for (const item of json.items ?? []) {
+    const name = item.name ?? "";
+    if (name.includes("pubsite") && !known.includes(name)) extra.push(name);
+  }
+  return extra;
+}
+
 async function importPlay() {
-  const token = await googleToken();
-  if (!token) {
+  const sa = playServiceAccount();
+  if (!sa) {
     await mark(
       "google_play",
       "requires_owner_access",
@@ -328,16 +460,29 @@ async function importPlay() {
     return { provider: "google_play", status: "requires_owner_access" };
   }
 
+  const token = await googleToken(sa, ["https://www.googleapis.com/auth/devstorage.read_only"]);
+  if (!token) {
+    await mark(
+      "google_play",
+      "requires_owner_access",
+      "Play service account token failed.",
+      "GOOGLE_PLAY_SERVICE_ACCOUNT_JSON is present but Google token exchange failed.",
+    );
+    return { provider: "google_play", status: "requires_owner_access" };
+  }
+
   const candidates = playBucketCandidates(
     process.env.GOOGLE_PLAY_DEVELOPER_ID,
     process.env.GOOGLE_PLAY_GCS_BUCKET,
   );
+  const discovered = await discoverPlayBuckets(sa, candidates);
+  const allBuckets = [...candidates, ...discovered];
   let bucket: string | null = null;
   let objects: { name: string }[] = [];
-  let lastStatus = 0;
-  for (const candidate of candidates) {
+  const probe: string[] = [];
+  for (const candidate of allBuckets) {
     const { listRes } = await listPlayOverview(token, candidate);
-    lastStatus = listRes.status;
+    probe.push(`${candidate}=${listRes.status}`);
     if (!listRes.ok) continue;
     const list = (await listRes.json()) as { items?: { name: string }[] };
     const found = (list.items ?? []).filter((o) => o.name && isPlayOverviewObject(o.name));
@@ -347,22 +492,31 @@ async function importPlay() {
   }
 
   if (!bucket) {
-    const note =
-      lastStatus === 403 || lastStatus === 401
-        ? "Service account reached GCS auth but not the report bucket. Accept Download reports terms and grant the reporting account."
-        : "Set GOOGLE_PLAY_GCS_BUCKET after accepting Play Download reports terms.";
-    await mark("google_play", "requires_owner_access", `GCS list ${lastStatus || "empty"}`, note);
+    const publisher = await playPublisherOk(sa);
+    const saw404 = probe.some((row) => row.endsWith("=404"));
+    const saw403 = probe.some((row) => row.endsWith("=403"));
+    const note = saw403
+      ? `Bucket exists but this reporting account cannot list objects. Grant Download reports to ${sa.client_email}.`
+      : saw404
+        ? `Report bucket missing (${probe.slice(0, 3).join("; ")}). Accept Play Console Download reports terms so pubsite_prod_rev_${process.env.GOOGLE_PLAY_DEVELOPER_ID ?? "id"} is created, then add ${sa.client_email}.`
+        : `GCS list failed (${probe.slice(0, 3).join("; ") || "no candidates"}).`;
+    await mark(
+      "google_play",
+      "requires_owner_access",
+      probe[0] ?? "GCS empty",
+      `${note} Play Developer API ${publisher.status || "n/a"}. Financial statements stay not connected.`,
+    );
     return { provider: "google_play", status: "requires_owner_access" };
   }
 
   if (!objects.length) {
     await mark(
       "google_play",
-      "connected",
+      "not_connected",
       null,
-      `Play bucket ${bucket} reachable. No install overview CSV yet. Financial statements stay not connected. License testers cannot be stripped from aggregate CSVs.`,
+      `Play bucket ${bucket} reachable. No install overview CSV yet, so Play stays not connected. Financial statements stay not connected. License testers cannot be stripped from aggregate CSVs.`,
     );
-    return { provider: "google_play", status: "connected", inserted: 0, bucket };
+    return { provider: "google_play", status: "not_connected", inserted: 0, bucket };
   }
 
   const client = admin();
@@ -389,6 +543,15 @@ async function importPlay() {
       });
       if (!error) inserted += 1;
     }
+  }
+  if (!inserted) {
+    await mark(
+      "google_play",
+      "not_connected",
+      null,
+      `Play overview CSV downloaded (${names.join(", ")}) but no Daily User Installs rows parsed. Not connected.`,
+    );
+    return { provider: "google_play", status: "not_connected", inserted: 0, bucket };
   }
   await mark(
     "google_play",

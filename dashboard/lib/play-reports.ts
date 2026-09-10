@@ -7,13 +7,24 @@ export const PLAY_DEVELOPER_ID_CANDIDATES = [
   "04972385690429690675",
 ];
 
+export function normalizePlayBucket(raw?: string | null): string | null {
+  const value = raw?.trim();
+  if (!value) return null;
+  return value.replace(/^gs:\/\//i, "").replace(/\/+$/, "").split("/")[0] || null;
+}
+
 export function playBucketCandidates(developerId?: string | null, bucket?: string | null): string[] {
   const out = new Set<string>();
-  if (bucket?.trim()) out.add(bucket.trim());
+  const named = normalizePlayBucket(bucket);
+  if (named) out.add(named);
   const ids = [developerId?.trim(), ...PLAY_DEVELOPER_ID_CANDIDATES].filter(Boolean) as string[];
   for (const id of ids) {
     out.add(`pubsite_prod_rev_${id}`);
-    if (!id.startsWith("0")) out.add(`pubsite_prod_rev_0${id}`);
+    out.add(`pubsite_prod_${id}`);
+    if (!id.startsWith("0")) {
+      out.add(`pubsite_prod_rev_0${id}`);
+      out.add(`pubsite_prod_0${id}`);
+    }
   }
   return [...out];
 }

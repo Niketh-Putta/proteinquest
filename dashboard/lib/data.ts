@@ -138,16 +138,23 @@ export async function loadSnapshot(search: {
   const storeRows = (await table(client, "store_daily_metrics")).filter(
     (r) => String(r.metric_date) >= from && String(r.metric_date) <= to,
   );
+  const appleStore = storeRows.filter((r) => r.platform === "ios");
+  const applePreferred = appleStore.filter((r) => r.source === "asc_analytics_standard");
+  const appleUse = applePreferred.length ? applePreferred : appleStore;
   const appleDownloads = appleOk
-    ? metric("ok", storeRows.filter((r) => r.platform === "ios").reduce((a, r) => a + Number(r.first_time_downloads ?? 0), 0), {
-        source: "App Store Connect Analytics Standard",
+    ? metric("ok", appleUse.reduce((a, r) => a + Number(r.first_time_downloads ?? 0), 0), {
+        source: applePreferred.length ? "App Store Connect Analytics Standard" : "App Store Connect sales",
+        note: "Analytics Standard preferred over Sales/Trends so units are not double-counted.",
       })
     : metric("not_connected", null, {
         source: "App Store Connect",
         note: String(conn("app_store_connect")?.notes ?? ""),
       });
+  const playStore = storeRows.filter((r) => r.platform === "android");
+  const playPreferred = playStore.filter((r) => r.source === "play_installs_overview");
+  const playUse = playPreferred.length ? playPreferred : playStore;
   const googleDownloads = playOk
-    ? metric("ok", storeRows.filter((r) => r.platform === "android").reduce((a, r) => a + Number(r.acquisitions ?? 0), 0), {
+    ? metric("ok", playUse.reduce((a, r) => a + Number(r.acquisitions ?? 0), 0), {
         source: "Google Play reports",
       })
     : metric("not_connected", null, {
@@ -169,11 +176,11 @@ export async function loadSnapshot(search: {
       };
     }
     return {
-      billings: metric("ok", add("gross_billings"), { source: "store_financials" }),
-      refunds: metric("ok", add("refunds"), { source: "store_financials" }),
-      taxes: metric("ok", add("taxes"), { source: "store_financials" }),
-      fees: metric("ok", add("platform_fees"), { source: "store_financials" }),
-      proceeds: metric("ok", add("proceeds"), { source: "store_financials" }),
+      billings: metric("ok", add("gross_billings"), { source: "store_financials", note: "Imported statement rows. Not independently verified." }),
+      refunds: metric("ok", add("refunds"), { source: "store_financials", note: "Imported statement rows. Not independently verified." }),
+      taxes: metric("ok", add("taxes"), { source: "store_financials", note: "Imported statement rows. Not independently verified." }),
+      fees: metric("ok", add("platform_fees"), { source: "store_financials", note: "Commission is only shown when the file itemizes it." }),
+      proceeds: metric("ok", add("proceeds"), { source: "store_financials", note: "Imported statement rows. Not independently verified." }),
     };
   };
   const appleMoney = money("ios");

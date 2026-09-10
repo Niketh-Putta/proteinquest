@@ -25,7 +25,7 @@ export default async function Page() {
                 <small>{c.notes ?? "No notes"}</small>
               </span>
               <strong>{c.status.replaceAll("_", " ")}</strong>
-              <small>Last success {c.last_success_at ?? "—"}</small>
+              <small>Last success {c.last_success_at ?? "none"}</small>
               <small>{c.error_summary ?? "no error"}</small>
             </div>
           ))}

@@ -9,8 +9,9 @@ import {
 } from "./play-reports.ts";
 
 test("discovers Play report buckets from developer id", () => {
-  const buckets = playBucketCandidates("4972385690429690675", null);
+  const buckets = playBucketCandidates("4972385690429690675", "gs://pubsite_prod_rev_4972385690429690675/stats");
   assert.ok(buckets.includes("pubsite_prod_rev_4972385690429690675"));
+  assert.equal(buckets[0], "pubsite_prod_rev_4972385690429690675");
 });
 
 test("parses Play install overview using Daily User Installs, not updates", () => {
