@@ -24,6 +24,18 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
+  const syncToken = process.env.GROWTH_SYNC_TOKEN?.trim();
+  const provided = req.headers.get("x-growth-sync") ?? "";
+  if (
+    pathname === "/api/sync" &&
+    req.method === "POST" &&
+    syncToken &&
+    provided.length === syncToken.length &&
+    provided === syncToken
+  ) {
+    return NextResponse.next();
+  }
+
   if (pathname.startsWith("/api/")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
