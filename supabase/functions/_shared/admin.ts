@@ -1,6 +1,6 @@
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type, x-admin-token",
 };
@@ -45,26 +45,29 @@ async function hmacSign(message: string, secret: string): Promise<string> {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
+const SESSION_SECONDS = 8 * 3600;
+
 export async function createAdminToken(secret: string): Promise<string> {
-  const hour = Math.floor(Date.now() / 3_600_000);
-  const sig = await hmacSign(`admin:${hour}`, secret);
-  return `${hour}.${sig}`;
+  const issuedAt = Math.floor(Date.now() / 1000);
+  const sig = await hmacSign(`admin:${issuedAt}`, secret);
+  return `${issuedAt}.${sig}`;
 }
 
 export async function verifyAdminToken(
   token: string,
   secret: string,
 ): Promise<boolean> {
-  const [hourStr, sig] = token.split(".");
-  if (!hourStr || !sig) return false;
+  const [issuedStr, sig] = token.split(".");
+  if (!issuedStr || !sig) return false;
 
-  const hour = Number.parseInt(hourStr, 10);
-  if (!Number.isFinite(hour)) return false;
+  const issuedAt = Number.parseInt(issuedStr, 10);
+  if (!Number.isFinite(issuedAt)) return false;
 
-  const nowHour = Math.floor(Date.now() / 3_600_000);
-  if (Math.abs(nowHour - hour) > 2) return false;
+  const now = Math.floor(Date.now() / 1000);
+  if (issuedAt > now + 60) return false;
+  if (now - issuedAt > SESSION_SECONDS) return false;
 
-  const expected = await hmacSign(`admin:${hour}`, secret);
+  const expected = await hmacSign(`admin:${issuedAt}`, secret);
   return sig === expected;
 }
 

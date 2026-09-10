@@ -100,7 +100,7 @@ function main() {
     'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
     'Content-Security-Policy':
       "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; " +
-      "script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'",
+      "script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' https://csxdkvpvcasuknhnprxp.supabase.co",
   };
 
   const config = {

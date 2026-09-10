@@ -8,6 +8,15 @@ export default async function handler(req, res) {
     return;
   }
 
+  const expected = process.env.STATS_ACCESS_TOKEN?.trim();
+  const provided = String(req.headers.authorization ?? '').replace(/^Bearer\s+/i, '');
+  if (!expected || provided !== expected) {
+    res.statusCode = 401;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ error: 'Unauthorized' }));
+    return;
+  }
+
   try {
     const [apple, android] = await Promise.all([
       fetchAppleDownloads().catch((e) => ({

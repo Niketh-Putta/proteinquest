@@ -58,6 +58,7 @@ import { setMealRemindersEnabled } from '@/lib/meal-reminders';
 import { useSession } from '@/lib/session';
 import { supabase } from '@/lib/supabase';
 import { trackEvent } from '@/lib/analytics';
+import { trackGrowth } from '@/lib/growth-analytics';
 import { colors } from '@/theme';
 
 type ModalKind =
@@ -155,6 +156,14 @@ export default function Intro() {
   }, [a, step, history, ready, login]);
 
   useEffect(() => {
+    if (!ready) return;
+    trackGrowth('onboarding_started', { step_id: `intro_${step}` });
+    trackGrowth('onboarding_step_viewed', { step_id: `intro_${step}` });
+    // First ready only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready]);
+
+  useEffect(() => {
     void guardDraftOwner(session?.user?.id);
   }, [session?.user?.id]);
 
@@ -181,11 +190,13 @@ export default function Intro() {
       setRewardPage(1);
       return;
     }
+    trackGrowth('onboarding_step_completed', { step_id: `intro_${step}` });
     setRewardPage(0);
     setHistory((h) => [...h, step]);
     const next =
       n === 20 || n === 21 ? 22 : n === 23 ? 24 : [31, 32, 33, 34].includes(n) ? 30 : n;
     setStep(next);
+    trackGrowth('onboarding_step_viewed', { step_id: `intro_${next}` });
     setModal('');
   }, [step, rewardPage]);
 
@@ -240,6 +251,7 @@ export default function Intro() {
       setSaveStatus('Plan saved to your account.');
       setPlanSaved(true);
       trackEvent('onboarding_complete', { goal: String(a.goal) });
+      trackGrowth('onboarding_completed', { step_id: 'intro_plan_saved' });
     } catch (e) {
       setSaveFailed(true);
       setSaveStatus(e instanceof Error ? e.message : 'Could not save. Your answers are still on this device.');
@@ -314,6 +326,12 @@ export default function Intro() {
       const oauthSession = await signInWithSocial(provider === 'Apple' ? 'apple' : 'google');
       if (!isRegisteredUser(oauthSession.user)) {
         throw new Error('Sign-in did not create a real account. Please try again.');
+      }
+      const createdAt = Date.parse(oauthSession.user.created_at ?? '');
+      if (Number.isFinite(createdAt) && Date.now() - createdAt < 10 * 60 * 1000) {
+        trackGrowth('account_created', { step_id: 'oauth' });
+      } else {
+        trackGrowth('sign_in_succeeded', { step_id: 'oauth' });
       }
       finishAuth(provider);
     } catch (authError) {

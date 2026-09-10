@@ -39,6 +39,7 @@ import { GlassPanel } from '@/components/GlassPanel';
 import { ModalMotionLayer } from '@/components/ModalMotionLayer';
 import { MealPhotoPreview } from '@/components/MealPhotoPreview';
 import { trackEvent } from '@/lib/analytics';
+import { trackGrowth } from '@/lib/growth-analytics';
 import {
     analyzeFoodPhoto,
     countLifetimeMeals,
@@ -993,6 +994,7 @@ export default function ScanScreen() {
       phaseRef.current = 'analyzing';
       setPhase('analyzing');
       trackEvent('first_scan_started', {});
+      trackGrowth('meal_scan_started', { mode: 'photo' });
       // Let React commit the unmount before ImageManipulator allocates.
       await new Promise<void>((resolve) => {
         requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
@@ -1180,6 +1182,8 @@ export default function ScanScreen() {
       setScannedAt(new Date());
       analyzeDoneRef.current = true;
       trackEvent('first_scan_started', { mode: 'text' });
+      trackGrowth('meal_scan_started', { mode: 'text' });
+      trackGrowth('meal_scan_succeeded', { mode: 'text' });
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
       setPhase('result');
     } catch (e: any) {
@@ -1226,6 +1230,7 @@ export default function ScanScreen() {
       phaseRef.current = 'analyzing';
       setPhase('analyzing');
       trackEvent('first_scan_started', {});
+      trackGrowth('meal_scan_started', { mode: 'photo' });
       await new Promise<void>((resolve) => {
         requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
       });
@@ -1259,9 +1264,11 @@ export default function ScanScreen() {
       const res = await analyzeFoodPhoto(square.base64, 'image/jpeg');
       if (scanModeRef.current !== 'photo' || runId !== analyzeGenRef.current) return;
       if (!res.is_food) {
+        trackGrowth('meal_scan_failed', { reason: 'not_food' });
         showError(res.notes || "This doesn't look like food. Point the camera at your meal.");
         return;
       }
+      trackGrowth('meal_scan_succeeded', { mode: 'photo' });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       const proteinG = Number(res.total_protein_g);
       const caloriesN = Number(res.calories);
@@ -1298,6 +1305,7 @@ export default function ScanScreen() {
       setPhase('result');
     } catch (e: any) {
       if (scanModeRef.current !== 'photo' || runId !== analyzeGenRef.current) return;
+      trackGrowth('meal_scan_failed', { reason: 'analyze_error' });
       showError(e.message ?? 'Analysis failed. Check your connection and try again.');
     }
   }
@@ -1463,6 +1471,7 @@ export default function ScanScreen() {
         protein_g: proteinG,
         meals_today: mealsToday,
       });
+      trackGrowth('meal_logged', { first_meal: wasFirstEver, meals_today: mealsToday });
       if (loot.dropped) trackEvent('loot_drop', { shards: retention.egg_shards ?? 0 });
       if (streakFreezeUsed) trackEvent('streak_freeze_used', {});
       if (mealsToday === 1) {

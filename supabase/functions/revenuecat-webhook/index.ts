@@ -48,6 +48,65 @@ Deno.serve(async (req) => {
   const eventType = event.type ?? event.event?.type ?? "";
   const userId = event.app_user_id ?? event.event?.app_user_id;
   const entitlements = event.event?.entitlement_ids ?? [];
+  const rawEvent = (event.event ?? event) as Record<string, unknown>;
+  const providerEventId = String(
+    rawEvent.id ?? rawEvent.event_id ?? `${eventType}:${userId ?? "unknown"}:${rawEvent.event_timestamp_ms ?? Date.now()}`,
+  );
+  const environment = String(rawEvent.environment ?? "PRODUCTION").toLowerCase() === "sandbox"
+    ? "sandbox"
+    : "production";
+  const store = String(rawEvent.store ?? rawEvent.storefront ?? "").toLowerCase();
+  const platform = store.includes("play") ? "android" : store.includes("stripe") ? "web" : "ios";
+
+  if (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
+    await fetch(`${SUPABASE_URL}/rest/v1/webhook_replays?on_conflict=provider,notification_id`, {
+      method: "POST",
+      headers: {
+        apikey: SUPABASE_SERVICE_ROLE_KEY,
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        "Content-Type": "application/json",
+        "Content-Profile": "analytics",
+        Prefer: "return=minimal,resolution=ignore-duplicates",
+      },
+      body: JSON.stringify({
+        provider: "revenuecat",
+        notification_id: providerEventId,
+      }),
+    });
+
+    if (environment === "production") {
+      await fetch(`${SUPABASE_URL}/rest/v1/subscription_events`, {
+        method: "POST",
+        headers: {
+          apikey: SUPABASE_SERVICE_ROLE_KEY,
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+          "Content-Type": "application/json",
+          "Content-Profile": "analytics",
+          Prefer: "return=minimal,resolution=ignore-duplicates",
+        },
+        body: JSON.stringify({
+          provider: "revenuecat",
+          provider_event_id: providerEventId,
+          event_type: eventType,
+          event_time: new Date(Number(rawEvent.event_timestamp_ms) || Date.now()).toISOString(),
+          environment,
+          platform,
+          user_id: userId,
+          product_id: rawEvent.product_id ?? rawEvent.product_identifier ?? null,
+          original_transaction_id: rawEvent.original_transaction_id ?? null,
+          transaction_id: rawEvent.transaction_id ?? rawEvent.id ?? null,
+          purchase_at: rawEvent.purchased_at_ms
+            ? new Date(Number(rawEvent.purchased_at_ms)).toISOString()
+            : null,
+          expires_at: rawEvent.expiration_at_ms
+            ? new Date(Number(rawEvent.expiration_at_ms)).toISOString()
+            : null,
+          entitlement_state: entitlements.includes("pro") ? "entitled" : "none",
+          is_trial: Boolean(rawEvent.is_trial_period ?? rawEvent.period_type === "TRIAL"),
+        }),
+      });
+    }
+  }
 
   if (!userId) {
     return json({ received: true, skipped: "no app_user_id" });

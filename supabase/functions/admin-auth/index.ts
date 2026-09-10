@@ -35,7 +35,7 @@ Deno.serve(async (req) => {
     }
 
     const token = await createAdminToken(ADMIN_PASSWORD);
-    return json({ token, expires_in_hours: 2 });
+    return json({ token, expires_in_hours: 8 });
   } catch {
     return json({ error: "Invalid request" }, 400);
   }

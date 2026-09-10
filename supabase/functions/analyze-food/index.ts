@@ -710,11 +710,69 @@ async function callOpenAIOnce(
   }
 
   const completion = await openaiRes.json();
+  const usage = completion?.usage ?? {};
+  void recordAnalyzeUsage({
+    requestId: String(completion?.id ?? ""),
+    provider: "openai",
+    model: OPENAI_MODEL,
+    inputTokens: Number(usage.prompt_tokens ?? 0),
+    outputTokens: Number(usage.completion_tokens ?? 0),
+    cachedTokens: Number(usage.prompt_tokens_details?.cached_tokens ?? 0),
+    imageCount: 1,
+    status: "ok",
+  });
   const content = completion?.choices?.[0]?.message?.content;
   if (!content || typeof content !== "string") {
     throw new Error("AI returned an empty response. Please try again.");
   }
   return JSON.parse(content);
+}
+
+function estimateGpt4oUsd(input: number, output: number, cached: number): number {
+  return ((input - cached) * 2.5 + cached * 1.25 + output * 10) / 1_000_000;
+}
+
+function recordAnalyzeUsage(input: {
+  requestId: string;
+  provider: string;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  cachedTokens: number;
+  imageCount: number;
+  status: string;
+  retryCount?: number;
+}) {
+  const url = Deno.env.get("SUPABASE_URL");
+  const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!url || !key) return;
+  return fetch(`${url}/rest/v1/rpc/record_ai_usage`, {
+    method: "POST",
+    headers: {
+      apikey: key,
+      Authorization: `Bearer ${key}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      p_request_id: input.requestId || null,
+      p_scan_id: null,
+      p_provider: input.provider,
+      p_model: input.model,
+      p_input_tokens: input.inputTokens,
+      p_output_tokens: input.outputTokens,
+      p_cached_tokens: input.cachedTokens,
+      p_image_count: input.imageCount,
+      p_latency_ms: null,
+      p_status: input.status,
+      p_retry_count: input.retryCount ?? 0,
+      p_estimated_cost_usd: estimateGpt4oUsd(
+        input.inputTokens,
+        input.outputTokens,
+        input.cachedTokens,
+      ),
+      p_pricing_as_of: "2026-09-10",
+    }),
+  }).catch(() => {});
 }
 
 function sanitizeField(value: unknown, maxLen = 120): string {
