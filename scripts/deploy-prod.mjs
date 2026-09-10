@@ -120,7 +120,18 @@ const marketingOnly = process.argv.includes('--marketing-only');
 const dashboardOnly = process.argv.includes('--dashboard-only');
 
 if (!marketingOnly && (dashboardOnly || !appOnly)) {
-  const dashUrl = vercelDeployCommand(['deploy', 'dashboard', '--yes', '--json']);
+  // Production target gives the dashboard DASHBOARD_* secrets. --skip-domain
+  // keeps proteinquest.app / proteinlens.vercel.app on marketing and Expo.
+  const dashUrl = vercelDeployCommand([
+    'deploy',
+    'dashboard',
+    '--prod',
+    '--skip-domain',
+    '--project',
+    'proteinquest',
+    '--yes',
+    '--json',
+  ]);
   aliasDomains(dashUrl, ['proteinquest.vercel.app']);
 }
 
