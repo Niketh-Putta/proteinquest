@@ -117,8 +117,14 @@ ensureVercelAuth();
 
 const appOnly = process.argv.includes('--app-only');
 const marketingOnly = process.argv.includes('--marketing-only');
+const dashboardOnly = process.argv.includes('--dashboard-only');
 
-if (!marketingOnly) {
+if (!marketingOnly && (dashboardOnly || !appOnly)) {
+  const dashUrl = vercelDeployCommand(['deploy', 'dashboard', '--yes', '--json']);
+  aliasDomains(dashUrl, ['proteinquest.vercel.app']);
+}
+
+if (!marketingOnly && !dashboardOnly) {
   run('npx expo export --platform web', { inherit: true });
   run('node scripts/prepare-web-export.mjs', { inherit: true });
   // Force dist/ to use the proteinquest project (never the accidental `dist` project).
@@ -136,10 +142,10 @@ if (!marketingOnly) {
   // Do NOT use --prod for the app: project production domains include proteinquest.app,
   // and --prod would steal the marketing apex onto the Expo build.
   const appUrl = vercelDeployCommand(['deploy', 'dist', '--yes', '--json']);
-  aliasDomains(appUrl, APP_DOMAINS);
+  aliasDomains(appUrl, ['proteinlens.vercel.app']);
 }
 
-if (!appOnly) {
+if (!appOnly && !dashboardOnly) {
   run('node scripts/prepare-vercel-output.mjs', { inherit: true });
   // Marketing owns proteinquest.app / www via explicit aliases (and --prod).
   const marketingUrl = vercelDeployCommand(['deploy', '--prod', '--yes', '--prebuilt', '--json']);
