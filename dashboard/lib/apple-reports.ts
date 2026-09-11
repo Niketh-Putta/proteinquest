@@ -2,7 +2,8 @@ export const APP_BUNDLE_ID = "com.proteinquest.app";
 export const APPLE_APP_SKUS = [APP_BUNDLE_ID, "proteinquest"];
 export const APPLE_IAP_SKUS = ["pro_weekly", "pro_yearly"];
 export const APPLE_DOWNLOAD_TYPES = new Set(["1", "1F", "1T", "1-B", "1E", "1EP", "F1"]);
-export const APPLE_FINANCE_REGIONS = ["US", "EU", "GB", "WW"];
+export const APPLE_FINANCE_REGIONS = ["ZZ", "Z1", "US", "GB"];
+export const APPLE_FINANCE_REPORT_TYPES = ["FINANCIAL", "FINANCE_DETAIL"];
 
 export function parseAppleReportDate(raw: string, fallback?: string | null): string | null {
   const value = String(raw ?? "").trim();

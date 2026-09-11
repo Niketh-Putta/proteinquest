@@ -3,9 +3,11 @@ import { gunzipSync } from "node:zlib";
 import { createClient } from "@supabase/supabase-js";
 import {
   APPLE_FINANCE_REGIONS,
+  APPLE_FINANCE_REPORT_TYPES,
   monthKeys,
   parseAppleFinanceRows,
   parseAppleSalesUnits,
+  type AppleFinanceRow,
 } from "./apple-reports";
 import {
   APP_SKU,
@@ -240,9 +242,30 @@ async function appleGzipReport(token: string, url: string) {
   return { status: res.status, rows: parseTsvTable(gunzipSync(body).toString("utf8")) };
 }
 
+async function insertAppleFinance(client: ReturnType<typeof admin>, platform: string, row: AppleFinanceRow) {
+  const { error } = await client.rpc("growth_insert_store_financial", {
+    p_platform: platform,
+    p_period_start: row.periodStart,
+    p_period_end: row.periodEnd,
+    p_country: row.country,
+    p_product_id: row.productId,
+    p_currency: row.currency,
+    p_gross_billings: row.grossBillings,
+    p_refunds: row.refunds,
+    p_taxes: row.taxes,
+    p_platform_fees: row.platformFees,
+    p_proceeds: row.proceeds,
+    p_settlement_currency: row.settlementCurrency,
+    p_settlement_amount: row.settlementAmount,
+    p_source_statement: row.sourceStatement,
+  });
+  return !error;
+}
+
 async function importAppleSales(token: string, vendor: string) {
   const client = admin();
   let inserted = 0;
+  let financeInserted = 0;
   let monthsTried = 0;
   let lastStatus = 0;
   for (const month of monthKeys(6)) {
@@ -270,8 +293,11 @@ async function importAppleSales(token: string, vendor: string) {
       });
       if (!error) inserted += 1;
     }
+    for (const money of parseAppleFinanceRows(rows, month, "app_store_connect_sales")) {
+      if (await insertAppleFinance(client, "ios", money)) financeInserted += 1;
+    }
   }
-  return { inserted, monthsTried, lastStatus };
+  return { inserted, financeInserted, monthsTried, lastStatus };
 }
 
 async function importAppleFinance(token: string, vendor: string) {
@@ -280,52 +306,38 @@ async function importAppleFinance(token: string, vendor: string) {
   let files = 0;
   let lastStatus = 0;
   const skipRegions = new Set<string>();
-  for (const month of monthKeys(4)) {
-    for (const region of APPLE_FINANCE_REGIONS) {
-      if (skipRegions.has(region)) continue;
-      const q = new URLSearchParams({
-        "filter[regionCode]": region,
-        "filter[reportDate]": month,
-        "filter[reportType]": "FINANCIAL",
-        "filter[vendorNumber]": vendor,
-      });
-      let status = 0;
-      let rows: Record<string, string>[] = [];
-      try {
-        const got = await appleGzipReport(
-          token,
-          `https://api.appstoreconnect.apple.com/v1/financeReports?${q}`,
-        );
-        status = got.status;
-        rows = got.rows;
-      } catch (error) {
-        const message = String(error);
-        lastStatus = /ASC (\d+)/.exec(message)?.[1] ? Number(/ASC (\d+)/.exec(message)![1]) : 400;
-        if (/invalid vendor/i.test(message)) throw new Error(message);
-        if (/invalid.*region|regionCode/i.test(message)) skipRegions.add(region);
-        continue;
-      }
-      lastStatus = status;
-      if (status === 404 || !rows.length) continue;
-      files += 1;
-      for (const row of parseAppleFinanceRows(rows, month, "app_store_connect_financial")) {
-        const { error } = await client.rpc("growth_insert_store_financial", {
-          p_platform: "ios",
-          p_period_start: row.periodStart,
-          p_period_end: row.periodEnd,
-          p_country: row.country,
-          p_product_id: row.productId,
-          p_currency: row.currency,
-          p_gross_billings: row.grossBillings,
-          p_refunds: row.refunds,
-          p_taxes: row.taxes,
-          p_platform_fees: row.platformFees,
-          p_proceeds: row.proceeds,
-          p_settlement_currency: row.settlementCurrency,
-          p_settlement_amount: row.settlementAmount,
-          p_source_statement: row.sourceStatement,
+  for (const month of monthKeys(12)) {
+    for (const reportType of APPLE_FINANCE_REPORT_TYPES) {
+      for (const region of APPLE_FINANCE_REGIONS) {
+        if (skipRegions.has(`${reportType}:${region}`)) continue;
+        const q = new URLSearchParams({
+          "filter[regionCode]": region,
+          "filter[reportDate]": month,
+          "filter[reportType]": reportType,
+          "filter[vendorNumber]": vendor,
         });
-        if (!error) inserted += 1;
+        let status = 0;
+        let rows: Record<string, string>[] = [];
+        try {
+          const got = await appleGzipReport(
+            token,
+            `https://api.appstoreconnect.apple.com/v1/financeReports?${q}`,
+          );
+          status = got.status;
+          rows = got.rows;
+        } catch (error) {
+          const message = String(error);
+          lastStatus = /ASC (\d+)/.exec(message)?.[1] ? Number(/ASC (\d+)/.exec(message)![1]) : 400;
+          if (/invalid vendor/i.test(message)) throw new Error(message);
+          if (/invalid.*region|regionCode/i.test(message)) skipRegions.add(`${reportType}:${region}`);
+          continue;
+        }
+        lastStatus = status;
+        if (status === 404 || !rows.length) continue;
+        files += 1;
+        for (const row of parseAppleFinanceRows(rows, month, "app_store_connect_financial")) {
+          if (await insertAppleFinance(client, "ios", row)) inserted += 1;
+        }
       }
     }
   }
@@ -352,7 +364,7 @@ async function importApple() {
   if (vendor) {
     try {
       const sales = await importAppleSales(token, vendor);
-      salesNote = `Sales/Trends monthly units imported ${sales.inserted} rows across ${sales.monthsTried} months (last HTTP ${sales.lastStatus}). SKU proteinquest + bundle.`;
+      salesNote = `Sales/Trends monthly units imported ${sales.inserted} rows across ${sales.monthsTried} months (last HTTP ${sales.lastStatus}). SKU proteinquest + bundle. Sales IAP proceeds stored ${sales.financeInserted} row(s). Not a fiscal statement.`;
     } catch (error) {
       salesError = String(error).slice(0, 180);
       salesNote = `Sales/Trends failed: ${salesError}`;

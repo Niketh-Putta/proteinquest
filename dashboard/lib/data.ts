@@ -180,7 +180,10 @@ export async function loadSnapshot(search: {
       refunds: metric("ok", add("refunds"), { source: "store_financials", note: "Imported statement rows. Not independently verified." }),
       taxes: metric("ok", add("taxes"), { source: "store_financials", note: "Imported statement rows. Not independently verified." }),
       fees: metric("ok", add("platform_fees"), { source: "store_financials", note: "Commission is only shown when the file itemizes it." }),
-      proceeds: metric("ok", add("proceeds"), { source: "store_financials", note: "Imported statement rows. Not independently verified." }),
+      proceeds: metric("ok", add("proceeds"), {
+        source: "store_financials",
+        note: "Official Apple/Google rows. Sales/Trends proceeds are not a fiscal settlement statement. Not independently verified.",
+      }),
     };
   };
   const appleMoney = money("ios");
