@@ -10,4 +10,5 @@ export type Metric = {
   last_refresh?: string | null;
   note?: string;
   sample_size?: number;
+  unit?: "gbp" | "count";
 };

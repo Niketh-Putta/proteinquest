@@ -20,4 +20,5 @@ test("never presents missing sources as numbers", () => {
 test("renders real connected values", () => {
   assert.equal(displayMetric({ status: "ok", value: 12 }), "12");
   assert.equal(displayMetric({ status: "ok", value: 0.25 }), "25.0%");
+  assert.equal(displayMetric({ status: "ok", value: 29.99, unit: "gbp" }), "£29.99");
 });

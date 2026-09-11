@@ -112,6 +112,32 @@ Deno.serve(async (req) => {
       }),
     });
 
+    const entitled = resolveEntitlementState(eventType, entitlements, ENTITLEMENT_ID);
+    if (userId) {
+      await fetch(`${SUPABASE_URL}/rest/v1/subscriptions_current?on_conflict=user_id`, {
+        method: "POST",
+        headers: {
+          ...headers,
+          "Content-Profile": "analytics",
+          Prefer: "return=minimal,resolution=merge-duplicates",
+        },
+        body: JSON.stringify({
+          user_id: userId,
+          provider: "revenuecat",
+          product_id: rawEvent.product_id ?? rawEvent.product_identifier ?? null,
+          platform,
+          environment,
+          entitlement_state: entitled === false ? "none" : entitled === true ? "entitled" : "unknown",
+          is_trial: Boolean(rawEvent.is_trial_period ?? rawEvent.period_type === "TRIAL"),
+          original_transaction_id: rawEvent.original_transaction_id ?? null,
+          expires_at: rawEvent.expiration_at_ms
+            ? new Date(Number(rawEvent.expiration_at_ms)).toISOString()
+            : null,
+          updated_at: new Date().toISOString(),
+        }),
+      });
+    }
+
     await fetch(`${SUPABASE_URL}/rest/v1/rpc/growth_mark_connection`, {
       method: "POST",
       headers,

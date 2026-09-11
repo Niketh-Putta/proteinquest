@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { displayMetric } from "./format";
+import { planMixFromEvents } from "./plan-metrics";
 import { isNewPaidSubscriptionEvent } from "./play-reports";
 import type { Metric, Status } from "./types";
 
@@ -35,6 +36,7 @@ export type Snapshot = {
     first_opens: Metric;
     first_meal_activation: Metric;
     new_paid_subscribers: Metric;
+    estimated_mrr: Metric;
     net_proceeds: Metric;
     largest_loss: { from: string; to: string; drop: number | null; note: string };
     growth_action: { action: string; sample_size: number; window: string; step: string | null };
@@ -46,6 +48,7 @@ export type Snapshot = {
     apple: Record<string, Metric>;
     google: Record<string, Metric>;
     shared: Record<string, Metric>;
+    plans: Record<string, Metric>;
   };
   quality: { scan_failure_rate: Metric };
   definitions: (Metric & { id: string })[];
@@ -211,12 +214,27 @@ export async function loadSnapshot(search: {
       .map((e) => e.user_id)
       .filter(Boolean),
   );
-  const newPaid = subEvents.length
+  const rcReady = ["connected", "verified"].includes(String(conn("revenuecat")?.status ?? ""));
+  const mix = planMixFromEvents(subEvents, { from, to });
+  const planNote =
+    "List-price estimate from RevenueCat production events. £9.99/mo and £29.99/yr. Weekly uses £6.99 if that SKU appears. Not store proceeds.";
+  const planMetric = (value: number, formula: string, unit?: "gbp" | "count"): Metric =>
+    rcReady || subEvents.length
+      ? metric("ok", value, {
+          source: "analytics.subscription_events",
+          formula,
+          note: planNote,
+          unit,
+        })
+      : metric("not_connected", null, { source: "RevenueCat", note: planNote });
+  const newPaid = rcReady || subEvents.length
     ? metric("ok", paidUsers.size, { source: "analytics.subscription_events", window: `${paidWindow}d` })
     : metric("not_connected", null, {
         source: "RevenueCat / store notifications",
         note: "Not store-reconciled. profiles.is_premium is not used.",
       });
+  const estimatedMrr = planMetric(mix.mrr, "active weekly/monthly/yearly × list price / months", "gbp");
+  const estimatedArr = planMetric(mix.arr, "estimated MRR × 12", "gbp");
 
   const retention = await table(client, "cohort_retention");
   const retain = (days: 1 | 7 | 30): Metric => {
@@ -309,6 +327,7 @@ export async function loadSnapshot(search: {
       first_opens: firstOpens,
       first_meal_activation: firstMeal,
       new_paid_subscribers: newPaid,
+      estimated_mrr: estimatedMrr,
       net_proceeds: netProceeds,
       largest_loss: largestLoss,
       growth_action:
@@ -349,6 +368,16 @@ export async function loadSnapshot(search: {
       apple: appleMoney,
       google: googleMoney,
       shared: { ai: aiCost, infrastructure: sharedInfra },
+      plans: {
+        weekly_active: planMetric(mix.weekly, "active pro_weekly"),
+        monthly_active: planMetric(mix.monthly, "active pro_monthly"),
+        yearly_active: planMetric(mix.yearly, "active pro_yearly"),
+        weekly_added: planMetric(mix.addedWeekly, "INITIAL_PURCHASE pro_weekly in range"),
+        monthly_added: planMetric(mix.addedMonthly, "INITIAL_PURCHASE pro_monthly in range"),
+        yearly_added: planMetric(mix.addedYearly, "INITIAL_PURCHASE pro_yearly in range"),
+        estimated_mrr: estimatedMrr,
+        estimated_arr: estimatedArr,
+      },
     },
     quality: { scan_failure_rate: scanFail },
     definitions: funnel.map((s) => ({ id: s.id, ...s.metric })),
@@ -385,6 +414,7 @@ function emptySnapshot(
       first_opens: missing,
       first_meal_activation: missing,
       new_paid_subscribers: missing,
+      estimated_mrr: missing,
       net_proceeds: missing,
       largest_loss: {
         from: "Unavailable",
@@ -407,7 +437,7 @@ function emptySnapshot(
       d30: missing,
       definition: "Returning to scan or log a meal. Immature cohorts excluded.",
     },
-    revenue: { apple: {}, google: {}, shared: {} },
+    revenue: { apple: {}, google: {}, shared: {}, plans: {} },
     quality: { scan_failure_rate: missing },
     definitions: [],
   };

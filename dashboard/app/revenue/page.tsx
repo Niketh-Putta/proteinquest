@@ -14,7 +14,7 @@ export default async function Page({
     <Shell
       pathname="/revenue"
       title="Revenue and costs"
-      subtitle="GBP presentation. Official store statements are the accounting truth. Do not double-count fees."
+      subtitle="Estimated MRR/ARR updates from production RevenueCat events. Store statements stay the accounting truth."
       filters={
         <Filters
           action="/revenue"
@@ -26,6 +26,23 @@ export default async function Page({
       }
     >
       <div className="platforms">
+        <article>
+          <span>Estimated MRR</span>
+          <strong>{displayMetric(snapshot.revenue.plans.estimated_mrr ?? { status: "not_connected", value: null })}</strong>
+          <small>ARR {displayMetric(snapshot.revenue.plans.estimated_arr ?? { status: "not_connected", value: null })}</small>
+        </article>
+        <article>
+          <span>Active plans</span>
+          <strong>
+            {displayMetric(snapshot.revenue.plans.weekly_active ?? { status: "no_data", value: null })} wk ·{" "}
+            {displayMetric(snapshot.revenue.plans.monthly_active ?? { status: "no_data", value: null })} mo ·{" "}
+            {displayMetric(snapshot.revenue.plans.yearly_active ?? { status: "no_data", value: null })} yr
+          </strong>
+          <small>
+            Added {displayMetric(snapshot.revenue.plans.weekly_added ?? { status: "no_data", value: null })} weekly ·{" "}
+            {displayMetric(snapshot.revenue.plans.yearly_added ?? { status: "no_data", value: null })} yearly
+          </small>
+        </article>
         <article>
           <span>Apple proceeds</span>
           <strong>{displayMetric(snapshot.revenue.apple.proceeds ?? { status: "not_connected", value: null })}</strong>
@@ -43,6 +60,11 @@ export default async function Page({
         </article>
       </div>
       <div className="metric-grid">
+        <MetricCard label="Weekly active" metric={snapshot.revenue.plans.weekly_active} />
+        <MetricCard label="Monthly active" metric={snapshot.revenue.plans.monthly_active} />
+        <MetricCard label="Yearly active" metric={snapshot.revenue.plans.yearly_active} />
+        <MetricCard label="Weekly added" metric={snapshot.revenue.plans.weekly_added} />
+        <MetricCard label="Yearly added" metric={snapshot.revenue.plans.yearly_added} />
         <MetricCard label="Apple refunds" metric={snapshot.revenue.apple.refunds} />
         <MetricCard label="Apple tax" metric={snapshot.revenue.apple.taxes} />
         <MetricCard label="Apple fees" metric={snapshot.revenue.apple.fees} />

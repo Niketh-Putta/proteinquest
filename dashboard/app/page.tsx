@@ -34,6 +34,7 @@ export default async function OverviewPage({
         <MetricCard label="New first opens" metric={snapshot.overview.first_opens} />
         <MetricCard label="First-meal activation" metric={snapshot.overview.first_meal_activation} />
         <MetricCard label="New paid subscribers" metric={snapshot.overview.new_paid_subscribers} />
+        <MetricCard label="Estimated MRR" metric={snapshot.overview.estimated_mrr} />
         <MetricCard label="Net proceeds" metric={snapshot.overview.net_proceeds} />
       </div>
       <section className="priority">
