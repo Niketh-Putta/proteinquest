@@ -29,7 +29,7 @@ export function Shell({
     <div className="shell">
       <aside className="sidebar">
         <div className="brand">
-          <span>PQ</span>
+          <img src="/proteinquest-logo.png" width="40" height="40" alt="ProteinQuest logo" />
           <strong>
             Protein<b>Quest</b>
           </strong>
@@ -44,7 +44,7 @@ export function Shell({
         <footer>
           <span />
           Private owner workspace
-          <small>Noindex · 8 hour session · no sample numbers</small>
+          <small>ProteinQuest admin dashboard</small>
         </footer>
       </aside>
       <div>
@@ -83,15 +83,15 @@ export function Filters({
   return (
     <form action={action} method="get" className="controls">
       <em>Europe/London</em>
-      <input type="date" name="from" defaultValue={from} />
-      <input type="date" name="to" defaultValue={to} />
-      <select name="platform" defaultValue={platform}>
+      <input aria-label="Start date" type="date" name="from" defaultValue={from} />
+      <input aria-label="End date" type="date" name="to" defaultValue={to} />
+      <select aria-label="Platform" name="platform" defaultValue={platform}>
         <option value="all">All platforms</option>
         <option value="ios">Apple</option>
         <option value="android">Google</option>
         <option value="web">Web</option>
       </select>
-      <select name="channel" defaultValue={channel}>
+      <select aria-label="Channel" name="channel" defaultValue={channel}>
         <option value="all">All channels</option>
         <option value="unknown">Unknown</option>
       </select>

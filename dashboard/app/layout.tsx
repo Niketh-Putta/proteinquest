@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./monochrome.css";
 
 export const metadata: Metadata = {
   title: "ProteinQuest Growth OS",
   description: "Private growth, activation, revenue and retention command centre for ProteinQuest.",
   robots: { index: false, follow: false, nocache: true },
-  icons: { icon: "/favicon.svg" },
+  icons: { icon: "/proteinquest-logo.png" },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

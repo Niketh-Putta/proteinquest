@@ -11,14 +11,13 @@ export default async function LoginPage({
       <div className="login-glow" />
       <section className="login-card" aria-labelledby="login-title">
         <div className="login-brand">
-          <span>PQ</span>
+          <img src="/proteinquest-logo.png" width="60" height="60" alt="ProteinQuest logo" />
           <strong>
             Protein<b>Quest</b>
           </strong>
-          <small>GROWTH OS</small>
         </div>
         <div className="login-copy">
-          <span className="login-kicker">Private workspace</span>
+          <span className="login-kicker">Admin dashboard</span>
           <h1 id="login-title">Welcome back.</h1>
           <p>Sign in to view ProteinQuest growth, conversion and revenue.</p>
         </div>

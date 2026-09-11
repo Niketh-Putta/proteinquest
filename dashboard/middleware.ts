@@ -8,6 +8,7 @@ const PUBLIC = new Set([
   "/login",
   "/api/auth/login",
   "/favicon.svg",
+  "/proteinquest-logo.png",
   "/robots.txt",
 ]);
 
