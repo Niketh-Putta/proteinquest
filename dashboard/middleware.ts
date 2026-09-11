@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { verifySession } from "@/lib/session";
+import { syncAuthorized } from "@/lib/sync-auth";
 
 const COOKIE_NAME = "pq_growth_session";
 
@@ -25,15 +26,7 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  const syncToken = process.env.GROWTH_SYNC_TOKEN?.trim();
-  const provided = req.headers.get("x-growth-sync") ?? "";
-  if (
-    pathname === "/api/sync" &&
-    req.method === "POST" &&
-    syncToken &&
-    provided.length === syncToken.length &&
-    provided === syncToken
-  ) {
+  if (pathname === "/api/sync" && (req.method === "GET" || req.method === "POST") && syncAuthorized(req)) {
     return NextResponse.next();
   }
 

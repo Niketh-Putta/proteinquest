@@ -9,12 +9,12 @@ export default async function Page() {
     <Shell
       pathname="/connections"
       title="Connections"
-      subtitle="implemented, connected, verified and requires owner access are separate. Credentials are never shown."
+      subtitle="Store and FX files poll every hour. RevenueCat and ingest are live. Credentials are never shown."
     >
       <section className="panel">
         <form action="/api/sync" method="post">
           <button className="quiet" type="submit">
-            Run store / FX import
+            Sync now
           </button>
         </form>
         <div className="api-list">
