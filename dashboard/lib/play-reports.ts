@@ -2,6 +2,7 @@ export const APP_SKU = "com.proteinquest.app";
 
 /** Known Play developer account IDs already used for GCS report discovery. */
 export const PLAY_DEVELOPER_ID_CANDIDATES = [
+  "63722752313690019033",
   "4972385690429690675",
   "4972385690429690676",
   "04972385690429690675",

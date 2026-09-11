@@ -498,7 +498,7 @@ async function importPlay() {
     const note = saw403
       ? `Bucket exists but this reporting account cannot list objects. Grant Download reports to ${sa.client_email}.`
       : saw404
-        ? `Report bucket missing (${probe.slice(0, 3).join("; ")}). Accept Play Console Download reports terms so pubsite_prod_rev_${process.env.GOOGLE_PLAY_DEVELOPER_ID ?? "id"} is created, then add ${sa.client_email}.`
+        ? `Report bucket missing (${probe.slice(0, 6).join("; ")}). Accept Play Console Download reports terms so pubsite_prod_rev_${process.env.GOOGLE_PLAY_DEVELOPER_ID ?? "id"} is created, then add ${sa.client_email}.`
         : `GCS list failed (${probe.slice(0, 3).join("; ") || "no candidates"}).`;
     await mark(
       "google_play",
