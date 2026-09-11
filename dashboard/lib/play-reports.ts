@@ -1,4 +1,4 @@
-import { inflateRawSync } from "node:zlib";
+import { gunzipSync, inflateRawSync } from "node:zlib";
 
 export const APP_SKU = "com.proteinquest.app";
 
@@ -146,24 +146,37 @@ function playDate(raw: string): string | null {
 }
 
 export function unzipCsvBuffers(raw: Buffer): Buffer[] {
+  if (raw.length >= 2 && raw[0] === 0x1f && raw[1] === 0x8b) {
+    try {
+      return [gunzipSync(raw)];
+    } catch {
+      return [];
+    }
+  }
   if (raw.length < 4 || raw[0] !== 0x50 || raw[1] !== 0x4b) return [raw];
   const out: Buffer[] = [];
   let i = 0;
-  while (i + 30 <= raw.length) {
-    if (raw.readUInt32LE(i) !== 0x04034b50) break;
-    const method = raw.readUInt16LE(i + 8);
-    const compSize = raw.readUInt32LE(i + 18);
-    const nameLen = raw.readUInt16LE(i + 26);
-    const extraLen = raw.readUInt16LE(i + 28);
-    const name = raw.subarray(i + 30, i + 30 + nameLen).toString("utf8");
-    const start = i + 30 + nameLen + extraLen;
-    const data = raw.subarray(start, start + compSize);
-    i = start + compSize;
-    if (!/\.csv$/i.test(name) && !/\.txt$/i.test(name)) continue;
-    if (method === 0) out.push(Buffer.from(data));
-    else if (method === 8) out.push(inflateRawSync(data));
+  try {
+    while (i + 30 <= raw.length) {
+      if (raw.readUInt32LE(i) !== 0x04034b50) break;
+      const method = raw.readUInt16LE(i + 8);
+      const flags = raw.readUInt16LE(i + 6);
+      const compSize = raw.readUInt32LE(i + 18);
+      const nameLen = raw.readUInt16LE(i + 26);
+      const extraLen = raw.readUInt16LE(i + 28);
+      const name = raw.subarray(i + 30, i + 30 + nameLen).toString("utf8");
+      const start = i + 30 + nameLen + extraLen;
+      if (flags & 0x8 || compSize === 0 || start + compSize > raw.length) break;
+      const data = raw.subarray(start, start + compSize);
+      i = start + compSize;
+      if (!/\.csv$/i.test(name) && !/\.txt$/i.test(name)) continue;
+      if (method === 0) out.push(Buffer.from(data));
+      else if (method === 8) out.push(inflateRawSync(data));
+    }
+  } catch {
+    return [];
   }
-  return out.length ? out : [raw];
+  return out;
 }
 
 export function parsePlayFinanceCsv(raw: string | Buffer, sourceStatement: string): PlayFinanceRow[] {

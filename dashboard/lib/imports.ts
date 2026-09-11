@@ -571,7 +571,13 @@ async function importPlay() {
       if (!fileRes.ok) continue;
       financeNames.push(object.name);
       const body = Buffer.from(await fileRes.arrayBuffer());
-      for (const csv of unzipCsvBuffers(body)) {
+      let csvs: Buffer[] = [];
+      try {
+        csvs = unzipCsvBuffers(body);
+      } catch {
+        continue;
+      }
+      for (const csv of csvs) {
         for (const row of parsePlayFinanceCsv(csv, `play_${object.name}`)) {
           const { error } = await client.rpc("growth_insert_store_financial", {
             p_platform: "android",
