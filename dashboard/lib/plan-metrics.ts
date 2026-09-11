@@ -111,8 +111,8 @@ export function planMixFromEvents(
 
   for (const event of events) {
     const time = String(event.event_time ?? "").slice(0, 10);
-    if (options.from && time && time < options.from) continue;
-    if (options.to && time && time > options.to) continue;
+    if (options?.from && time && time < options.from) continue;
+    if (options?.to && time && time > options.to) continue;
     if (
       String(event.environment ?? "") !== "production" ||
       event.is_trial === true ||
