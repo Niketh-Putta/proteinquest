@@ -9,9 +9,9 @@ import {
 } from "./play-reports.ts";
 
 test("discovers Play report buckets from developer id", () => {
-  const buckets = playBucketCandidates("63722752313690019033", "gs://pubsite_prod_rev_63722752313690019033/stats");
-  assert.ok(buckets.includes("pubsite_prod_rev_63722752313690019033"));
-  assert.equal(buckets[0], "pubsite_prod_rev_63722752313690019033");
+  const buckets = playBucketCandidates("6372752371369019039", "gs://pubsite_prod_6372752371369019039/stats/installs/");
+  assert.ok(buckets.includes("pubsite_prod_6372752371369019039"));
+  assert.equal(buckets[0], "pubsite_prod_6372752371369019039");
 });
 
 test("parses Play install overview using Daily User Installs, not updates", () => {
