@@ -8,7 +8,8 @@ export default async function Page({
 }: {
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
-  const snapshot = await loadSnapshot(await searchParams);
+  const params = await searchParams;
+  const snapshot = await loadSnapshot({ ...params, defaultRange: "all" });
   return (
     <main className="page">
       <section className="panel">

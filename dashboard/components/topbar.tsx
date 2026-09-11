@@ -1,6 +1,8 @@
 "use client";
 
-import { usePathname, useSearchParams } from "next/navigation";
+import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { parseRangePreset, type DateRangePreset } from "@/lib/range";
 
 const PAGES: Record<string, { title: string; subtitle: string; filters?: boolean }> = {
   "/": { title: "Overview", subtitle: "Opens, first meals, paid users and money.", filters: true },
@@ -17,32 +19,46 @@ const PAGES: Record<string, { title: string; subtitle: string; filters?: boolean
   "/metrics": { title: "Definitions", subtitle: "Source, formula, denominator, window and last refresh." },
 };
 
-function londonToday() {
-  return new Date().toLocaleDateString("en-CA", { timeZone: "Europe/London" });
-}
-
-function defaultFrom(to: string) {
-  const d = new Date(`${to}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() - 29);
-  return d.toISOString().slice(0, 10);
-}
+const RANGE_BUTTONS: { id: DateRangePreset; label: string }[] = [
+  { id: "all", label: "All time" },
+  { id: "month", label: "Last month" },
+  { id: "week", label: "Last week" },
+];
 
 function Filters({ action }: { action: string }) {
   const params = useSearchParams();
-  const to = params.get("to") || londonToday();
-  const from = params.get("from") || defaultFrom(to);
+  const router = useRouter();
+  const fallback: DateRangePreset = action === "/funnel" ? "all" : "month";
+  const range = parseRangePreset(params.get("range")) ?? fallback;
   const platform = params.get("platform") || "all";
+
+  const hrefFor = (nextRange: DateRangePreset, nextPlatform = platform) => {
+    const q = new URLSearchParams();
+    q.set("range", nextRange);
+    if (nextPlatform !== "all") q.set("platform", nextPlatform);
+    const text = q.toString();
+    return text ? `${action}?${text}` : action;
+  };
+
   return (
-    <form action={action} method="get" className="controls">
-      <input aria-label="Start date" type="date" name="from" defaultValue={from} />
-      <input aria-label="End date" type="date" name="to" defaultValue={to} />
-      <select aria-label="Platform" name="platform" defaultValue={platform}>
+    <div className="controls">
+      <nav className="range-toggle" aria-label="Date range">
+        {RANGE_BUTTONS.map((btn) => (
+          <Link key={btn.id} href={hrefFor(btn.id)} className={range === btn.id ? "active" : undefined} prefetch>
+            {btn.label}
+          </Link>
+        ))}
+      </nav>
+      <select
+        aria-label="Platform"
+        value={platform}
+        onChange={(e) => router.push(hrefFor(range, e.target.value))}
+      >
         <option value="all">All platforms</option>
         <option value="ios">Apple</option>
         <option value="android">Google</option>
       </select>
-      <button type="submit">Apply</button>
-    </form>
+    </div>
   );
 }
 

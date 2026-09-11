@@ -3,6 +3,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { displayMetric } from "./format";
 import { planMixFromEvents } from "./plan-metrics";
 import { isNewPaidSubscriptionEvent } from "./play-reports";
+import { londonToday, resolveRange, type DateRangePreset } from "./range";
 import type { Metric, Status } from "./types";
 
 export type { Metric, Status };
@@ -63,9 +64,7 @@ function parseDate(value: string | null, fallback: string) {
   return value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : fallback;
 }
 
-export function londonToday() {
-  return new Date().toLocaleDateString("en-CA", { timeZone: "Europe/London" });
-}
+export { londonToday } from "./range";
 
 function supabaseAdmin(): SupabaseClient | null {
   const url =
@@ -127,17 +126,18 @@ export async function loadConnections(): Promise<Connection[]> {
 }
 
 export async function loadSnapshot(search: {
+  range?: string | null;
   from?: string | null;
   to?: string | null;
   platform?: string | null;
   channel?: string | null;
   activation_window?: string | null;
   paid_window?: string | null;
+  defaultRange?: DateRangePreset;
 }): Promise<Snapshot> {
-  const to = parseDate(search.to ?? null, londonToday());
-  const fromDefault = new Date(`${to}T00:00:00Z`);
-  fromDefault.setUTCDate(fromDefault.getUTCDate() - 29);
-  const from = parseDate(search.from ?? null, fromDefault.toISOString().slice(0, 10));
+  const preset = resolveRange(search.range, search.defaultRange ?? "month");
+  const to = search.range ? preset.to : parseDate(search.to ?? null, preset.to);
+  const from = search.range ? preset.from : parseDate(search.from ?? null, preset.from);
   const platform = search.platform ?? "all";
   const channel = search.channel ?? "all";
   const activationWindow = Number(search.activation_window ?? 7);
