@@ -79,7 +79,7 @@ function ensureVercelAuth() {
 }
 
 function vercelDeployCommand(args) {
-  const result = spawnSync('vercel', vercelArgs(args), {
+  const result = spawnSync('npx', ['vercel', ...vercelArgs(args)], {
     encoding: 'utf8',
     maxBuffer: 20 * 1024 * 1024,
     env: process.env,
@@ -105,7 +105,7 @@ function vercelDeployCommand(args) {
 function aliasDomains(deploymentUrl, domains) {
   for (const domain of domains) {
     const aliasArgs = vercelArgs(['alias', 'set', deploymentUrl, domain]);
-    const result = spawnSync('vercel', aliasArgs, { encoding: 'utf8', stdio: 'inherit' });
+    const result = spawnSync('npx', ['vercel', ...aliasArgs], { encoding: 'utf8', stdio: 'inherit' });
     if (result.status !== 0) process.exit(result.status || 1);
   }
   for (const domain of domains) {

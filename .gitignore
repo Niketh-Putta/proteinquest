@@ -67,3 +67,4 @@ pq-play-upload.keystore
 
 # HQ onboarding demo is large; standard clip is committed as onboarding-demo.mp4
 assets/video/onboarding-demo-hq.mp4
+.env*
