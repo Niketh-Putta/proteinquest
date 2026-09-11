@@ -1,3 +1,4 @@
+import { unstable_cache } from "next/cache";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { displayMetric } from "./format";
 import { planMixFromEvents } from "./plan-metrics";
@@ -81,10 +82,48 @@ async function table(client: SupabaseClient, name: string) {
   return (Array.isArray(data) ? data : []) as Record<string, unknown>[];
 }
 
+const loadWarehouse = unstable_cache(
+  async () => {
+    const client = supabaseAdmin();
+    if (!client) {
+      return {
+        connections: [] as Connection[],
+        rollups: [] as Record<string, unknown>[],
+        store: [] as Record<string, unknown>[],
+        financials: [] as Record<string, unknown>[],
+        subEvents: [] as Record<string, unknown>[],
+        retention: [] as Record<string, unknown>[],
+        expenses: [] as Record<string, unknown>[],
+        aiRows: [] as Record<string, unknown>[],
+      };
+    }
+    const [connections, rollups, store, financials, subEvents, retention, expenses, aiRows] = await Promise.all([
+      table(client, "source_connections"),
+      table(client, "daily_rollups"),
+      table(client, "store_daily_metrics"),
+      table(client, "store_financials"),
+      table(client, "subscription_events"),
+      table(client, "cohort_retention"),
+      table(client, "expenses"),
+      table(client, "ai_usage"),
+    ]);
+    return {
+      connections: connections as Connection[],
+      rollups,
+      store,
+      financials,
+      subEvents,
+      retention,
+      expenses,
+      aiRows,
+    };
+  },
+  ["growth-warehouse-v1"],
+  { revalidate: 60 },
+);
+
 export async function loadConnections(): Promise<Connection[]> {
-  const client = supabaseAdmin();
-  if (!client) return [];
-  return (await table(client, "source_connections")) as Connection[];
+  return (await loadWarehouse()).connections;
 }
 
 export async function loadSnapshot(search: {
@@ -114,11 +153,12 @@ export async function loadSnapshot(search: {
     return emptySnapshot({ from, to, platform, channel, activationWindow, paidWindow, generated }, [], missing);
   }
 
-  const connections = (await table(client, "source_connections")) as Connection[];
+  const warehouse = await loadWarehouse();
+  const connections = warehouse.connections;
   const conn = (name: string) => connections.find((c) => c.provider === name) ?? null;
   const eventFrom = from < ANALYTICS_START_DATE ? ANALYTICS_START_DATE : from;
   const eventsReady = to >= ANALYTICS_START_DATE;
-  let rollups = eventsReady ? await table(client, "daily_rollups") : [];
+  let rollups = eventsReady ? warehouse.rollups : [];
   rollups = rollups.filter((r) => String(r.metric_date) >= eventFrom && String(r.metric_date) <= to);
   if (platform !== "all") rollups = rollups.filter((r) => r.platform === platform);
   if (channel !== "all") rollups = rollups.filter((r) => r.channel === channel);
@@ -143,7 +183,7 @@ export async function loadSnapshot(search: {
   const firstMeal = eventMetric("first_meals", "first meal in activation window", `first meal within ${activationWindow}d`);
   const appleOk = ["connected", "verified"].includes(String(conn("app_store_connect")?.status ?? ""));
   const playOk = ["connected", "verified"].includes(String(conn("google_play")?.status ?? ""));
-  const storeRows = (await table(client, "store_daily_metrics")).filter(
+  const storeRows = warehouse.store.filter(
     (r) => String(r.metric_date) >= from && String(r.metric_date) <= to,
   );
   const appleStore = storeRows.filter((r) => r.platform === "ios");
@@ -170,7 +210,7 @@ export async function loadSnapshot(search: {
         note: String(conn("google_play")?.notes ?? ""),
       });
 
-  const financials = await table(client, "store_financials");
+  const financials = warehouse.financials;
   const money = (p: string) => {
     const rows = financials.filter((r) => r.platform === p);
     const add = (k: string) => rows.reduce((a, r) => a + Number(r[k] ?? 0), 0);
@@ -206,7 +246,7 @@ export async function loadSnapshot(search: {
           note: "No official statement imported.",
         });
 
-  const subEvents = await table(client, "subscription_events");
+  const subEvents = warehouse.subEvents;
   const paidUsers = new Set(
     subEvents
       .filter((e) =>
@@ -241,7 +281,7 @@ export async function loadSnapshot(search: {
   const estimatedMrr = planMetric(mix.mrr, "active weekly/monthly/yearly × list price / months", "gbp");
   const estimatedArr = planMetric(mix.arr, "estimated MRR × 12", "gbp");
 
-  const retention = await table(client, "cohort_retention");
+  const retention = warehouse.retention;
   const retain = (days: 1 | 7 | 30): Metric => {
     const rows = retention.filter((r) => r[`matured_d${days}`]);
     const size = rows.reduce((a, r) => a + Number(r.cohort_size ?? 0), 0);
@@ -265,8 +305,8 @@ export async function loadSnapshot(search: {
       ? metric("no_data", null, { source: "analytics.events", formula: "failed / attempts" })
       : metric("ok", sum("meal_scans_failed") / attempts, { source: "analytics.events", denominator: attempts });
 
-  const expenses = await table(client, "expenses");
-  const aiRows = await table(client, "ai_usage");
+  const expenses = warehouse.expenses;
+  const aiRows = warehouse.aiRows;
   const aiCost = aiRows.length
     ? metric("ok", aiRows.reduce((a, r) => a + Number(r.estimated_cost_usd ?? 0), 0), {
         source: "analyze-food estimates",

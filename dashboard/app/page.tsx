@@ -1,4 +1,3 @@
-import { Filters, Shell } from "@/components/shell";
 import { FunnelList, MetricCard } from "@/components/metrics";
 import { loadSnapshot } from "@/lib/data";
 
@@ -9,23 +8,9 @@ export default async function OverviewPage({
 }: {
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
-  const params = await searchParams;
-  const snapshot = await loadSnapshot(params);
+  const snapshot = await loadSnapshot(await searchParams);
   return (
-    <Shell
-      pathname="/"
-      title="Overview"
-      subtitle="Opens, first meals, paid users and money."
-      filters={
-        <Filters
-          action="/"
-          from={snapshot.meta.from}
-          to={snapshot.meta.to}
-          platform={snapshot.meta.platform}
-          channel={snapshot.meta.channel}
-        />
-      }
-    >
+    <main className="page">
       <div className="metric-grid">
         <MetricCard label="New first opens" metric={snapshot.overview.first_opens} />
         <MetricCard label="First-meal activation" metric={snapshot.overview.first_meal_activation} />
@@ -53,6 +38,6 @@ export default async function OverviewPage({
         </div>
         <FunnelList snapshot={snapshot} />
       </section>
-    </Shell>
+    </main>
   );
 }

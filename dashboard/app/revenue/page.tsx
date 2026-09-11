@@ -1,4 +1,3 @@
-import { Filters, Shell } from "@/components/shell";
 import { MetricCard } from "@/components/metrics";
 import { displayMetric, loadSnapshot } from "@/lib/data";
 
@@ -11,20 +10,7 @@ export default async function Page({
 }) {
   const snapshot = await loadSnapshot(await searchParams);
   return (
-    <Shell
-      pathname="/revenue"
-      title="Revenue and costs"
-      subtitle="Estimated MRR from live subscriptions. Store payouts when Apple or Google send a statement."
-      filters={
-        <Filters
-          action="/revenue"
-          from={snapshot.meta.from}
-          to={snapshot.meta.to}
-          platform={snapshot.meta.platform}
-          channel={snapshot.meta.channel}
-        />
-      }
-    >
+    <main className="page">
       <div className="platforms">
         <article>
           <span>Estimated MRR</span>
@@ -73,6 +59,6 @@ export default async function Page({
         <MetricCard label="Google fees" metric={snapshot.revenue.google.fees} />
         <MetricCard label="AI cost" metric={snapshot.revenue.shared.ai} />
       </div>
-    </Shell>
+    </main>
   );
 }

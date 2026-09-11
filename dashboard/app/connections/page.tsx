@@ -1,4 +1,3 @@
-import { Shell } from "@/components/shell";
 import { loadConnections } from "@/lib/data";
 import { providerLabel, statusLabel } from "@/lib/labels";
 
@@ -7,7 +6,7 @@ export const dynamic = "force-dynamic";
 export default async function Page() {
   const connections = await loadConnections();
   return (
-    <Shell pathname="/connections" title="Connections" subtitle="What is live.">
+    <main className="page">
       <section className="panel">
         <div className="api-list">
           {connections.map((c) => (
@@ -20,6 +19,6 @@ export default async function Page() {
           ))}
         </div>
       </section>
-    </Shell>
+    </main>
   );
 }

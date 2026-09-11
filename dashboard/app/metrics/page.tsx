@@ -1,4 +1,3 @@
-import { Shell } from "@/components/shell";
 import { displayMetric, loadSnapshot } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
@@ -6,7 +5,7 @@ export const dynamic = "force-dynamic";
 export default async function Page() {
   const snapshot = await loadSnapshot({});
   return (
-    <Shell pathname="/metrics" title="Definitions" subtitle="Source, formula, denominator, window and last refresh.">
+    <main className="page">
       <section className="panel definitions">
         <div>
           {snapshot.definitions.map((item) => (
@@ -22,6 +21,6 @@ export default async function Page() {
           ))}
         </div>
       </section>
-    </Shell>
+    </main>
   );
 }
