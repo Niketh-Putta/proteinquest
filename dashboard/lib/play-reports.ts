@@ -1,3 +1,5 @@
+import { inflateRawSync } from "node:zlib";
+
 export const APP_SKU = "com.proteinquest.app";
 
 /** Known Play developer account IDs already used for GCS report discovery. */
@@ -33,6 +35,15 @@ export function playBucketCandidates(developerId?: string | null, bucket?: strin
 
 export function isPlayOverviewObject(name: string): boolean {
   return name.includes(`installs_${APP_SKU}_`) && name.includes("_overview.csv");
+}
+
+export function isPlayFinancialObject(name: string): boolean {
+  const lower = name.toLowerCase();
+  if (lower.includes("installs_") || lower.includes("crashes_") || lower.includes("ratings_")) return false;
+  return (
+    /\/(earnings|sales|financials?)\//i.test(name) ||
+    /earnings_|salesreport_|financial/i.test(name.split("/").pop() ?? "")
+  );
 }
 
 function decodePlayCsv(raw: string | Buffer): string {
@@ -103,6 +114,116 @@ export function parsePlayOverviewCsv(raw: string | Buffer): PlayOverviewRow[] {
     rows.push({ date, acquisitions, reinstalls });
   }
   return rows;
+}
+
+export type PlayFinanceRow = {
+  periodStart: string;
+  periodEnd: string;
+  country: string | null;
+  productId: string | null;
+  currency: string;
+  grossBillings: number;
+  refunds: number;
+  taxes: number;
+  platformFees: number;
+  proceeds: number;
+  settlementCurrency: string;
+  settlementAmount: number;
+  sourceStatement: string;
+};
+
+function moneyCell(raw: string): number {
+  const n = Number.parseFloat(String(raw ?? "").replace(/[^0-9.-]/g, ""));
+  return Number.isFinite(n) ? n : 0;
+}
+
+function playDate(raw: string): string | null {
+  const value = String(raw ?? "").trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const mdy = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(value);
+  if (mdy) return `${mdy[3]}-${mdy[1]!.padStart(2, "0")}-${mdy[2]!.padStart(2, "0")}`;
+  return null;
+}
+
+export function unzipCsvBuffers(raw: Buffer): Buffer[] {
+  if (raw.length < 4 || raw[0] !== 0x50 || raw[1] !== 0x4b) return [raw];
+  const out: Buffer[] = [];
+  let i = 0;
+  while (i + 30 <= raw.length) {
+    if (raw.readUInt32LE(i) !== 0x04034b50) break;
+    const method = raw.readUInt16LE(i + 8);
+    const compSize = raw.readUInt32LE(i + 18);
+    const nameLen = raw.readUInt16LE(i + 26);
+    const extraLen = raw.readUInt16LE(i + 28);
+    const name = raw.subarray(i + 30, i + 30 + nameLen).toString("utf8");
+    const start = i + 30 + nameLen + extraLen;
+    const data = raw.subarray(start, start + compSize);
+    i = start + compSize;
+    if (!/\.csv$/i.test(name) && !/\.txt$/i.test(name)) continue;
+    if (method === 0) out.push(Buffer.from(data));
+    else if (method === 8) out.push(inflateRawSync(data));
+  }
+  return out.length ? out : [raw];
+}
+
+export function parsePlayFinanceCsv(raw: string | Buffer, sourceStatement: string): PlayFinanceRow[] {
+  const text = decodePlayCsv(raw);
+  const lines = text.replace(/\r/g, "").split("\n").filter((line) => line.trim());
+  if (lines.length < 2) return [];
+  const headers = splitCsvLine(lines[0] ?? "").map((h) => h.trim());
+  const idx = (re: RegExp) => headers.findIndex((h) => re.test(h));
+  const dateIdx = idx(/^(Transaction Date|Order Charged Date|Date)$/i);
+  const countryIdx = idx(/^(Buyer Country|Country of Buyer|Country)$/i);
+  const productIdx = idx(/^(Sku Id|Product id|Product ID|SKU)$/i);
+  const currencyIdx = idx(/^(Currency of Sale|Merchant Currency|Currency)$/i);
+  const chargedIdx = idx(/^(Charged Amount|Item Price)$/i);
+  const amountIdx = idx(/^(Amount \(Merchant Currency\)|Amount \(Buyer Currency\))$/i);
+  const taxIdx = idx(/^(Taxes Collected|Tax Type|Tax)$/i);
+  const feeIdx = idx(/^(Google fee|Service Fee|Play fee)$/i);
+  const typeIdx = idx(/^(Transaction Type|Financial Status|Description)$/i);
+  const grouped = new Map<string, PlayFinanceRow>();
+  for (const line of lines.slice(1)) {
+    const cols = splitCsvLine(line);
+    const date = playDate(cols[dateIdx] ?? "") ?? null;
+    if (!date) continue;
+    const currency = (cols[currencyIdx] ?? "USD").trim() || "USD";
+    const productId = (cols[productIdx] ?? "").trim() || null;
+    const country = (cols[countryIdx] ?? "").trim() || null;
+    const charged = moneyCell(cols[chargedIdx] ?? "");
+    const amount = moneyCell(cols[amountIdx] ?? "");
+    const taxes = moneyCell(cols[taxIdx] ?? "");
+    const fees = moneyCell(cols[feeIdx] ?? "");
+    const label = `${cols[typeIdx] ?? ""}`.toLowerCase();
+    const isRefund = /refund|chargeback|return/.test(label) || charged < 0 || amount < 0;
+    const gross = Math.abs(charged || amount);
+    const proceeds = amount !== 0 ? amount : charged - taxes - fees;
+    const key = `${date}|${country ?? ""}|${productId ?? ""}|${currency}`;
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        periodStart: date,
+        periodEnd: date,
+        country,
+        productId,
+        currency,
+        grossBillings: 0,
+        refunds: 0,
+        taxes: 0,
+        platformFees: 0,
+        proceeds: 0,
+        settlementCurrency: currency,
+        settlementAmount: 0,
+        sourceStatement,
+      });
+    }
+    const current = grouped.get(key)!;
+    if (isRefund) current.refunds += gross;
+    else current.grossBillings += gross;
+    current.taxes += Math.abs(taxes);
+    current.platformFees += Math.abs(fees);
+    current.proceeds += proceeds;
+    current.settlementAmount += proceeds;
+  }
+  return [...grouped.values()].filter((row) => row.grossBillings || row.refunds || row.proceeds);
 }
 
 export function isNewPaidSubscriptionEvent(input: {

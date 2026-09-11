@@ -3,7 +3,9 @@ import test from "node:test";
 
 import {
   isNewPaidSubscriptionEvent,
+  isPlayFinancialObject,
   isPlayOverviewObject,
+  parsePlayFinanceCsv,
   parsePlayOverviewCsv,
   playBucketCandidates,
 } from "./play-reports.ts";
@@ -24,6 +26,22 @@ test("parses Play install overview using Daily User Installs, not updates", () =
   assert.equal(rows.length, 1);
   assert.equal(rows[0]?.acquisitions, 4);
   assert.equal(rows[0]?.reinstalls, 2);
+});
+
+test("parses Play earnings without inventing a fee", () => {
+  const csv = [
+    "Transaction Date,Sku Id,Buyer Country,Currency of Sale,Charged Amount,Taxes Collected,Amount (Merchant Currency),Transaction Type",
+    "2026-08-15,pro_weekly,GB,GBP,6.99,0,5.94,Charge",
+    "2026-08-16,pro_weekly,GB,GBP,-6.99,0,-5.94,Refund",
+  ].join("\n");
+  const rows = parsePlayFinanceCsv(csv, "play_earnings");
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]?.grossBillings, 6.99);
+  assert.equal(rows[0]?.refunds, 6.99);
+  assert.equal(rows[0]?.proceeds, 0);
+  assert.equal(rows[0]?.platformFees, 0);
+  assert.equal(isPlayFinancialObject("earnings/earnings_202608.zip"), true);
+  assert.equal(isPlayFinancialObject("stats/installs/installs_com.proteinquest.app_202608_overview.csv"), false);
 });
 
 test("only official overview CSVs for this package are imported", () => {

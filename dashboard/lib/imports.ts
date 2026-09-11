@@ -9,9 +9,12 @@ import {
 } from "./apple-reports";
 import {
   APP_SKU,
+  isPlayFinancialObject,
   isPlayOverviewObject,
+  parsePlayFinanceCsv,
   parsePlayOverviewCsv,
   playBucketCandidates,
+  unzipCsvBuffers,
 } from "./play-reports";
 
 function admin() {
@@ -413,11 +416,14 @@ async function googleToken(sa: PlayServiceAccount, scopes: string[]) {
   return json.access_token ?? null;
 }
 
-async function listPlayOverview(token: string, bucket: string) {
-  const prefix = `stats/installs/installs_${APP_SKU}_`;
+async function listPlayObjects(token: string, bucket: string, prefix: string) {
   const listUrl = `https://storage.googleapis.com/storage/v1/b/${bucket}/o?prefix=${encodeURIComponent(prefix)}&maxResults=200`;
   const listRes = await fetch(listUrl, { headers: { Authorization: `Bearer ${token}` } });
   return { listRes, bucket };
+}
+
+async function listPlayOverview(token: string, bucket: string) {
+  return listPlayObjects(token, bucket, `stats/installs/installs_${APP_SKU}_`);
 }
 
 async function playPublisherOk(sa: PlayServiceAccount) {
@@ -553,13 +559,51 @@ async function importPlay() {
     );
     return { provider: "google_play", status: "not_connected", inserted: 0, bucket };
   }
+  let financeInserted = 0;
+  const financeNames: string[] = [];
+  for (const prefix of ["earnings/", "sales/", "financials/"]) {
+    const listed = await listPlayObjects(token, bucket, prefix);
+    if (!listed.listRes.ok) continue;
+    const list = (await listed.listRes.json()) as { items?: { name: string }[] };
+    for (const object of (list.items ?? []).filter((o) => o.name && isPlayFinancialObject(o.name))) {
+      const media = `https://storage.googleapis.com/storage/v1/b/${bucket}/o/${encodeURIComponent(object.name)}?alt=media`;
+      const fileRes = await fetch(media, { headers: { Authorization: `Bearer ${token}` } });
+      if (!fileRes.ok) continue;
+      financeNames.push(object.name);
+      const body = Buffer.from(await fileRes.arrayBuffer());
+      for (const csv of unzipCsvBuffers(body)) {
+        for (const row of parsePlayFinanceCsv(csv, `play_${object.name}`)) {
+          const { error } = await client.rpc("growth_insert_store_financial", {
+            p_platform: "android",
+            p_period_start: row.periodStart,
+            p_period_end: row.periodEnd,
+            p_country: row.country,
+            p_product_id: row.productId,
+            p_currency: row.currency,
+            p_gross_billings: row.grossBillings,
+            p_refunds: row.refunds,
+            p_taxes: row.taxes,
+            p_platform_fees: row.platformFees,
+            p_proceeds: row.proceeds,
+            p_settlement_currency: row.settlementCurrency,
+            p_settlement_amount: row.settlementAmount,
+            p_source_statement: row.sourceStatement,
+          });
+          if (!error) financeInserted += 1;
+        }
+      }
+    }
+  }
+  const financeNote = financeInserted
+    ? `Official Play earnings/sales files stored ${financeInserted} statement row(s) from ${financeNames.length} file(s). Not independently verified.`
+    : "Play financial files not found in earnings/sales prefixes. Open Download reports → Financial and accept terms. Empty is not a reconciled 0.";
   await mark(
     "google_play",
     "connected",
     null,
-    `Imported ${inserted} Play Daily User Installs / reinstall rows from ${names.length} overview CSV(s). Native Play acquisitions, not Apple first-time downloads. Financial statements not imported.`,
+    `Imported ${inserted} Play Daily User Installs / reinstall rows from ${names.length} overview CSV(s). Native Play acquisitions, not Apple first-time downloads. ${financeNote}`,
   );
-  return { provider: "google_play", status: "connected", inserted, bucket };
+  return { provider: "google_play", status: "connected", inserted, bucket, financeInserted };
 }
 
 async function importFx() {
