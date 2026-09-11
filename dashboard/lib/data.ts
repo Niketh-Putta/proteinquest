@@ -81,6 +81,12 @@ async function table(client: SupabaseClient, name: string) {
   return (Array.isArray(data) ? data : []) as Record<string, unknown>[];
 }
 
+export async function loadConnections(): Promise<Connection[]> {
+  const client = supabaseAdmin();
+  if (!client) return [];
+  return (await table(client, "source_connections")) as Connection[];
+}
+
 export async function loadSnapshot(search: {
   from?: string | null;
   to?: string | null;
@@ -108,7 +114,6 @@ export async function loadSnapshot(search: {
     return emptySnapshot({ from, to, platform, channel, activationWindow, paidWindow, generated }, [], missing);
   }
 
-  await client.rpc("refresh_analytics_rollups");
   const connections = (await table(client, "source_connections")) as Connection[];
   const conn = (name: string) => connections.find((c) => c.provider === name) ?? null;
   const eventFrom = from < ANALYTICS_START_DATE ? ANALYTICS_START_DATE : from;
@@ -305,7 +310,7 @@ export async function loadSnapshot(search: {
         from: evidenced[i].label,
         to: evidenced[i + 1].label,
         drop,
-        note: `n=${av} → ${bv} in ${from} to ${to}.`,
+        note: `${av} people to ${bv}.`,
       };
     }
   }

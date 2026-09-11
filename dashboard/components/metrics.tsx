@@ -1,19 +1,16 @@
 import { displayMetric, type Metric, type Snapshot } from "@/lib/data";
+import { metricHint } from "@/lib/labels";
 
 export function MetricCard({ label, metric }: { label: string; metric?: Metric }) {
   const m = metric ?? { status: "unavailable" as const, value: null };
-  const tone = m.status === "ok" ? "good" : "warn";
+  const hint = metricHint(m.status);
   return (
     <article className="metric">
       <div>
         <span>{label}</span>
-        <em className={tone}>{m.status.replaceAll("_", " ")}</em>
       </div>
       <strong>{displayMetric(m)}</strong>
-      <small>
-        {m.source ?? "No source"} · {m.window ?? "window n/a"}
-        {m.note ? ` · ${m.note}` : ""}
-      </small>
+      {hint ? <small>{hint}</small> : null}
     </article>
   );
 }
@@ -29,7 +26,6 @@ export function FunnelList({ snapshot }: { snapshot: Snapshot }) {
         <div className="funnel-row" key={step.id}>
           <div>
             <b>{step.label}</b>
-            <small>{step.metric.source ?? "unwired"}</small>
           </div>
           <i>
             <span

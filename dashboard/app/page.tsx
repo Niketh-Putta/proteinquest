@@ -15,7 +15,7 @@ export default async function OverviewPage({
     <Shell
       pathname="/"
       title="Overview"
-      subtitle="New first opens, first-meal activation, new paid subscribers and net proceeds."
+      subtitle="Opens, first meals, paid users and money."
       filters={
         <Filters
           action="/"
@@ -26,10 +26,6 @@ export default async function OverviewPage({
         />
       }
     >
-      <p className="demo-note">
-        Collection started {snapshot.meta.analytics_start_date}. Missing sources show Not connected,
-        Unavailable or No data. Sample figures are never shown as production truth.
-      </p>
       <div className="metric-grid">
         <MetricCard label="New first opens" metric={snapshot.overview.first_opens} />
         <MetricCard label="First-meal activation" metric={snapshot.overview.first_meal_activation} />
@@ -44,8 +40,7 @@ export default async function OverviewPage({
         </h2>
         <p>{snapshot.overview.largest_loss.note}</p>
         <p>
-          <strong>Growth action:</strong> {snapshot.overview.growth_action.action} Sample{" "}
-          {snapshot.overview.growth_action.sample_size} · {snapshot.overview.growth_action.window}
+          <strong>Next:</strong> {snapshot.overview.growth_action.action}
         </p>
       </section>
       <section className="panel">
@@ -53,7 +48,7 @@ export default async function OverviewPage({
           <div>
             <span>Funnel</span>
             <h2>Cohort milestones</h2>
-            <p>Users can sign in, scan or subscribe out of order. This is milestone conversion, not a forced sequence.</p>
+            <p>People can skip steps. These are milestones, not a forced path.</p>
           </div>
         </div>
         <FunnelList snapshot={snapshot} />

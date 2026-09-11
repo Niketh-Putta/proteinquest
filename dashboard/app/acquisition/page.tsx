@@ -14,7 +14,7 @@ export default async function Page({
     <Shell
       pathname="/acquisition"
       title="Acquisition"
-      subtitle="Website clicks are not store installs. No fabricated click-to-install join."
+      subtitle="Site, Apple and Google. Separate numbers."
       filters={
         <Filters
           action="/acquisition"
@@ -30,9 +30,6 @@ export default async function Page({
         <MetricCard label="Store clickers" metric={snapshot.acquisition.store_clicks} />
         <MetricCard label="Apple downloads" metric={snapshot.acquisition.apple_downloads} />
         <MetricCard label="Google downloads" metric={snapshot.acquisition.google_downloads} />
-        <MetricCard label="Unknown channel" metric={snapshot.acquisition.unknown_channel} />
-        <MetricCard label="Attribution coverage" metric={snapshot.acquisition.attribution_coverage} />
-        <MetricCard label="CAC" metric={snapshot.acquisition.cac} />
       </div>
     </Shell>
   );

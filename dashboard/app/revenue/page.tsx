@@ -14,7 +14,7 @@ export default async function Page({
     <Shell
       pathname="/revenue"
       title="Revenue and costs"
-      subtitle="Estimated MRR/ARR updates from production RevenueCat events. Store statements stay the accounting truth."
+      subtitle="Estimated MRR from live subscriptions. Store payouts when Apple or Google send a statement."
       filters={
         <Filters
           action="/revenue"

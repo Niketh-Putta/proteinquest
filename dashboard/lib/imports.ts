@@ -657,5 +657,6 @@ export async function runImports() {
     await mark("fx", "error", String(error));
     return { provider: "fx", status: "error" };
   }));
+  await admin().rpc("refresh_analytics_rollups");
   return { ran_at: new Date().toISOString(), results };
 }

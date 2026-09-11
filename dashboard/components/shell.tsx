@@ -9,7 +9,6 @@ const NAV = [
   ["/revenue", "Revenue"],
   ["/quality", "Quality"],
   ["/connections", "Connections"],
-  ["/metrics", "Definitions"],
 ] as const;
 
 export function Shell({
@@ -82,23 +81,14 @@ export function Filters({
 }) {
   return (
     <form action={action} method="get" className="controls">
-      <em>Europe/London</em>
       <input aria-label="Start date" type="date" name="from" defaultValue={from} />
       <input aria-label="End date" type="date" name="to" defaultValue={to} />
       <select aria-label="Platform" name="platform" defaultValue={platform}>
         <option value="all">All platforms</option>
         <option value="ios">Apple</option>
         <option value="android">Google</option>
-        <option value="web">Web</option>
-      </select>
-      <select aria-label="Channel" name="channel" defaultValue={channel}>
-        <option value="all">All channels</option>
-        <option value="unknown">Unknown</option>
       </select>
       <button type="submit">Apply</button>
-      <a className="quiet" href={`/api/export?from=${from}&to=${to}&platform=${platform}&channel=${channel}`}>
-        Export CSV
-      </a>
     </form>
   );
 }
