@@ -9,7 +9,7 @@ export default async function Page() {
     <Shell
       pathname="/connections"
       title="Connections"
-      subtitle="Store and FX files poll every hour. RevenueCat and ingest are live. Credentials are never shown."
+      subtitle="Store and FX files poll daily. RevenueCat and ingest are live. Credentials are never shown."
     >
       <section className="panel">
         <form action="/api/sync" method="post">
