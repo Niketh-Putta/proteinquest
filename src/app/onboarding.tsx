@@ -26,6 +26,7 @@ import { GoalEditor } from '@/components/GoalEditor';
 import { emptyDragonProgress } from '@/lib/character';
 import { markDailyDragonLocked } from '@/lib/daily-dragon-lock';
 import { trackEvent } from '@/lib/analytics';
+import { trackGrowth } from '@/lib/growth-analytics';
 import { markNeedsFirstScan } from '@/lib/first-scan';
 import { setMealRemindersEnabled } from '@/lib/meal-reminders';
 import { todayISODate } from '@/lib/protein';
@@ -210,6 +211,7 @@ export default function Onboarding() {
       });
       await markNeedsFirstScan();
       trackEvent('onboarding_complete', { dragon_id: dragon });
+      trackGrowth('onboarding_completed', { step_id: 'dragon_named' });
       // Meal reminders default ON (opt-out in Settings) unless already chosen in intro.
       void setMealRemindersEnabled(true).catch(() => {});
       setStep('forging');

@@ -389,3 +389,15 @@ s3_secret_key = "env(S3_SECRET_KEY)"
 
 [functions.analyze-food]
 verify_jwt = false
+
+[functions.ingest-analytics]
+verify_jwt = false
+
+[functions.growth-dashboard]
+verify_jwt = false
+
+[functions.apple-notifications]
+verify_jwt = false
+
+[functions.google-rtdn]
+verify_jwt = false

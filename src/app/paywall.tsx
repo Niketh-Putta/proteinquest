@@ -17,6 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { GlassPanel } from '@/components/GlassPanel';
 import { trackEvent } from '@/lib/analytics';
+import { trackGrowth } from '@/lib/growth-analytics';
 import { APP_STORE_URL, PLAY_STORE_URL } from '@/lib/app-update';
 import { useContentColumn, useLayout } from '@/lib/layout';
 import {
@@ -113,6 +114,7 @@ export default function Paywall() {
 
   useEffect(() => {
     trackEvent('paywall_view', {});
+    trackGrowth('paywall_viewed');
   }, []);
 
   const reloadPlans = React.useCallback(() => {
@@ -146,6 +148,7 @@ export default function Paywall() {
   async function handlePurchase() {
     if (!canPurchase) return;
     setBusy(true);
+    trackGrowth('purchase_started', { plan_id: planId });
     try {
       const ok = await provider.purchase(planId, {
         userId: session?.user.id,

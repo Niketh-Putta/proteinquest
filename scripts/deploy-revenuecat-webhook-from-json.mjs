@@ -13,6 +13,10 @@ const files = [
     name: 'functions/_shared/entitlement-state.ts',
     path: 'supabase/functions/_shared/entitlement-state.ts',
   },
+  {
+    name: 'functions/_shared/revenuecat-events.ts',
+    path: 'supabase/functions/_shared/revenuecat-events.ts',
+  },
 ];
 
 const payload = {

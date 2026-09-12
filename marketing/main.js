@@ -3,10 +3,85 @@
     play: 'https://play.google.com/store/apps/details?id=com.proteinquest.app',
     ios: 'https://apps.apple.com/app/id6781790996',
   };
+
+  function uuid() {
+    if (crypto.randomUUID) return crypto.randomUUID();
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const r = (Math.random() * 16) | 0;
+      const v = c === 'x' ? r : (r & 0x3) | 0x8;
+      return v.toString(16);
+    });
+  }
+
+  function websiteId() {
+    try {
+      const key = 'pq_web_id';
+      let id = localStorage.getItem(key) || sessionStorage.getItem(key);
+      if (id) {
+        localStorage.setItem(key, id);
+        return id;
+      }
+      id = uuid();
+      localStorage.setItem(key, id);
+      sessionStorage.setItem(key, id);
+      return id;
+    } catch {
+      return uuid();
+    }
+  }
+
+  function sanitizeUtm(params) {
+    const out = {};
+    ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content'].forEach((key) => {
+      const value = params.get(key);
+      if (value) out[key] = value.slice(0, 80).replace(/[^\w.-]/g, '');
+    });
+    return out;
+  }
+
+  function track(eventName, properties) {
+    const url = 'https://csxdkvpvcasuknhnprxp.supabase.co/functions/v1/ingest-analytics';
+    const key = 'sb_publishable_Zg6Jj70nqJcd7OGof5iP6w_9My7yS9F';
+    const params = new URLSearchParams(window.location.search);
+    return fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: key, Authorization: `Bearer ${key}` },
+      body: JSON.stringify({
+        events: [{
+          event_id: uuid(),
+          event_name: eventName,
+          event_time: new Date().toISOString(),
+          schema_version: 1,
+          environment: 'production',
+          platform: 'web',
+          install_id: websiteId(),
+          channel: params.get('utm_source') || 'unknown',
+          properties: { ...sanitizeUtm(params), ...properties, page: location.pathname },
+        }],
+      }),
+      keepalive: true,
+    }).catch(() => {});
+  }
+
+  track('landing_viewed', { placement: 'marketing_home', referrer: document.referrer ? 'external' : 'direct' });
+
   document.querySelectorAll('[data-store]').forEach((link) => {
-    link.href = urls[link.dataset.store];
+    const dest = link.dataset.store;
+    if (dest && urls[dest]) link.href = urls[dest];
     link.target = '_blank';
     link.rel = 'noopener noreferrer';
+    let sent = false;
+    const send = () => {
+      if (sent) return;
+      sent = true;
+      track('store_link_clicked', {
+        destination: dest,
+        placement: link.getAttribute('data-placement') || 'marketing',
+      });
+    };
+    link.addEventListener('pointerdown', send, { passive: true, capture: true });
+    link.addEventListener('touchstart', send, { passive: true, capture: true });
+    link.addEventListener('click', send, { passive: true, capture: true });
   });
 
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');

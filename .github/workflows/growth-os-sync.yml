@@ -1,0 +1,23 @@
+name: Growth OS store sync
+
+on:
+  schedule:
+    - cron: "20 * * * *"
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Poll Apple, Play and FX
+        env:
+          GROWTH_SYNC_TOKEN: ${{ secrets.GROWTH_SYNC_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GROWTH_SYNC_TOKEN:-}" ]; then
+            echo "GROWTH_SYNC_TOKEN GitHub secret not set. Vercel cron still applies after deploy."
+            exit 0
+          fi
+          curl -fsS -X POST "https://proteinquest.vercel.app/api/sync" \
+            -H "accept: application/json" \
+            -H "x-growth-sync: ${GROWTH_SYNC_TOKEN}"

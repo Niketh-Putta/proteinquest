@@ -16,6 +16,7 @@ import { View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { MealRemindersBootstrap } from '@/components/MealRemindersBootstrap';
+import { flushGrowthEvents, trackFirstOpenOnce } from '@/lib/growth-analytics';
 import { SessionProvider } from '@/lib/session';
 import { trackPageVisitOnce } from '@/lib/track-visit';
 import { colors } from '@/theme';
@@ -49,6 +50,11 @@ export default function RootLayout() {
 
   useEffect(() => {
     trackPageVisitOnce();
+    void trackFirstOpenOnce();
+    const timer = setInterval(() => {
+      void flushGrowthEvents();
+    }, 30_000);
+    return () => clearInterval(timer);
   }, []);
 
   return (
