@@ -4,6 +4,7 @@ import { displayMetric } from "./format";
 import { planMixFromEvents } from "./plan-metrics";
 import { isNewPaidSubscriptionEvent } from "./play-reports";
 import { londonToday, resolveRange, type DateRangePreset } from "./range";
+import { countDistinctIds, filterWebEvents } from "./web-metrics";
 import type { Metric, Status } from "./types";
 
 export type { Metric, Status };
@@ -94,9 +95,10 @@ const loadWarehouse = unstable_cache(
         retention: [] as Record<string, unknown>[],
         expenses: [] as Record<string, unknown>[],
         aiRows: [] as Record<string, unknown>[],
+        events: [] as Record<string, unknown>[],
       };
     }
-    const [connections, rollups, store, financials, subEvents, retention, expenses, aiRows] = await Promise.all([
+    const [connections, rollups, store, financials, subEvents, retention, expenses, aiRows, events] = await Promise.all([
       table(client, "source_connections"),
       table(client, "daily_rollups"),
       table(client, "store_daily_metrics"),
@@ -105,6 +107,7 @@ const loadWarehouse = unstable_cache(
       table(client, "cohort_retention"),
       table(client, "expenses"),
       table(client, "ai_usage"),
+      table(client, "events"),
     ]);
     return {
       connections: connections as Connection[],
@@ -115,9 +118,10 @@ const loadWarehouse = unstable_cache(
       retention,
       expenses,
       aiRows,
+      events,
     };
   },
-  ["growth-warehouse-v1"],
+  ["growth-warehouse-v2"],
   { revalidate: 60 },
 );
 
@@ -317,8 +321,26 @@ export async function loadSnapshot(search: {
     ? metric("ok", expenses.reduce((a, r) => a + Number(r.amount ?? 0), 0), { source: "analytics.expenses" })
     : metric("no_data", null, { source: "analytics.expenses", note: "Enter real invoices. Do not assume Apple 99 or Play 25." });
 
-  const websiteVisitors = eventMetric("website_visitors", "consented website IDs", "landing_viewed");
-  const storeClicks = eventMetric("store_clicks", "store clickers", "store_link_clicked");
+  const landingRows = filterWebEvents(warehouse.events ?? [], "landing_viewed", eventFrom, to, platform, channel);
+  const storeClickRows = filterWebEvents(warehouse.events ?? [], "store_link_clicked", eventFrom, to, platform, channel);
+  const websiteVisitors = eventsReady
+    ? metric("ok", countDistinctIds(landingRows), {
+        source: "analytics.events",
+        formula: "distinct landing_viewed website IDs",
+        denominator: "consented website IDs",
+        window: `${eventFrom} → ${to}`,
+        last_refresh: generated,
+      })
+    : eventMetric("website_visitors", "consented website IDs", "landing_viewed");
+  const storeClicks = eventsReady
+    ? metric("ok", countDistinctIds(storeClickRows), {
+        source: "analytics.events",
+        formula: "distinct store_link_clicked website IDs",
+        denominator: "store clickers",
+        window: `${eventFrom} → ${to}`,
+        last_refresh: generated,
+      })
+    : eventMetric("store_clicks", "store clickers", "store_link_clicked");
   const funnel = [
     { id: "website_visitors", label: "Website visitors", metric: websiteVisitors },
     { id: "store_clicks", label: "Store clickers", metric: storeClicks },

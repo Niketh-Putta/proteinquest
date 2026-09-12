@@ -16,9 +16,13 @@
   function websiteId() {
     try {
       const key = 'pq_web_id';
-      let id = sessionStorage.getItem(key);
-      if (id) return id;
+      let id = localStorage.getItem(key) || sessionStorage.getItem(key);
+      if (id) {
+        localStorage.setItem(key, id);
+        return id;
+      }
       id = uuid();
+      localStorage.setItem(key, id);
       sessionStorage.setItem(key, id);
       return id;
     } catch {
@@ -65,12 +69,16 @@
     link.href = urls[link.dataset.store];
     link.target = '_blank';
     link.rel = 'noopener noreferrer';
-    link.addEventListener('click', () => {
+    const send = () => {
+      if (link.dataset.pqClickSent === '1') return;
+      link.dataset.pqClickSent = '1';
       track('store_link_clicked', {
         destination: link.dataset.store,
         placement: link.getAttribute('data-placement') || 'marketing',
       });
-    });
+    };
+    link.addEventListener('pointerdown', send, { passive: true });
+    link.addEventListener('click', send, { passive: true });
   });
 
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
