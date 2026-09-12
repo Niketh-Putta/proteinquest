@@ -66,21 +66,22 @@
   track('landing_viewed', { placement: 'marketing_home', referrer: document.referrer ? 'external' : 'direct' });
 
   document.querySelectorAll('[data-store]').forEach((link) => {
-    link.href = urls[link.dataset.store];
+    const dest = link.dataset.store;
+    if (dest && urls[dest]) link.href = urls[dest];
     link.target = '_blank';
     link.rel = 'noopener noreferrer';
-    link.addEventListener('click', (event) => {
-      event.preventDefault();
-      const href = link.href;
-      Promise.resolve(
-        track('store_link_clicked', {
-          destination: link.dataset.store,
-          placement: link.getAttribute('data-placement') || 'marketing',
-        }),
-      ).finally(() => {
-        window.open(href, '_blank', 'noopener,noreferrer');
+    let sent = false;
+    const send = () => {
+      if (sent) return;
+      sent = true;
+      track('store_link_clicked', {
+        destination: dest,
+        placement: link.getAttribute('data-placement') || 'marketing',
       });
-    });
+    };
+    link.addEventListener('pointerdown', send, { passive: true, capture: true });
+    link.addEventListener('touchstart', send, { passive: true, capture: true });
+    link.addEventListener('click', send, { passive: true, capture: true });
   });
 
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');

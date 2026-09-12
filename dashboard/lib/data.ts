@@ -82,6 +82,17 @@ async function table(client: SupabaseClient, name: string) {
   return (Array.isArray(data) ? data : []) as Record<string, unknown>[];
 }
 
+async function uniqueWebPeople(client: SupabaseClient, eventName: string, from: string, to: string) {
+  const { data, error } = await client.rpc("growth_unique_web_people", {
+    p_event: eventName,
+    p_from: from,
+    p_to: to,
+  });
+  if (error || data == null) return null;
+  const n = Number(data);
+  return Number.isFinite(n) ? n : null;
+}
+
 const loadWarehouse = unstable_cache(
   async () => {
     const client = supabaseAdmin();
@@ -321,10 +332,20 @@ export async function loadSnapshot(search: {
     ? metric("ok", expenses.reduce((a, r) => a + Number(r.amount ?? 0), 0), { source: "analytics.expenses" })
     : metric("no_data", null, { source: "analytics.expenses", note: "Enter real invoices. Do not assume Apple 99 or Play 25." });
 
-  const landingRows = filterWebEvents(warehouse.events ?? [], "landing_viewed", eventFrom, to, platform, channel);
-  const storeClickRows = filterWebEvents(warehouse.events ?? [], "store_link_clicked", eventFrom, to, platform, channel);
+  const [landingPeople, storePeople] = eventsReady
+    ? await Promise.all([
+        uniqueWebPeople(client, "landing_viewed", eventFrom, to),
+        uniqueWebPeople(client, "store_link_clicked", eventFrom, to),
+      ])
+    : [null, null];
+  const landingFallback = countDistinctIds(
+    filterWebEvents(warehouse.events ?? [], "landing_viewed", eventFrom, to, "all", "all"),
+  );
+  const storeFallback = countDistinctIds(
+    filterWebEvents(warehouse.events ?? [], "store_link_clicked", eventFrom, to, "all", "all"),
+  );
   const websiteVisitors = eventsReady
-    ? metric("ok", countDistinctIds(landingRows), {
+    ? metric("ok", landingPeople ?? landingFallback, {
         source: "analytics.events",
         formula: "unique people who viewed the landing page",
         denominator: "unique website IDs",
@@ -333,7 +354,7 @@ export async function loadSnapshot(search: {
       })
     : eventMetric("website_visitors", "consented website IDs", "landing_viewed");
   const storeClicks = eventsReady
-    ? metric("ok", countDistinctIds(storeClickRows), {
+    ? metric("ok", storePeople ?? storeFallback, {
         source: "analytics.events",
         formula: "unique people who tapped App Store or Play",
         denominator: "unique website IDs",
