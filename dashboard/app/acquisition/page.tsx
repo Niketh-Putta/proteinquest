@@ -12,8 +12,8 @@ export default async function Page({
   return (
     <main className="page">
       <div className="metric-grid">
-        <MetricCard label="Website visitors" metric={snapshot.acquisition.website_visitors} />
-        <MetricCard label="Store clickers" metric={snapshot.acquisition.store_clicks} />
+        <MetricCard label="Unique website visitors" metric={snapshot.acquisition.website_visitors} />
+        <MetricCard label="Unique store clickers" metric={snapshot.acquisition.store_clicks} />
         <MetricCard label="Apple downloads" metric={snapshot.acquisition.apple_downloads} />
         <MetricCard label="Google downloads" metric={snapshot.acquisition.google_downloads} />
       </div>

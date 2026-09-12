@@ -43,7 +43,7 @@
     const url = 'https://csxdkvpvcasuknhnprxp.supabase.co/functions/v1/ingest-analytics';
     const key = 'sb_publishable_Zg6Jj70nqJcd7OGof5iP6w_9My7yS9F';
     const params = new URLSearchParams(window.location.search);
-    fetch(url, {
+    return fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', apikey: key, Authorization: `Bearer ${key}` },
       body: JSON.stringify({
@@ -69,16 +69,18 @@
     link.href = urls[link.dataset.store];
     link.target = '_blank';
     link.rel = 'noopener noreferrer';
-    const send = () => {
-      if (link.dataset.pqClickSent === '1') return;
-      link.dataset.pqClickSent = '1';
-      track('store_link_clicked', {
-        destination: link.dataset.store,
-        placement: link.getAttribute('data-placement') || 'marketing',
+    link.addEventListener('click', (event) => {
+      event.preventDefault();
+      const href = link.href;
+      Promise.resolve(
+        track('store_link_clicked', {
+          destination: link.dataset.store,
+          placement: link.getAttribute('data-placement') || 'marketing',
+        }),
+      ).finally(() => {
+        window.open(href, '_blank', 'noopener,noreferrer');
       });
-    };
-    link.addEventListener('pointerdown', send, { passive: true });
-    link.addEventListener('click', send, { passive: true });
+    });
   });
 
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');

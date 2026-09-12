@@ -326,8 +326,8 @@ export async function loadSnapshot(search: {
   const websiteVisitors = eventsReady
     ? metric("ok", countDistinctIds(landingRows), {
         source: "analytics.events",
-        formula: "distinct landing_viewed website IDs",
-        denominator: "consented website IDs",
+        formula: "unique people who viewed the landing page",
+        denominator: "unique website IDs",
         window: `${eventFrom} → ${to}`,
         last_refresh: generated,
       })
@@ -335,15 +335,15 @@ export async function loadSnapshot(search: {
   const storeClicks = eventsReady
     ? metric("ok", countDistinctIds(storeClickRows), {
         source: "analytics.events",
-        formula: "distinct store_link_clicked website IDs",
-        denominator: "store clickers",
+        formula: "unique people who tapped App Store or Play",
+        denominator: "unique website IDs",
         window: `${eventFrom} → ${to}`,
         last_refresh: generated,
       })
     : eventMetric("store_clicks", "store clickers", "store_link_clicked");
   const funnel = [
-    { id: "website_visitors", label: "Website visitors", metric: websiteVisitors },
-    { id: "store_clicks", label: "Store clickers", metric: storeClicks },
+    { id: "website_visitors", label: "Unique website visitors", metric: websiteVisitors },
+    { id: "store_clicks", label: "Unique store clickers", metric: storeClicks },
     { id: "apple_downloads", label: "Apple first-time downloads", metric: appleDownloads },
     { id: "google_downloads", label: "Google first-time acquisitions", metric: googleDownloads },
     { id: "first_opens", label: "First opens", metric: firstOpens },
