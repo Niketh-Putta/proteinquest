@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { lockMarketingPageTitles } from './lib/marketing-page-title.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, '..');
@@ -68,8 +69,11 @@ function main() {
   fs.rmSync(outputDir, { recursive: true, force: true });
   fs.mkdirSync(staticDir, { recursive: true });
 
-  // Marketing landing
-  fs.copyFileSync(path.join(marketingDir, 'index.html'), path.join(staticDir, 'index.html'));
+  // Marketing landing. Force tab/og title to use | so em dashes cannot sneak back in.
+  const landingHtml = lockMarketingPageTitles(
+    fs.readFileSync(path.join(marketingDir, 'index.html'), 'utf8'),
+  );
+  fs.writeFileSync(path.join(staticDir, 'index.html'), landingHtml);
   fs.copyFileSync(path.join(marketingDir, 'fonts.css'), path.join(staticDir, 'fonts.css'));
   fs.copyFileSync(path.join(marketingDir, 'styles.css'), path.join(staticDir, 'styles.css'));
   fs.copyFileSync(path.join(marketingDir, 'refinements.css'), path.join(staticDir, 'refinements.css'));

@@ -9,6 +9,8 @@ Never use em dashes (`—`) or en dashes (`–`) as m-dashes in replies.
 
 Use commas, periods, or hyphens (`-`) instead.
 
+proteinquest.app `<title>` and `og:title` must use a vertical bar: `ProteinQuest | Hit your protein. Actually stick with it.` Never rewrite that `|` to an em dash.
+
 Examples:
 - Bad: "Ship it — then test."
 - Good: "Ship it, then test."
